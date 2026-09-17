@@ -229,6 +229,8 @@ jobs:
       - uses: supabase/setup-cli@v1
         with: { version: latest }
       - run: supabase start
+      # Exports API_URL, ANON_KEY and SERVICE_ROLE_KEY, which the test helpers read.
+      - run: supabase status -o env >> "$GITHUB_ENV"
       - run: pnpm test
 ```
 
@@ -467,7 +469,7 @@ export * from "./money.js";
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `pnpm vitest run packages/shared/src/money.test.ts`
-Expected: PASS — 18 tests.
+Expected: PASS — 19 tests.
 
 - [ ] **Step 6: Commit**
 
@@ -623,14 +625,18 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
  * Local Supabase connection details. `supabase status -o env` prints these;
  * CI exports them before running the suite.
  */
-const URL = process.env.SUPABASE_URL ?? "http://127.0.0.1:54321";
-const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? "";
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+// `supabase status -o env` emits API_URL / ANON_KEY / SERVICE_ROLE_KEY. Accept those
+// as well as SUPABASE_-prefixed names so `eval $(supabase status -o env)` just works
+// locally while CI and hosted environments can use the explicit names.
+const URL = process.env.SUPABASE_URL ?? process.env.API_URL ?? "http://127.0.0.1:54321";
+const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? process.env.ANON_KEY ?? "";
+const SERVICE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SERVICE_ROLE_KEY ?? "";
 
 if (!ANON_KEY || !SERVICE_KEY) {
   throw new Error(
-    "SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY must be set. " +
-      "Run: eval $(supabase status -o env)",
+    "Supabase keys are not set. Start the local stack and export them:\n" +
+      "  supabase start && eval $(supabase status -o env)",
   );
 }
 
@@ -650,21 +656,6 @@ export function anonClient(): SupabaseClient {
     db: { schema: SCHEMA },
     auth: { persistSession: false, autoRefreshToken: false },
   });
-}
-
-/** Raw SQL against the local database, for asserting on grants and catalogue state. */
-export async function sql<T = unknown>(query: string): Promise<T[]> {
-  const response = await fetch(`${URL}/rest/v1/rpc/exec_sql`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: SERVICE_KEY,
-      Authorization: `Bearer ${SERVICE_KEY}`,
-    },
-    body: JSON.stringify({ query }),
-  });
-  if (!response.ok) throw new Error(`SQL failed: ${await response.text()}`);
-  return (await response.json()) as T[];
 }
 ```
 
