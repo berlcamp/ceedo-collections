@@ -4,8 +4,10 @@ import { registerResource, type ResourceConfig } from "./resource";
 const ADMIN_ONLY = ["admin"] as const;
 const SUPERVISOR_UP = ["supervisor", "admin"] as const;
 
-// zod 4.6.5: `z.string().uuid()` is deprecated in favour of the top-level `z.uuid()`.
+// zod 4.6.5: `z.string().uuid()` and `z.string().email()` are deprecated in favour of the
+// top-level `z.uuid()` / `z.email()`.
 const uuid = z.uuid();
+const email = z.email();
 const name = z.string().min(1, "Required");
 const optionalText = z.string().min(1).nullable();
 const money = z.number().min(0, "Must not be negative");
@@ -363,6 +365,54 @@ const configs: ResourceConfig[] = [
     writeRoles: SUPERVISOR_UP,
   },
   {
+    // An app_users row can only exist once someone has completed Google sign-in (its id
+    // references auth.users), but the access gate refuses anyone without an app_users row.
+    // Inviting by email breaks that circle: an administrator records the intended staff
+    // member here, and migration 0009's trigger converts the invite into a real app_users
+    // row — with the invited role — the moment that person first signs in. This resource
+    // only ever writes to staff_invites, never to app_users directly.
+    key: "staff-invites",
+    table: "staff_invites",
+    title: "Staff invitations",
+    singular: "invitation",
+    schema: z.object({
+      email,
+      employee_no: name,
+      full_name: name,
+      role: z.enum(["collector", "supervisor", "accounting", "admin"]),
+    }),
+    fields: [
+      { name: "email", label: "Email", type: "text", help: "The Google account they will sign in with." },
+      { name: "employee_no", label: "Employee number", type: "text" },
+      { name: "full_name", label: "Full name", type: "text" },
+      {
+        name: "role",
+        label: "Role",
+        type: "select",
+        options: [
+          { value: "collector", label: "Collector (tablet only)" },
+          { value: "supervisor", label: "Supervisor" },
+          { value: "accounting", label: "Accounting" },
+          { value: "admin", label: "Administrator" },
+        ],
+      },
+    ],
+    columns: [
+      { key: "email", label: "Email" },
+      { key: "employee_no", label: "Employee no." },
+      { key: "full_name", label: "Name" },
+      { key: "role", label: "Role" },
+      { key: "invited_at", label: "Invited" },
+    ],
+    select: "id, email, employee_no, full_name, role, invited_at",
+    orderBy: "invited_at",
+    optionLabel: "full_name",
+    writeRoles: ADMIN_ONLY,
+  },
+  {
+    // Read-only: who actually has access, distinct from who has been invited. Nothing
+    // creates an app_users row through this UI — migration 0009's trigger is the only
+    // path, fired by a real Google sign-in.
     key: "users",
     table: "app_users",
     title: "Staff",
@@ -406,7 +456,7 @@ const configs: ResourceConfig[] = [
     select: "id, employee_no, full_name, role, status",
     orderBy: "full_name",
     optionLabel: "full_name",
-    writeRoles: ADMIN_ONLY,
+    writeRoles: [],
   },
 ];
 

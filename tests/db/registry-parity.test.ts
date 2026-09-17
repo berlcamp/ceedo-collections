@@ -15,6 +15,7 @@ const TABLES = [
   "booklets",
   "devices",
   "app_users",
+  "staff_invites",
 ];
 
 describe("admin registry parity", () => {

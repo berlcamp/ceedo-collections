@@ -561,6 +561,47 @@ export type Database = {
           },
         ]
       }
+      staff_invites: {
+        Row: {
+          email: string
+          employee_no: string
+          full_name: string
+          id: string
+          invited_at: string
+          invited_by: string | null
+          role: Database["ceedo_collections"]["Enums"]["app_role"]
+          row_version: number
+        }
+        Insert: {
+          email: string
+          employee_no: string
+          full_name: string
+          id?: string
+          invited_at?: string
+          invited_by?: string | null
+          role: Database["ceedo_collections"]["Enums"]["app_role"]
+          row_version?: number
+        }
+        Update: {
+          email?: string
+          employee_no?: string
+          full_name?: string
+          id?: string
+          invited_at?: string
+          invited_by?: string | null
+          role?: Database["ceedo_collections"]["Enums"]["app_role"]
+          row_version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_invites_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stalls: {
         Row: {
           active: boolean

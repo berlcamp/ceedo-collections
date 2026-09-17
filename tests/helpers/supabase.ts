@@ -65,7 +65,7 @@ async function signIn(email: string): Promise<TestClient> {
  * already registered", and every task from 5 onward uses fixed fixture addresses.
  * Tests never assert on the address itself, only on the client and id that come back.
  */
-function uniqueEmail(email: string): string {
+export function uniqueEmail(email: string): string {
   const [local, domain] = email.split("@");
   return `${local}+${randomUUID().slice(0, 8)}@${domain}`;
 }
@@ -118,4 +118,19 @@ export async function createOutsiderClient(): Promise<TestClient> {
   const email = `outsider-${randomUUID().slice(0, 8)}@example.com`;
   await createAuthUser(email);
   return signIn(email);
+}
+
+/**
+ * Creates an `auth.users` row for an exact, caller-chosen email and signs in as it.
+ * Unlike `createAppUser` and `createOutsiderClient`, this never touches `app_users`
+ * itself — used to test the `staff_invites` claim trigger, which fires on `auth.users`
+ * insert and needs full control over the email (including its casing) to test matching
+ * a pre-existing invite.
+ */
+export async function createUnregisteredAuthUser(
+  email: string,
+): Promise<{ userId: string; client: TestClient }> {
+  const userId = await createAuthUser(email);
+  const client = await signIn(email);
+  return { userId, client };
 }
