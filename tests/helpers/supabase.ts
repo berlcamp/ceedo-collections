@@ -368,6 +368,53 @@ async function ensureFormType(db: PgClient): Promise<string> {
 }
 
 /**
+ * Finds the seeded non-accruing per-head fee type (`SLAUGHTER`) and its `hog` rate, or
+ * creates both if they do not exist yet — the same guard `ensureAccrualFeeType` and
+ * `ensureFormType` apply, for the same reason.
+ *
+ * Every collection fixture carries this so `post_collection`'s line pricing has something
+ * to price: `collection_lines` needs a fee type with a rate class and a rate row, and the
+ * accruing market fee type has neither (its rate lives on the lease). The seeded rate is
+ * 85.00 per head, but the amount is read back rather than assumed — tests multiply by
+ * `perHeadRate`, so a reseed at a different figure changes the expectation with it.
+ */
+async function ensurePerHeadFeeType(
+  db: PgClient,
+): Promise<{ feeTypeId: string; rate: string }> {
+  const { rows: found } = await db.query(
+    "select id from ceedo_collections.fee_types where code = 'SLAUGHTER'",
+  );
+  const feeTypeId =
+    found.length > 0
+      ? (found[0].id as string)
+      : ((
+          await db.query(
+            `insert into ceedo_collections.fee_types (code, name, accrues, surcharge_bps)
+             values ('SLAUGHTER', 'Slaughter fee', false, 0)
+             returning id`,
+          )
+        ).rows[0].id as string);
+
+  // ::text, not a JS number: numeric(14,2) round-tripped through a float is exactly the
+  // kind of cent-level drift this ledger exists to avoid.
+  const { rows: rateRows } = await db.query(
+    `select amount::text as amount from ceedo_collections.rates
+      where fee_type_id = $1 and rate_class = 'hog'`,
+    [feeTypeId],
+  );
+  if (rateRows.length > 0) return { feeTypeId, rate: rateRows[0].amount as string };
+
+  const { rows: created } = await db.query(
+    `insert into ceedo_collections.rates
+       (fee_type_id, rate_class, effective_from, amount, basis)
+     values ($1, 'hog', '2026-01-01', 85.00, 'per_head')
+     returning amount::text as amount`,
+    [feeTypeId],
+  );
+  return { feeTypeId, rate: created[0].amount as string };
+}
+
+/**
  * Builds everything `createLeaseFixture` builds, plus the collector/device/booklet chain
  * every collections test needs: an `app_users` row with role `collector` (the only role
  * `booklet_assignments`' trigger accepts — see migration 0006), a shared `devices` row, a
@@ -397,8 +444,11 @@ export async function createCollectionFixture(
   bookletId: string;
   stallId: string;
   tenantId: string;
+  perHeadFeeTypeId: string;
+  perHeadRate: string;
 }> {
   const { leaseId, feeTypeId, stallId, tenantId } = await createLeaseFixture(db, opts);
+  const perHead = await ensurePerHeadFeeType(db);
 
   const collectorId = randomUUID();
   const collectorEmail = uniqueEmail("collection-fixture-collector@example.com");
@@ -442,5 +492,101 @@ export async function createCollectionFixture(
     [bookletId, collectorId],
   );
 
-  return { leaseId, feeTypeId, collectorId, deviceId, bookletId, stallId, tenantId };
+  return {
+    leaseId,
+    feeTypeId,
+    collectorId,
+    deviceId,
+    bookletId,
+    stallId,
+    tenantId,
+    perHeadFeeTypeId: perHead.feeTypeId,
+    perHeadRate: perHead.rate,
+  };
+}
+
+export type CollectionFixture = Awaited<ReturnType<typeof createCollectionFixture>>;
+
+/**
+ * Serial numbers for `postCollectionAsOwner`. Booklets built by `createCollectionFixture`
+ * run 1000-1999; this half of the range is left alone by the test files that pick their
+ * own OR numbers, so a fixture used both ways does not collide on
+ * `collections_serial_spent_once`.
+ */
+let ownerOrNo = 1500;
+
+/**
+ * Posts a collection through `post_collection` over the owner connection, and returns the
+ * new collection's id.
+ *
+ * The one way money enters the ledger, so every test that needs a settled charge to exist
+ * goes through it rather than inserting rows directly — an inserted row can be shaped in a
+ * way the engine would never produce, and a test built on one proves nothing about the
+ * system that actually runs.
+ *
+ * Throws on anything but `accepted`, carrying the reason code: a fixture that silently
+ * failed to settle anything makes the test that depends on it fail somewhere else entirely.
+ * Tests asserting on rejections call the RPC directly instead.
+ *
+ * `db` must already be connected; the caller owns its lifecycle.
+ */
+export async function postCollectionAsOwner(
+  db: PgClient,
+  fixture: {
+    leaseId: string;
+    feeTypeId: string;
+    collectorId: string;
+    deviceId: string;
+    bookletId: string;
+  },
+  opts: {
+    groupRanks?: number[];
+    orNo?: number;
+    id?: string;
+    collectedAt?: string;
+    leaseId?: string | null;
+    feeTypeId?: string;
+    lines?: { fee_type_id: string; rate_class?: string; quantity: number }[];
+    payerRef?: string;
+    notes?: string;
+  } = {},
+): Promise<string> {
+  const groupRanks = opts.groupRanks ?? [1];
+  const id = opts.id ?? randomUUID();
+  const payload = {
+    id,
+    or_no: opts.orNo ?? ++ownerOrNo,
+    booklet_id: fixture.bookletId,
+    collector_id: fixture.collectorId,
+    device_id: fixture.deviceId,
+    // A timestamptz literal with an explicit offset. Never Date#toISOString(): it converts
+    // through the runner's local zone, and the business date this resolves to (Asia/Manila)
+    // is what the booklet assignment and the rate lookup are checked against.
+    collected_at: opts.collectedAt ?? "2026-10-05T02:00:00+00:00",
+    fee_type_id: opts.feeTypeId ?? fixture.feeTypeId,
+    lease_id: opts.leaseId === undefined ? fixture.leaseId : opts.leaseId,
+    payer_ref: opts.payerRef ?? null,
+    notes: opts.notes ?? null,
+    allocations: groupRanks.map((group_rank) => ({ group_rank })),
+    lines: opts.lines ?? [],
+  };
+
+  const { rows } = await db.query(
+    "select ceedo_collections.post_collection($1::jsonb) as result",
+    [JSON.stringify(payload)],
+  );
+  const result = rows[0].result as {
+    status: string;
+    collection_id?: string;
+    reason?: string;
+    detail?: string;
+  };
+  if (result.status !== "accepted") {
+    throw new Error(
+      `post_collection did not accept: ${result.status}` +
+        `${result.reason ? ` (${result.reason})` : ""}` +
+        `${result.detail ? `: ${result.detail}` : ""}`,
+    );
+  }
+  return result.collection_id as string;
 }
