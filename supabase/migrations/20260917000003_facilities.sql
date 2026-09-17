@@ -1,6 +1,14 @@
--- Reusable policy installer. Master data reads to any registered staff member,
--- writes to admins only. Used by every master-data table in Phase 1 so the gate
--- is applied identically rather than retyped and subtly varied.
+-- Reusable policy installer. Master data reads to the back-office roles, writes to
+-- admins only. Used by every master-data table in Phase 1 so the gate is applied
+-- identically rather than retyped and subtly varied.
+--
+-- Reads are supervisor/accounting/admin, NOT "any active role". Spec §4: the collector
+-- app reaches this system through Edge Functions and never through PostgREST, so a
+-- collector's own JWT has no legitimate reason to read master data at all — and what it
+-- could read was the tenant register with addresses and mobile numbers, every lease and
+-- its amount, every stall and every device. That is a Data Privacy Act exposure with no
+-- feature behind it. Phase 3 scopes a collector's data to their device inside an Edge
+-- Function, which runs as service_role and is unaffected by this policy.
 create or replace function ceedo_collections.apply_master_data_policies(table_name text)
 returns void
 language plpgsql
@@ -11,7 +19,7 @@ begin
 
   execute format(
     'create policy %I on ceedo_collections.%I for select to authenticated
-       using (ceedo_collections.active_role() is not null)',
+       using (ceedo_collections.has_role(''supervisor'', ''accounting'', ''admin''))',
     table_name || '_read', table_name);
 
   execute format(
@@ -22,6 +30,15 @@ begin
 
   execute format(
     'grant select, insert, update, delete on ceedo_collections.%I to authenticated',
+    table_name);
+
+  -- Migration 0001's default privileges give service_role SELECT and INSERT only, so that
+  -- append-only tables (audit_log now, the Phase 2 ledger later) get no more by simply
+  -- never asking. Master data is the opposite case: it is legitimately mutable, and both
+  -- the Phase 3 Edge Functions and this suite's fixtures write it as service_role. Every
+  -- table that opts into this installer opts into being editable.
+  execute format(
+    'grant update, delete on ceedo_collections.%I to service_role',
     table_name);
 
   execute format(

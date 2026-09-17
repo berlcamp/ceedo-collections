@@ -4,10 +4,13 @@ import { createAppUser, serviceClient, uniqueCode } from "../helpers/supabase.js
 describe("facilities, sections and stalls", () => {
   let adminClient: Awaited<ReturnType<typeof createAppUser>>["client"];
   let collectorClient: Awaited<ReturnType<typeof createAppUser>>["client"];
+  let supervisorClient: Awaited<ReturnType<typeof createAppUser>>["client"];
 
   beforeAll(async () => {
     adminClient = (await createAppUser({ email: "fac-admin@example.com", role: "admin" })).client;
     collectorClient = (await createAppUser({ email: "fac-col@example.com", role: "collector" }))
+      .client;
+    supervisorClient = (await createAppUser({ email: "fac-sup@example.com", role: "supervisor" }))
       .client;
   });
 
@@ -25,10 +28,23 @@ describe("facilities, sections and stalls", () => {
     expect(error).not.toBeNull();
   });
 
-  it("lets a collector read facilities", async () => {
-    const { data, error } = await collectorClient.from("facilities").select("code");
+  it("lets a supervisor read facilities", async () => {
+    // Was "lets a collector read facilities". The installer's read policy is now
+    // supervisor/accounting/admin: spec §4 routes the collector app through Edge
+    // Functions, never PostgREST, so a collector's JWT reading master data was exposure
+    // with no feature behind it. The reachability claim this test exists to make is about
+    // the back office, which is who actually uses the web app.
+    const { data, error } = await supervisorClient.from("facilities").select("code");
     expect(error).toBeNull();
     expect((data ?? []).length).toBeGreaterThan(0);
+  });
+
+  it("returns no facilities to a collector", async () => {
+    // The other direction. RLS filters rather than errors, so an empty set — not a 42501 —
+    // is what a denied read looks like here.
+    const { data, error } = await collectorClient.from("facilities").select("code");
+    expect(error).toBeNull();
+    expect(data).toEqual([]);
   });
 
   it("rejects a section on a non-market facility", async () => {

@@ -58,11 +58,24 @@ as $$
 declare
   invite ceedo_collections.staff_invites;
 begin
-  -- Only a Google identity may claim an invite. Self-service email/password signup is
-  -- disabled at the auth level (supabase/config.toml, auth.email.enable_signup = false),
-  -- but that is a project-wide setting that could be re-enabled or bypassed by another
-  -- provider; this is an independent, second gate on the exact mechanism the claim trigger
-  -- itself uses. Confirmed by inspection (local Supabase, GoTrue via the admin API) that
+  -- Only a Google identity may claim an invite.
+  --
+  -- Do NOT read this as "signup is disabled anyway". It is not: supabase/config.toml has
+  -- [auth] enable_signup = true, deliberately. That setting maps to GOTRUE_DISABLE_SIGNUP,
+  -- which GoTrue enforces provider-agnostically — turning it off also refuses Google
+  -- account creation, which is every staff member's first sign-in, so onboarding stops
+  -- entirely. tests/db/auth-signup-enabled.test.ts exists to keep it on.
+  --
+  -- Two layers close the escalation instead, and each one kills the chain on its own:
+  --   1. staff_invites reads are admin-only (the read policy replaced above), so an
+  --      attacker cannot learn which address carries which pending role.
+  --   2. this provider gate: even a known invited address, signed up for with the anon key
+  --      via email/password, is not a Google identity and claims nothing.
+  -- In production the email provider is disabled in the Supabase dashboard, which removes
+  -- the email-signup vector without touching OAuth — but that is an operational setting,
+  -- not something this migration can assert, so the gate below does not depend on it.
+  --
+  -- Confirmed by inspection (local Supabase, GoTrue via the admin API) that
   -- raw_app_meta_data is a jsonb column shaped {"provider": <name>, "providers": [...]}
   -- for every provider — verified directly against a password-provider row, whose
   -- raw_app_meta_data was exactly {"provider": "email", "providers": ["email"]} — so the
@@ -79,9 +92,21 @@ begin
     return new;
   end if;
 
+  -- `do nothing` here was the only way an administrator could act on an existing staff
+  -- member's role, and it did nothing: re-inviting a collector as admin consumed the
+  -- invite (it is deleted unconditionally below), changed no row, and raised no error.
+  -- An invite is an administrator's statement of what this person's access should be, so
+  -- an existing row is brought into line with it.
+  --
+  -- `status` is deliberately absent from the update. Suspension is a deliberate act —
+  -- typically over a cash irregularity — and a re-invite must never be a way to undo it,
+  -- accidentally or otherwise. Reactivating someone stays a separate, explicit decision.
   insert into ceedo_collections.app_users (id, employee_no, full_name, role, status)
   values (new.id, invite.employee_no, invite.full_name, invite.role, 'active')
-  on conflict (id) do nothing;
+  on conflict (id) do update
+    set employee_no = excluded.employee_no,
+        full_name   = excluded.full_name,
+        role        = excluded.role;
 
   delete from ceedo_collections.staff_invites where email = invite.email;
   return new;

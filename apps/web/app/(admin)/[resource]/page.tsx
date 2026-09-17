@@ -18,7 +18,7 @@ export default async function ResourcePage({
   const staff = await requireStaff();
   const supabase = await getServerClient();
 
-  const { data: rows } = await supabase
+  const { data: rows, error } = await supabase
     .from(config.table)
     .select(config.select)
     .order(config.orderBy);
@@ -47,6 +47,25 @@ export default async function ResourcePage({
     });
   }
 
+  // A `writeMode: "edit"` resource updates an existing row instead of inserting one, so
+  // the form needs the rows to choose between and their current values.
+  const editRows =
+    config.writeMode === "edit"
+      ? (rows ?? []).map((row) => {
+          const record = row as unknown as Record<string, unknown>;
+          return {
+            id: String(record.id),
+            label: String(record[config.optionLabel] ?? record.id),
+            values: Object.fromEntries(
+              config.fields.map((field) => [
+                field.name,
+                (record[field.name] ?? null) as string | number | boolean | null,
+              ]),
+            ),
+          };
+        })
+      : undefined;
+
   return (
     <div className="space-y-8">
       <h1 className="text-xl font-semibold">{config.title}</h1>
@@ -56,12 +75,27 @@ export default async function ResourcePage({
           singular={config.singular}
           fields={config.fields}
           dynamicOptions={dynamicOptions}
+          {...(editRows ? { editRows } : {})}
         />
       ) : null}
-      <ResourceTable
-        columns={config.columns}
-        rows={(rows ?? []) as unknown as Record<string, unknown>[]}
-      />
+      {/*
+        A denied read and an empty table look identical once the error is discarded, and
+        "Nothing here yet." is the worst possible thing to tell someone who is in fact
+        being refused — it reads as a fact about the data. Say which it is. The message is
+        kept generic; the code is shown because it is what makes a support conversation
+        short (42501 is a privilege denial, PGRST116 a shape mismatch, and so on).
+      */}
+      {error ? (
+        <p className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          These records could not be loaded. You may not have access to them.
+          {error.code ? ` (${error.code})` : null}
+        </p>
+      ) : (
+        <ResourceTable
+          columns={config.columns}
+          rows={(rows ?? []) as unknown as Record<string, unknown>[]}
+        />
+      )}
     </div>
   );
 }

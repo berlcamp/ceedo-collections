@@ -3,6 +3,11 @@ import { registerResource, type ResourceConfig } from "./resource";
 
 const ADMIN_ONLY = ["admin"] as const;
 const SUPERVISOR_UP = ["supervisor", "admin"] as const;
+// Who has any reason to open the screen at all. Collectors are absent by construction:
+// canUseWeb() refuses them the web app, and migration 0003's master-data read policy
+// refuses their JWT the rows. The sidebar is filtered by this so a role is never offered
+// a screen that can only ever render empty.
+const BACK_OFFICE = ["supervisor", "accounting", "admin"] as const;
 
 // zod 4.6.5: `z.string().uuid()` and `z.string().email()` are deprecated in favour of the
 // top-level `z.uuid()` / `z.email()`.
@@ -51,6 +56,7 @@ const configs: ResourceConfig[] = [
     select: "id, code, name, type, active",
     orderBy: "code",
     optionLabel: "name",
+    readRoles: BACK_OFFICE,
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -88,6 +94,7 @@ const configs: ResourceConfig[] = [
     select: "id, name, default_accrual_period, active, facilities(name)",
     orderBy: "name",
     optionLabel: "name",
+    readRoles: BACK_OFFICE,
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -116,6 +123,7 @@ const configs: ResourceConfig[] = [
     select: "id, stall_no, area_sqm, active, sections(name)",
     orderBy: "stall_no",
     optionLabel: "stall_no",
+    readRoles: BACK_OFFICE,
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -143,6 +151,7 @@ const configs: ResourceConfig[] = [
     select: "id, full_name, address, contact_no, active",
     orderBy: "full_name",
     optionLabel: "full_name",
+    readRoles: BACK_OFFICE,
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -201,6 +210,7 @@ const configs: ResourceConfig[] = [
       "id, start_date, end_date, rate_amount, accrual_period, due_day, status, stalls(stall_no), tenants(full_name)",
     orderBy: "start_date",
     optionLabel: "start_date",
+    readRoles: BACK_OFFICE,
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -231,6 +241,7 @@ const configs: ResourceConfig[] = [
     select: "id, code, name, accrues, surcharge_bps, active",
     orderBy: "code",
     optionLabel: "name",
+    readRoles: BACK_OFFICE,
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -277,6 +288,7 @@ const configs: ResourceConfig[] = [
     select: "id, rate_class, effective_from, effective_to, amount, basis, fee_types(name)",
     orderBy: "effective_from",
     optionLabel: "effective_from",
+    readRoles: BACK_OFFICE,
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -297,6 +309,7 @@ const configs: ResourceConfig[] = [
     select: "id, code, name, active",
     orderBy: "code",
     optionLabel: "code",
+    readRoles: BACK_OFFICE,
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -341,6 +354,7 @@ const configs: ResourceConfig[] = [
     select: "id, serial_prefix, start_no, end_no, received_date, status, form_types(code)",
     orderBy: "start_no",
     optionLabel: "serial_prefix",
+    readRoles: BACK_OFFICE,
     writeRoles: SUPERVISOR_UP,
   },
   {
@@ -362,6 +376,7 @@ const configs: ResourceConfig[] = [
     select: "id, label, registered_at, last_seen_at, active",
     orderBy: "label",
     optionLabel: "label",
+    readRoles: BACK_OFFICE,
     writeRoles: SUPERVISOR_UP,
   },
   {
@@ -407,25 +422,32 @@ const configs: ResourceConfig[] = [
     select: "id, email, employee_no, full_name, role, invited_at",
     orderBy: "invited_at",
     optionLabel: "full_name",
+    // Migration 0009 made staff_invites admin-only reading: a pending invite names an
+    // address that, until claimed, confers the role it carries. A supervisor opening this
+    // screen would get an unavoidably empty table, so it is not offered to them.
+    readRoles: ADMIN_ONLY,
     writeRoles: ADMIN_ONLY,
   },
   {
-    // Read-only: who actually has access, distinct from who has been invited. Nothing
-    // creates an app_users row through this UI — migration 0009's trigger is the only
-    // path, fired by a real Google sign-in.
+    // Who actually has access, distinct from who has been invited. Nothing CREATES an
+    // app_users row through this UI — migration 0009's claim trigger is the only path,
+    // fired by a real Google sign-in, because `id` references auth.users and this form has
+    // no way to supply one.
+    //
+    // Editing an existing row is a different matter and is the only working way to correct
+    // a wrong role or suspend a leaver: re-inviting handles the person who signs in again,
+    // but an administrator must be able to act on someone who does not. Hence `role` and
+    // `status` only — `id` and `employee_no` are deliberately absent from `fields`, so the
+    // engine neither renders nor accepts them.
     key: "users",
     table: "app_users",
     title: "Staff",
     singular: "staff member",
     schema: z.object({
-      employee_no: name,
-      full_name: name,
       role: z.enum(["collector", "supervisor", "accounting", "admin"]),
       status: z.enum(["active", "suspended"]),
     }),
     fields: [
-      { name: "employee_no", label: "Employee number", type: "text" },
-      { name: "full_name", label: "Full name", type: "text" },
       {
         name: "role",
         label: "Role",
@@ -456,7 +478,11 @@ const configs: ResourceConfig[] = [
     select: "id, employee_no, full_name, role, status",
     orderBy: "full_name",
     optionLabel: "full_name",
-    writeRoles: [],
+    readRoles: BACK_OFFICE,
+    writeRoles: ADMIN_ONLY,
+    // Update only. An insert form here could never succeed: `id` references auth.users and
+    // the form has no way to supply one.
+    writeMode: "edit",
   },
   {
     // Read-only, append-only at the database (migration 0010 revokes insert/update/delete
@@ -479,6 +505,7 @@ const configs: ResourceConfig[] = [
     select: "id, at, action, entity, entity_id, app_users(full_name)",
     orderBy: "at",
     optionLabel: "action",
+    readRoles: BACK_OFFICE,
     writeRoles: [],
   },
 ];

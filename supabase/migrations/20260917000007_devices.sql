@@ -59,6 +59,66 @@ create table ceedo_collections.collector_assignments (
 create index collector_assignments_collector_idx
   on ceedo_collections.collector_assignments (collector_id) where active;
 
+-- The same pair of guards booklet_assignments carries (migration 0006), for the same
+-- reason and in the same shape: one stops the wrong person being named, the other stops a
+-- named person being reclassified out from under the row.
+--
+-- can_collector_use_device() below re-checks u.role at read time, so neither hole is
+-- exploitable through that function today. Phase 3's sync scoping keys off these rows
+-- directly and does not re-check, so a supervisor named in collector_assignments, or a
+-- collector promoted while still assigned, becomes a real scoping fault there. An
+-- invariant enforced in one reader and not in the table is not an invariant.
+create or replace function ceedo_collections.assert_assignment_target_is_collector()
+returns trigger
+language plpgsql
+set search_path = ceedo_collections, pg_temp
+as $$
+declare
+  assignee_role ceedo_collections.app_role;
+begin
+  select role into assignee_role
+  from ceedo_collections.app_users where id = new.collector_id;
+
+  if assignee_role is distinct from 'collector' then
+    raise exception 'Collection areas may only be assigned to a collector, not %', assignee_role
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger collector_assignments_collector_only
+  before insert or update on ceedo_collections.collector_assignments
+  for each row execute function ceedo_collections.assert_assignment_target_is_collector();
+
+-- The other half. Mirrors assert_no_held_booklets_on_role_change: a collector with an
+-- active area assignment must be unassigned before they can be promoted, so the change of
+-- role is a deliberate act with a visible prerequisite rather than a silent orphaning.
+create or replace function ceedo_collections.assert_no_active_assignments_on_role_change()
+returns trigger
+language plpgsql
+set search_path = ceedo_collections, pg_temp
+as $$
+begin
+  if old.role = 'collector' and new.role is distinct from 'collector'
+     and exists (
+       select 1 from ceedo_collections.collector_assignments
+       where collector_id = old.id and active
+     )
+  then
+    raise exception
+      'Cannot change % from collector to %: they still hold active collection assignments',
+      old.employee_no, new.role
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger app_users_no_active_assignments_on_role_change
+  before update on ceedo_collections.app_users
+  for each row execute function ceedo_collections.assert_no_active_assignments_on_role_change();
+
 /**
  * Whether a collector may sign in to a device: the two assignments must overlap,
  * the device must be active, and the person must actually be a collector.
@@ -94,6 +154,11 @@ as $$
   );
 $$;
 
+-- CREATE FUNCTION grants EXECUTE to PUBLIC implicitly. Carry forward the hygiene
+-- migration 0002 established on the gate functions: revoke the implicit grant, then name
+-- the roles that may call it. Otherwise anon — and every future role on this shared
+-- instance — can probe which collectors are cleared for which tablets.
+revoke execute on function ceedo_collections.can_collector_use_device(uuid, uuid) from public;
 grant execute on function ceedo_collections.can_collector_use_device(uuid, uuid)
   to authenticated, service_role;
 

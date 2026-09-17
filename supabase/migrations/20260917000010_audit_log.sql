@@ -151,8 +151,23 @@ create policy audit_log_read on ceedo_collections.audit_log
     )
   );
 
--- Append-only, enforced by withheld privilege rather than by policy. The same
--- principle the ledger will use in Phase 2: nobody can grant themselves what was
--- never granted.
+-- Append-only, enforced by withheld privilege rather than by policy.
+--
+-- What actually makes that true, stated precisely because an earlier version of this
+-- comment overstated it and a reviewer duly UPDATEd and DELETEd audit rows as
+-- service_role: migration 0001's ALTER DEFAULT PRIVILEGES grants service_role SELECT and
+-- INSERT on tables in this schema and nothing more, and this table never asks for more.
+-- apply_master_data_policies() is what adds UPDATE and DELETE, per table, and audit_log
+-- deliberately does not use it. So no role — not authenticated, not anon, not
+-- service_role, not ceedo_app — holds UPDATE or DELETE here.
+--
+-- Rows are written only by write_audit(), which is security definer and so runs as the
+-- table owner; the trigger's ability to insert is independent of any grant below.
+--
+-- The revokes are defensive rather than load-bearing (nothing granted these in the first
+-- place), and they name service_role explicitly so that a future ALTER DEFAULT PRIVILEGES
+-- widening cannot silently reopen this table. The same shape the Phase 2 ledger will use.
 grant select on ceedo_collections.audit_log to authenticated;
 revoke insert, update, delete on ceedo_collections.audit_log from authenticated, anon;
+revoke update, delete on ceedo_collections.audit_log
+  from public, service_role, ceedo_app;

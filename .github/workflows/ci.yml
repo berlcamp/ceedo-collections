@@ -13,6 +13,10 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      # An exit criterion for Phase 1, and typecheck does not stand in for it: the Next.js
+      # production build is where a bad import boundary, a client/server mistake or a
+      # failing page render actually surfaces.
+      - run: pnpm build
       - uses: supabase/setup-cli@v1
         with: { version: latest }
       - run: supabase start

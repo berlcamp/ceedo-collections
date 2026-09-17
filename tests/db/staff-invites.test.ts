@@ -389,6 +389,92 @@ describe("staff invites", () => {
     expect(count).toBe(1);
   });
 
+  it("re-inviting an existing staff member changes their role", async () => {
+    // `on conflict (id) do nothing` made this a silent no-op: the invite was consumed
+    // (it is deleted unconditionally), nothing changed, and no error was raised — so an
+    // administrator correcting a wrong role had no working mechanism at all and no signal
+    // that it had failed. An invite is a statement of what this person's access should be.
+    const email = uniqueEmail("reinvite.promote@example.com");
+    await service.from("staff_invites").insert({
+      email,
+      employee_no: uniqueCode("INV"),
+      full_name: "Originally A Collector",
+      role: "collector",
+    });
+
+    const userId = await createGoogleAuthUser(email);
+    const { data: first } = await service
+      .from("app_users")
+      .select("role, full_name, status")
+      .eq("id", userId)
+      .single();
+    expect(first).toMatchObject({ role: "collector", status: "active" });
+
+    const newEmployeeNo = uniqueCode("INV");
+    await service.from("staff_invites").insert({
+      email,
+      employee_no: newEmployeeNo,
+      full_name: "Now An Administrator",
+      role: "admin",
+    });
+
+    // GoTrue refreshing app_metadata on a subsequent sign-in is the UPDATE the trigger
+    // fires on; auth.users will not accept a second row for the same address.
+    await setAuthUserProvider(userId, "google");
+
+    const { data: after } = await service
+      .from("app_users")
+      .select("role, full_name, employee_no, status")
+      .eq("id", userId)
+      .single();
+    expect(after).toMatchObject({
+      role: "admin",
+      full_name: "Now An Administrator",
+      employee_no: newEmployeeNo,
+      status: "active",
+    });
+
+    // The invite was genuinely consumed, not left pending.
+    const { data: remaining } = await service
+      .from("staff_invites")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+    expect(remaining).toBeNull();
+  });
+
+  it("re-inviting a suspended staff member updates their role but does NOT reactivate them", async () => {
+    // The half that must not be convenient. Suspension is a deliberate act, typically over
+    // a cash irregularity; a re-invite must never be a back door around it. `status` is
+    // therefore absent from the conflict update, and this is the assertion that keeps it
+    // absent.
+    const email = uniqueEmail("reinvite.suspended@example.com");
+    await service.from("staff_invites").insert({
+      email,
+      employee_no: uniqueCode("INV"),
+      full_name: "Suspended Person",
+      role: "collector",
+    });
+
+    const userId = await createGoogleAuthUser(email);
+    await service.from("app_users").update({ status: "suspended" }).eq("id", userId);
+
+    await service.from("staff_invites").insert({
+      email,
+      employee_no: uniqueCode("INV"),
+      full_name: "Suspended Person",
+      role: "supervisor",
+    });
+    await setAuthUserProvider(userId, "google");
+
+    const { data: after } = await service
+      .from("app_users")
+      .select("role, status")
+      .eq("id", userId)
+      .single();
+    expect(after).toMatchObject({ role: "supervisor", status: "suspended" });
+  });
+
   it("rejects a second invite differing from an existing one only by email case", async () => {
     const localPart = `case.collide.${uniqueCode("X").toLowerCase()}`;
     const email = `${localPart}@example.com`;

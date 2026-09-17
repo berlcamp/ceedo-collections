@@ -145,6 +145,75 @@ describe("membership gate", () => {
     expect(data).toBeNull();
   });
 
+  /**
+   * The edit path the admin registry's `users` resource now uses. The server action
+   * (apps/web/lib/admin/actions.ts) issues a plain PostgREST UPDATE through the caller's
+   * own session, so what the caller's JWT can do here IS what the engine can do — the
+   * registry's writeRoles check is a second gate in front of this one, not a substitute
+   * for it.
+   */
+  describe("administering staff (app_users_admin_write)", () => {
+    it("lets an admin change someone's role", async () => {
+      const { userId } = await createAppUser({ email: "promote-me@example.com", role: "collector" });
+      const { client: admin } = await createAppUser({
+        email: "promoter-admin@example.com",
+        role: "admin",
+      });
+
+      const { error } = await admin.from("app_users").update({ role: "supervisor" }).eq("id", userId);
+      expect(error).toBeNull();
+
+      const { data } = await serviceClient()
+        .from("app_users")
+        .select("role")
+        .eq("id", userId)
+        .single();
+      expect(data!.role).toBe("supervisor");
+    });
+
+    it("lets an admin suspend a leaver", async () => {
+      const { userId } = await createAppUser({ email: "leaver@example.com", role: "accounting" });
+      const { client: admin } = await createAppUser({
+        email: "suspender-admin@example.com",
+        role: "admin",
+      });
+
+      const { error } = await admin
+        .from("app_users")
+        .update({ status: "suspended" })
+        .eq("id", userId);
+      expect(error).toBeNull();
+
+      const { data } = await serviceClient()
+        .from("app_users")
+        .select("status")
+        .eq("id", userId)
+        .single();
+      expect(data!.status).toBe("suspended");
+    });
+
+    it("still refuses a supervisor changing anyone's role", async () => {
+      // The other direction: app_users_admin_write is admin-only, and giving the registry
+      // a write path must not have widened it. A supervisor's UPDATE is filtered out by
+      // the USING clause, which affects zero rows and raises nothing — so assert the
+      // stored value, not an error.
+      const { userId } = await createAppUser({ email: "not-promotable@example.com", role: "collector" });
+      const { client: supervisor } = await createAppUser({
+        email: "would-be-promoter@example.com",
+        role: "supervisor",
+      });
+
+      await supervisor.from("app_users").update({ role: "admin" }).eq("id", userId);
+
+      const { data } = await serviceClient()
+        .from("app_users")
+        .select("role")
+        .eq("id", userId)
+        .single();
+      expect(data!.role).toBe("collector");
+    });
+  });
+
   it("refuses a collector attempting to promote themselves", async () => {
     const { client, userId } = await createAppUser({
       email: "collector4@example.com",

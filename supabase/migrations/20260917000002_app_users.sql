@@ -91,6 +91,17 @@ grant select (id, employee_no, full_name, role, status, created_at, updated_at, 
   on ceedo_collections.app_users to authenticated;
 grant insert, update, delete on ceedo_collections.app_users to authenticated;
 
+-- Migration 0001's default privileges give service_role SELECT and INSERT only. This table
+-- does not go through apply_master_data_policies(), so it states its own case:
+--   UPDATE  — yes. A role correction, a suspension, and the Phase 3 Edge Function writing
+--             pin_hash are all updates to an existing row, and app_users.id references
+--             auth.users so the row cannot simply be replaced.
+--   DELETE  — no, deliberately withheld. An app_users row is referenced by
+--             booklet_assignments, collector_assignments and audit_log.actor_id; removing
+--             a staff member is `status = 'suspended'`, which keeps their history
+--             attributable. Nothing in this system deletes a person.
+grant update on ceedo_collections.app_users to service_role;
+
 revoke execute on function ceedo_collections.active_role() from public;
 revoke execute on function ceedo_collections.has_role(variadic ceedo_collections.app_role[]) from public;
 revoke execute on function ceedo_collections.is_admin() from public;

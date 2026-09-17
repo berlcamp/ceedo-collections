@@ -40,15 +40,24 @@ export async function saveResource(
     return { ok: false, fieldErrors: {}, formError: "You do not have permission to change this." };
   }
 
+  // The id is honoured only where the resource says it updates. A create-mode resource
+  // ignores one entirely, so this action cannot be turned into a general row editor for a
+  // resource whose config never offered one — the form is not the enforcement, this is.
+  const editing = config.writeMode === "edit";
+  if (editing && !id) {
+    return { ok: false, fieldErrors: {}, formError: `Choose a ${config.singular} to edit.` };
+  }
+  const targetId = editing ? id : undefined;
+
   const parsed = config.schema.safeParse(coerce(config, formData));
   if (!parsed.success) return toSaveResult(parsed, null);
 
   const supabase = await getServerClient();
-  const query = id
+  const query = targetId
     ? supabase
         .from(config.table)
         .update(parsed.data as never)
-        .eq("id", id)
+        .eq("id", targetId)
         .select("id")
         .single()
     : supabase
@@ -61,7 +70,7 @@ export async function saveResource(
   const result = toSaveResult(
     parsed,
     error ? { code: error.code ?? "", message: error.message } : null,
-    (data as { id?: string } | null)?.id ?? id ?? "",
+    (data as { id?: string } | null)?.id ?? targetId ?? "",
   );
 
   if (result.ok) revalidatePath(`/${config.key}`);

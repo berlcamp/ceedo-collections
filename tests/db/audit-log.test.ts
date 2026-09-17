@@ -24,9 +24,13 @@ describe("audit log", () => {
   });
 
   it("records an insert with the acting user", async () => {
+    // uniqueCode, not a literal: nothing clears master data between runs, so a fixed code
+    // collides on a unique violation the second time this suite runs without
+    // `supabase db reset`. See the helper's doc comment.
+    const code = uniqueCode("AUD");
     const { data: facility } = await adminClient
       .from("facilities")
-      .insert({ name: "Audited Market", code: "AUD", type: "market" })
+      .insert({ name: "Audited Market", code, type: "market" })
       .select("id")
       .single();
 
@@ -42,13 +46,13 @@ describe("audit log", () => {
       actor_id: adminId,
       before: null,
     });
-    expect((entries![0]!.after as Record<string, unknown>).code).toBe("AUD");
+    expect((entries![0]!.after as Record<string, unknown>).code).toBe(code);
   });
 
   it("records an update with both before and after", async () => {
     const { data: facility } = await adminClient
       .from("facilities")
-      .insert({ name: "Before Name", code: "UPD", type: "market" })
+      .insert({ name: "Before Name", code: uniqueCode("UPD"), type: "market" })
       .select("id")
       .single();
 
@@ -68,7 +72,7 @@ describe("audit log", () => {
   it("logs rate changes", async () => {
     const { data: feeType } = await service
       .from("fee_types")
-      .insert({ code: "AUDIT_FEE", name: "Audited fee", accrues: false, surcharge_bps: 0 })
+      .insert({ code: uniqueCode("AUDIT_FEE"), name: "Audited fee", accrues: false, surcharge_bps: 0 })
       .select("id")
       .single();
 
@@ -104,6 +108,70 @@ describe("audit log", () => {
     const { data: entry } = await service.from("audit_log").select("id").limit(1).single();
     const { error } = await adminClient.from("audit_log").delete().eq("id", entry!.id);
     expect(error).not.toBeNull();
+  });
+
+  it("refuses an update to an audit entry from service_role", async () => {
+    // The hole this test exists for: migration 0001's ALTER DEFAULT PRIVILEGES granted
+    // service_role select/insert/update/delete on every table this schema would ever
+    // contain, so audit_log was handed UPDATE and DELETE at creation and 0010's revoke
+    // (authenticated, anon) never touched them. A reviewer duly rewrote audit rows as
+    // service_role. The default is now select/insert only.
+    //
+    // service_role bypasses RLS entirely, so nothing but the withheld privilege is
+    // stopping this — which is exactly the property the Phase 2 ledger will rely on.
+    const { data: entry } = await service.from("audit_log").select("id").limit(1).single();
+    const { error } = await service
+      .from("audit_log")
+      .update({ action: "tampered" })
+      .eq("id", entry!.id);
+    expect(error).not.toBeNull();
+    expect(error?.code).toBe("42501");
+
+    const { data: unchanged } = await service
+      .from("audit_log")
+      .select("action")
+      .eq("id", entry!.id)
+      .single();
+    expect(unchanged!.action).not.toBe("tampered");
+  });
+
+  it("refuses a delete of an audit entry from service_role", async () => {
+    const { data: entry } = await service.from("audit_log").select("id").limit(1).single();
+    const { error } = await service.from("audit_log").delete().eq("id", entry!.id);
+    expect(error).not.toBeNull();
+    expect(error?.code).toBe("42501");
+
+    const { data: stillThere } = await service
+      .from("audit_log")
+      .select("id")
+      .eq("id", entry!.id)
+      .maybeSingle();
+    expect(stillThere).not.toBeNull();
+  });
+
+  it("still lets service_role insert and read master data — the narrowed default is not a lockout", async () => {
+    // The default privileges were narrowed, not removed. Every fixture in this suite
+    // writes as service_role, and apply_master_data_policies() grants update/delete back
+    // per table; a change that made append-only work by breaking master data would pass
+    // the two tests above while being useless.
+    const { data: facility, error: insertError } = await service
+      .from("facilities")
+      .insert({ name: "Grant Check Market", code: uniqueCode("GRC"), type: "market" })
+      .select("id")
+      .single();
+    expect(insertError).toBeNull();
+
+    const { error: updateError } = await service
+      .from("facilities")
+      .update({ name: "Grant Check Market Annex" })
+      .eq("id", facility!.id);
+    expect(updateError).toBeNull();
+
+    const { error: deleteError } = await service
+      .from("facilities")
+      .delete()
+      .eq("id", facility!.id);
+    expect(deleteError).toBeNull();
   });
 
   it("hides the audit log from collectors", async () => {

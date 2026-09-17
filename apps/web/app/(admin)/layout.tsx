@@ -6,12 +6,20 @@ import "@/lib/admin/registry";
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const staff = await requireStaff();
 
+  // Only the screens this role can actually see anything on. Listing every resource to
+  // every role offered a supervisor a "Staff invitations" link that RLS guarantees will
+  // render empty — indistinguishable, from the operator's side, from there being no
+  // invitations. This is navigation, not access control: the policies are what deny.
+  const visible = Object.values(RESOURCES).filter((resource) =>
+    resource.readRoles.includes(staff.role),
+  );
+
   return (
     <div className="flex min-h-dvh">
       <nav className="w-56 shrink-0 border-r border-neutral-200 px-4 py-6">
         <p className="mb-6 text-sm font-semibold">CEEDO Collections</p>
         <ul className="space-y-1">
-          {Object.values(RESOURCES).map((resource) => (
+          {visible.map((resource) => (
             <li key={resource.key}>
               <Link
                 href={`/${resource.key}`}
