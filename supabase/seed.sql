@@ -21,6 +21,7 @@ where s.facility_id = (select id from ceedo_collections.facilities where code = 
 
 insert into ceedo_collections.fee_types (code, name, accrues, surcharge_bps) values
   ('MKT_DAILY',  'Market stall rental (daily)',   true,  300),
+  ('MKT_WEEKLY', 'Market stall rental (weekly)',  true,  300),
   ('MKT_MONTHLY','Market stall rental (monthly)', true,  300),
   ('AMBULANT',   'Ambulant vendor fee',           false, 0),
   ('PARKING',    'Parking fee',                   false, 0),
@@ -33,6 +34,8 @@ insert into ceedo_collections.fee_types (code, name, accrues, surcharge_bps) val
 -- first branch fixes the whole column once, rather than repeating the cast on every branch.
 insert into ceedo_collections.rates (fee_type_id, rate_class, effective_from, amount, basis)
 select id, '', '2026-01-01'::date, 120.00, 'per_day'::ceedo_collections.rate_basis from ceedo_collections.fee_types where code = 'MKT_DAILY'
+union all
+select id, '', '2026-01-01', 800.00, 'per_week' from ceedo_collections.fee_types where code = 'MKT_WEEKLY'
 union all
 select id, '', '2026-01-01', 3000.00, 'per_month' from ceedo_collections.fee_types where code = 'MKT_MONTHLY'
 union all
