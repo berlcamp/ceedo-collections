@@ -52,3 +52,14 @@ select id, 'goat', '2026-01-01', 45.00, 'per_head' from ceedo_collections.fee_ty
 
 insert into ceedo_collections.form_types (code, name) values
   ('OR51', 'Official Receipt (Accountable Form 51)');
+
+-- First administrator.
+--
+-- A fresh database has no app_users rows, and app_users.id references auth.users(id), which
+-- does not exist until someone signs in. So the bootstrap is an INVITE: this row waits until
+-- that address completes Google sign-in, at which point the claim trigger converts it into a
+-- real app_users row with this role.
+--
+-- Edit full_name to taste. In a hosted project, insert this once by hand rather than seeding.
+insert into ceedo_collections.staff_invites (email, employee_no, full_name, role) values
+  ('berlcamp@gmail.com', 'ADMIN-001', 'System Administrator', 'admin');
