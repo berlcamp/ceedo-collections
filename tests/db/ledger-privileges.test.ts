@@ -37,6 +37,7 @@ const LEDGER_TABLES = [
   "collection_allocations",
   "collection_lines",
   "collection_cancellations",
+  "charge_condonations",
 ] as const;
 const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
