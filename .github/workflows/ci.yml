@@ -16,4 +16,8 @@ jobs:
       - uses: supabase/setup-cli@v1
         with: { version: latest }
       - run: supabase start
+      # Exports API_URL, ANON_KEY and SERVICE_ROLE_KEY, which the test helpers read.
+      - run: supabase status -o env >> "$GITHUB_ENV"
+      - run: supabase db reset
+      - run: ./scripts/check-types-current.sh
       - run: pnpm test

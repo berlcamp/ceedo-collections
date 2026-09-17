@@ -10,7 +10,7 @@
     "test:watch": "vitest",
     "db:start": "supabase start",
     "db:reset": "supabase db reset",
-    "db:types": "supabase gen types typescript --local --schema ceedo_collections > packages/shared/src/db.types.ts"
+    "db:types": "{ echo '// AUTO-GENERATED FILE. DO NOT EDIT BY HAND.'; echo '// Run `pnpm db:types` to regenerate from the local Postgres schema (schema: ceedo_collections).'; supabase gen types typescript --local --schema ceedo_collections; } > packages/shared/src/db.types.ts"
   },
   "devDependencies": {
     "turbo": "^2.3.0",
