@@ -385,9 +385,17 @@ so a re-run after an outage raises only what is missing.
 | --- | --- |
 | daily | the day itself |
 | weekly | `period_end` |
-| monthly | the lease's `due_day` in that month, **clamped to month length** |
+| monthly | the lease's `due_day` in that month |
 
-A `due_day` of 31 lands on 28 February — clamped, not an error, and not skipped.
+**No month-length clamping is needed, and none should be written.** Phase 1's
+`leases.due_day` carries `check (due_day between 1 and 28)`, so a monthly due date can
+never fall on a day that some month lacks. Adding defensive clamping here would be dead
+code implying a case the schema already made unreachable.
+
+The calendar-month edge the parent spec raises in §8.2 — a 31 January charge becoming
+delinquent on 28 February — still occurs, but through **daily** accrual, where `due_date`
+is the day itself and can legitimately be the 31st. §5's surcharge test must therefore use
+a daily lease, not a monthly one.
 
 **Surcharge** (§8.2). For each unpaid rental charge where
 `business_date > due_date + interval '1 month'`, insert one surcharge charge:
@@ -455,12 +463,14 @@ single test guards the entire COA position. Everything below it is ordinary corr
 - Run three times for the same date → identical row count
 - Run five days late → five days raised, none doubled
 - Never raises a charge before `cutover_date`
-- `due_day` 31 in February lands on the 28th; leap year on the 29th
+- Monthly `due_date` uses the lease's `due_day` directly; the 1–28 constraint means no
+  clamping path exists to test
 
 **Surcharge.**
 - Raised once and only once per rental charge
 - Never on an opening balance
-- 31 January charge becomes delinquent 28 February
+- 31 January charge becomes delinquent 28 February — tested via a **daily** lease, since
+  `due_day` is constrained to 1–28 and cannot produce a 31st monthly due date
 - `₱83.50 × 3% = ₱2.51` — the exact case IEEE 754 gets wrong (`250.49999999999997`)
 
 **`post_collection` rejections**, one test each: duplicate UUID, OR outside booklet range,
