@@ -1,0 +1,21 @@
+{
+  "name": "ceedo-collections",
+  "private": true,
+  "packageManager": "pnpm@10.0.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:start": "supabase start",
+    "db:reset": "supabase db reset",
+    "db:types": "supabase gen types typescript --local --schema ceedo_collections > packages/shared/src/db.types.ts"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "@types/node": "^24.0.0"
+  }
+}
