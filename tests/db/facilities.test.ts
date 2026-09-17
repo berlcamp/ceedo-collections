@@ -78,4 +78,39 @@ describe("facilities, sections and stalls", () => {
       .insert({ section_id: section!.id, stall_no: "F-01" });
     expect(error).not.toBeNull();
   });
+
+  it("refuses reclassifying a market that still has sections", async () => {
+    const service = serviceClient();
+    const { data: facility } = await service
+      .from("facilities")
+      .insert({ name: "Reclass Market", code: "RCL", type: "market" })
+      .select("id")
+      .single();
+    await service
+      .from("sections")
+      .insert({ facility_id: facility!.id, name: "Fish", default_accrual_period: "daily" });
+
+    const { error } = await service
+      .from("facilities")
+      .update({ type: "terminal" })
+      .eq("id", facility!.id);
+
+    expect(error?.message ?? "").toMatch(/still has sections/i);
+  });
+
+  it("allows reclassifying a market with no sections", async () => {
+    const service = serviceClient();
+    const { data: facility } = await service
+      .from("facilities")
+      .insert({ name: "Empty Market", code: "EMT", type: "market" })
+      .select("id")
+      .single();
+
+    const { error } = await service
+      .from("facilities")
+      .update({ type: "parking" })
+      .eq("id", facility!.id);
+
+    expect(error).toBeNull();
+  });
 });
