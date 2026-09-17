@@ -81,6 +81,35 @@ Once the Google OAuth client is configured and your account has an `app_users` r
 If step 4 or 5 instead lets you into `/`, the gate is broken — stop and fix
 `decideAccess` / `requireStaff()` before doing anything else with this app.
 
+## Production auth posture: disable the email provider
+
+**In the hosted Supabase project, turn the email provider OFF** (Dashboard → Authentication
+→ Sign In / Providers → Email → disable). This system authenticates only with Google, so
+nothing legitimate uses email/password, and leaving the provider enabled leaves a
+self-service `auth.signUp()` endpoint reachable with the public anon key. That endpoint is
+the input `ceedo_collections.claim_staff_invite()` keys on, so it is the vector an attacker
+would use to try to claim someone else's pending staff invitation.
+
+Do **not** try to close this with the project-wide signup switch (`[auth] enable_signup` /
+`GOTRUE_DISABLE_SIGNUP`). GoTrue enforces that flag provider-agnostically — its
+`createAccountFromExternalIdentity()` `CreateAccount` branch checks it for OAuth too — so
+it refuses every staff member's **first** Google sign-in with `signup_disabled`. No
+`auth.users` row is created, the claim trigger never fires, and nobody can ever be
+onboarded. Disabling the email provider removes the email-signup vector without touching
+Google OAuth. `tests/db/auth-signup-enabled.test.ts` guards against that flag being
+re-enabled.
+
+**Local development keeps email enabled** (`supabase/config.toml` leaves both
+`[auth] enable_signup` and `[auth.email] enable_signup` at `true`), because the test suite
+creates fixtures via the admin API and signs them in with `signInWithPassword`. Disabling
+the email provider locally breaks the whole suite.
+
+Even with email enabled, the invite-claim escalation is closed at two independent layers,
+both covered by `tests/db/staff-invites.test.ts`: `staff_invites` is readable only by
+admins, so an attacker cannot learn which address is invited; and `claim_staff_invite()`
+refuses any provider but `google`, so an address claimed through email signup is granted
+nothing and the invitation stays unclaimed.
+
 ## Learn more
 
 This is a standard Next.js App Router project (`create-next-app` with TypeScript,

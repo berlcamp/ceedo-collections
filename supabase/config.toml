@@ -172,18 +172,22 @@ enable_refresh_token_rotation = true
 # Requires enable_refresh_token_rotation = true.
 refresh_token_reuse_interval = 10
 # Allow/disallow new user signups to your project.
-# Disabled: this app is Google-only (apps/web/app/sign-in/page.tsx signs in via
-# signInWithOAuth({ provider: "google" }) only). Self-service signup lets anyone mint an
-# auth.users row with the anon key — the exact input ceedo_collections.claim_staff_invite()
-# keys on — which was the second layer of the invite-read privilege escalation. This maps
-# to GoTrue's GOTRUE_DISABLE_SIGNUP, which blocks the public /signup (and OAuth-first-login)
-# endpoint but not the admin API (auth.admin.createUser) — tests still create users that
-# way. Deliberately NOT auth.email.enable_signup: that key maps to
+# MUST stay true. This key maps to GoTrue's GOTRUE_DISABLE_SIGNUP, which is enforced
+# provider-agnostically: createAccountFromExternalIdentity()'s CreateAccount branch checks it
+# for OAuth logins too, not just the email /signup endpoint. Setting it false therefore refuses
+# every staff member's FIRST Google sign-in with `signup_disabled`, so no auth.users row is
+# ever created and ceedo_collections.claim_staff_invite() never fires — nobody can be
+# onboarded at all. It cannot be used as a defence here. The invite-claim privilege escalation
+# is closed by two layers that do not touch OAuth: staff_invites SELECT is admin-only (an
+# attacker cannot learn which address is invited), and claim_staff_invite() refuses any
+# provider but 'google' (a known address claimed via email signup grants nothing). In the
+# hosted project, disable the EMAIL PROVIDER entirely in the dashboard (Auth > Providers >
+# Email) — that removes the self-service email-signup vector without touching Google OAuth.
+# Local development keeps email enabled because the test suite signs in with passwords.
+# Also deliberately NOT auth.email.enable_signup: that key maps to
 # GOTRUE_EXTERNAL_EMAIL_ENABLED, the whole email provider on/off switch, which also blocks
-# signInWithPassword for already-existing users — confirmed by inspecting the auth
-# container's env and by running the suite, which broke 32 tests that authenticate test
-# fixtures via password sign-in. This setting closes the same hole without that.
-enable_signup = false
+# signInWithPassword for already-existing users and broke 32 tests when tried.
+enable_signup = true
 # Allow/disallow anonymous sign-ins to your project.
 enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts

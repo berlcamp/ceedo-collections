@@ -23,13 +23,20 @@ const service = serviceClient();
  * A reviewer proved a collector could read a pending admin invite (the original,
  * over-broad master-data read grant), call `auth.signUp` with the anon key, and be
  * handed the invited role — self-service email signup created the exact auth.users
- * insert the trigger keyed on. Fix round 2 closes that at three independent layers:
- *   A. the invite is unreadable except to admins (tested below);
- *   B. self-service signup is disabled project-wide (`supabase/config.toml`,
- *      `[auth] enable_signup = false`) — not retested here, it is an auth-level refusal
- *      that never reaches this schema; verified separately (see the fix-round report);
- *   C. the trigger claims only a Google identity (tested below);
+ * insert the trigger keyed on. That is closed at two independent layers, each of which
+ * kills the chain on its own:
+ *   A. the invite is unreadable except to admins, so an attacker cannot learn which
+ *      address is invited (tested below);
+ *   C. the trigger claims only a Google identity, so even a known address claimed via
+ *      email signup grants nothing (tested below);
  *   D. the trigger never aborts the `auth.users` insert it fires on (tested below).
+ *
+ * A third layer — `[auth] enable_signup = false` in `supabase/config.toml` — was added in
+ * fix round 2 and REMOVED in fix round 4. It maps to `GOTRUE_DISABLE_SIGNUP`, which GoTrue
+ * enforces provider-agnostically, so it refused every staff member's first Google sign-in
+ * and made onboarding impossible. `auth-signup-enabled.test.ts` now guards against it
+ * coming back. In production the email provider is disabled in the Supabase dashboard
+ * instead, which removes the email-signup vector without touching OAuth.
  *
  * Fix round 3: round 2 proved (via a temporary debug trigger) that GoTrue's admin API
  * populates `raw_app_meta_data` in a separate UPDATE, not the original INSERT — a pattern
