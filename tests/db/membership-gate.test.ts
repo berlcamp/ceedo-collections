@@ -1,16 +1,7 @@
-import { beforeAll, describe, expect, it } from "vitest";
-import {
-  createAppUser,
-  createOutsiderClient,
-  resetFixtures,
-  serviceClient,
-} from "../helpers/supabase.js";
+import { describe, expect, it } from "vitest";
+import { createAppUser, createOutsiderClient, serviceClient } from "../helpers/supabase.js";
 
 describe("membership gate", () => {
-  beforeAll(async () => {
-    await resetFixtures();
-  });
-
   it("denies a signed-in user who has no app_users row", async () => {
     // This is the whole point: auth.users is shared with unrelated projects.
     const outsider = await createOutsiderClient();
@@ -56,27 +47,53 @@ describe("membership gate", () => {
   });
 
   it("lets an admin read every user", async () => {
-    const { client } = await createAppUser({ email: "admin1@example.com", role: "admin" });
-    const { data } = await client.from("app_users").select("id");
-    const { count } = await serviceClient()
-      .from("app_users")
-      .select("id", { count: "exact", head: true });
-    // Compared against the service-client count taken at the same moment, not a fixed
-    // number: this test must stand alone (e.g. `vitest -t` in isolation) as well as in
-    // the full suite, where earlier tests have already left other rows behind.
-    expect(data).toHaveLength(count ?? -1);
+    // A live row count is not a safe assertion here: vitest runs test files
+    // concurrently, several of which call createAppUser against this same
+    // app_users table, so a count taken via one client and a count taken via
+    // another can legitimately differ by whatever inserted in between. Assert
+    // the actual security property instead — a specific known row is visible
+    // to the privileged reader and invisible to an unprivileged one — which
+    // is both stronger than a count and immune to concurrent inserts.
+    const { userId: markerId } = await createAppUser({
+      email: "marker-admin@example.com",
+      role: "collector",
+    });
+    const { client: admin } = await createAppUser({ email: "admin1@example.com", role: "admin" });
+    const { client: collector } = await createAppUser({
+      email: "collector-vs-admin@example.com",
+      role: "collector",
+    });
+
+    const { data: adminData } = await admin.from("app_users").select("id");
+    const { data: collectorData } = await collector.from("app_users").select("id");
+
+    expect((adminData ?? []).map((row) => row.id)).toContain(markerId);
+    expect((collectorData ?? []).map((row) => row.id)).not.toContain(markerId);
   });
 
   it("lets a supervisor read every user", async () => {
-    const { client } = await createAppUser({ email: "sup-read@example.com", role: "supervisor" });
-    const { data } = await client.from("app_users").select("id");
-    const { count } = await serviceClient()
-      .from("app_users")
-      .select("id", { count: "exact", head: true });
     // This is the test that guards app_users_read_all specifically: app_users_admin_write
     // is FOR ALL, so its USING clause backstops SELECT for admins even if read_all is
     // deleted. Supervisor and accounting are the only two roles read_all uniquely serves.
-    expect(data).toHaveLength(count ?? -1);
+    // See the admin test above for why this asserts membership rather than a count.
+    const { userId: markerId } = await createAppUser({
+      email: "marker-sup@example.com",
+      role: "collector",
+    });
+    const { client: supervisor } = await createAppUser({
+      email: "sup-read@example.com",
+      role: "supervisor",
+    });
+    const { client: collector } = await createAppUser({
+      email: "collector-vs-sup@example.com",
+      role: "collector",
+    });
+
+    const { data: supervisorData } = await supervisor.from("app_users").select("id");
+    const { data: collectorData } = await collector.from("app_users").select("id");
+
+    expect((supervisorData ?? []).map((row) => row.id)).toContain(markerId);
+    expect((collectorData ?? []).map((row) => row.id)).not.toContain(markerId);
   });
 
   it("treats a suspended user as having no role", async () => {

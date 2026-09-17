@@ -35,6 +35,37 @@ describe("toSaveResult", () => {
     expect((result as { formError: string }).formError).toMatch(/overlaps/i);
   });
 
+  it("maps a plain check-constraint violation to a generic message, not the raw SQL", () => {
+    const parsed = schema.safeParse({ code: "CPM", name: "Market" });
+    const result = toSaveResult(parsed, {
+      code: "23514",
+      message: 'new row for relation "leases" violates check constraint "leases_dates_ordered"',
+    });
+    expect((result as { formError: string }).formError).toBe(
+      "That combination of values is not allowed.",
+    );
+  });
+
+  it("maps a not-null violation to a readable message", () => {
+    const parsed = schema.safeParse({ code: "CPM", name: "Market" });
+    const result = toSaveResult(parsed, {
+      code: "23502",
+      message: 'null value in column "code" violates not-null constraint',
+    });
+    expect((result as { formError: string }).formError).toBe("A required value is missing.");
+  });
+
+  it("maps an RLS-blocked update (PGRST116) to an access-or-missing message", () => {
+    const parsed = schema.safeParse({ code: "CPM", name: "Market" });
+    const result = toSaveResult(parsed, {
+      code: "PGRST116",
+      message: "Cannot coerce the result to a single JSON object",
+    });
+    expect((result as { formError: string }).formError).toBe(
+      "That record no longer exists, or you do not have permission to change it.",
+    );
+  });
+
   it("maps a permission denial to an access message", () => {
     const parsed = schema.safeParse({ code: "CPM", name: "Market" });
     const result = toSaveResult(parsed, { code: "42501", message: "permission denied" });

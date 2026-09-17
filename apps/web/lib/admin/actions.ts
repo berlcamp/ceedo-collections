@@ -1,9 +1,10 @@
 "use server";
 
+import "@/lib/admin/registry";
 import { revalidatePath } from "next/cache";
 import { getServerClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/supabase/session";
-import type { ResourceConfig } from "./resource";
+import { RESOURCES, type ResourceConfig } from "./resource";
 import { toSaveResult, type SaveResult } from "./save-result";
 
 function coerce(config: ResourceConfig, formData: FormData): Record<string, unknown> {
@@ -25,10 +26,15 @@ function coerce(config: ResourceConfig, formData: FormData): Record<string, unkn
 }
 
 export async function saveResource(
-  config: ResourceConfig,
+  resourceKey: string,
   formData: FormData,
   id?: string,
 ): Promise<SaveResult> {
+  const config = RESOURCES[resourceKey];
+  if (!config) {
+    return { ok: false, fieldErrors: {}, formError: "Unknown resource." };
+  }
+
   const staff = await requireStaff();
   if (!config.writeRoles.includes(staff.role)) {
     return { ok: false, fieldErrors: {}, formError: "You do not have permission to change this." };
@@ -40,13 +46,13 @@ export async function saveResource(
   const supabase = await getServerClient();
   const query = id
     ? supabase
-        .from(config.table as never)
+        .from(config.table)
         .update(parsed.data as never)
         .eq("id", id)
         .select("id")
         .single()
     : supabase
-        .from(config.table as never)
+        .from(config.table)
         .insert(parsed.data as never)
         .select("id")
         .single();

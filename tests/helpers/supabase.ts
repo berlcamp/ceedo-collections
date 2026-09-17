@@ -58,11 +58,12 @@ async function signIn(email: string): Promise<TestClient> {
 /**
  * Makes a fixture email collision-proof by tagging its local part.
  *
- * `resetFixtures` can clear `app_users`, but it cannot clear `auth.users` — that is
- * shared GoTrue state on a shared Supabase project. Without this, running any suite a
- * second time without `supabase db reset` fails on "email already registered", and
- * every task from 5 onward uses fixed fixture addresses. Tests never assert on the
- * address itself, only on the client and id that come back.
+ * Nothing clears `auth.users` between runs — it is shared GoTrue state on a shared
+ * Supabase project, and test files run concurrently against the same `app_users`
+ * table, so no file may delete rows another file depends on either. Without this,
+ * running any suite a second time without `supabase db reset` fails on "email
+ * already registered", and every task from 5 onward uses fixed fixture addresses.
+ * Tests never assert on the address itself, only on the client and id that come back.
  */
 function uniqueEmail(email: string): string {
   const [local, domain] = email.split("@");
@@ -72,7 +73,7 @@ function uniqueEmail(email: string): string {
 /**
  * Makes a fixture facility or fee-type code collision-proof.
  *
- * resetFixtures() clears app_users but not master data, so re-running a suite without
+ * Nothing clears master data between runs, so re-running a suite without
  * `supabase db reset` collides on fixed codes with a unique violation. That fails loudly
  * rather than silently, but it has twice been mistaken for a real failure while debugging
  * something else. Tests never assert on the code itself.
@@ -117,12 +118,4 @@ export async function createOutsiderClient(): Promise<TestClient> {
   const email = `outsider-${randomUUID().slice(0, 8)}@example.com`;
   await createAuthUser(email);
   return signIn(email);
-}
-
-/** Clears fixture data between suites. Order matters: children before parents. */
-export async function resetFixtures(): Promise<void> {
-  const client = serviceClient();
-  for (const table of ["app_users"]) {
-    await client.from(table).delete().neq("id", "00000000-0000-0000-0000-000000000000");
-  }
 }
