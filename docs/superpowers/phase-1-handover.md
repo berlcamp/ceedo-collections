@@ -57,13 +57,18 @@
 - Device reassignment mid-shift is unrestricted at the database. The in-flight rule belongs in
   the sync/lease layer.
 
-## Parked — your call
+## Previously parked, now fixed
 
-| # | Item | Why it was parked |
+| # | Was | Now |
 | --- | --- | --- |
-| P1 | An admin can demote or suspend **themselves**, and a fresh install has one admin. Recovery needs psql. | Product decision: add a last-active-admin guard, or document recovery. |
-| P2 | Migration 0002's comment claims DELETE is withheld. True only for `service_role` — an admin JWT can delete a staff row and write `pin_hash`. | The comment overstates a defence. This pattern caused the one Critical found at final review. |
-| P3 | Edit-mode submits every field; nothing checks `fields ⊆ select`. The next `writeMode: "edit"` resource with a field missing from its select will silently blank it. | Latent; no current resource affected. |
+| P1 | An admin could demote or suspend themselves, and a fresh install has one admin. Recovery needed psql. | `assert_admin_remains` refuses to demote, suspend **or** delete the last active administrator, naming their employee number and telling you to appoint another first. Six tests, both directions. |
+| P2 | Migration 0002's comment claimed DELETE was withheld — true only for `service_role`. An admin JWT could delete a staff row and write `pin_hash`. | The code now matches the comment: `authenticated` has no INSERT or DELETE on `app_users` at all, and UPDATE on `role` and `status` only. `pin_hash` is unwritable by any web client; Phase 3 writes it through an Edge Function. |
+| P3 | Edit-mode submits every field; nothing checked `fields ⊆ select`, so a future resource would silently blank a column. | `registry.test.ts` asserts it for every edit-mode resource and every `optionLabel`. Verified to fail when a column is removed from a select. |
+
+**Note for whoever writes the accrual job:** `assert_admin_remains` fires per row, so a bulk
+`UPDATE` suspending several administrators at once will be refused on the last of them even
+though the statement as a whole looks safe. Suspend individually, or exclude one explicitly.
+
 
 ## Deferred minors
 

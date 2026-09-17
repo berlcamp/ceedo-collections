@@ -30,6 +30,13 @@ const PG_URL =
   process.env.DB_URL ??
   "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
 
+/**
+ * The direct Postgres connection string. Exported for tests that must run inside a
+ * transaction they can roll back — the only way to assert on global state (such as "is this
+ * the last active administrator") while other test files are concurrently creating users.
+ */
+export const POSTGRES_URL = PG_URL;
+
 /** Bypasses RLS. Used only for fixtures and assertions, never to test policy behaviour. */
 export function serviceClient() {
   return createClient(URL, SERVICE_KEY, {

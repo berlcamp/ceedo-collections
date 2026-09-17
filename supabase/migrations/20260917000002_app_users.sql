@@ -21,6 +21,43 @@ create trigger app_users_row_version
   before insert or update on ceedo_collections.app_users
   for each row execute function ceedo_collections.bump_row_version();
 
+-- An administrator editing their own row can otherwise demote or suspend themselves, and a
+-- fresh install has exactly one admin. Recovery would need psql or the service key — which
+-- is precisely the break-glass credential this system asks people not to keep to hand. Fires
+-- on DELETE too: DELETE is withheld from every role today, but a future grant must not
+-- quietly reopen this.
+create or replace function ceedo_collections.assert_admin_remains()
+returns trigger
+language plpgsql
+set search_path = ceedo_collections, pg_temp
+as $$
+declare
+  losing_admin boolean;
+begin
+  losing_admin := case tg_op
+    when 'DELETE' then true
+    else new.role is distinct from 'admin' or new.status is distinct from 'active'
+  end;
+
+  if old.role = 'admin' and old.status = 'active' and losing_admin
+     and not exists (
+       select 1 from ceedo_collections.app_users
+       where role = 'admin' and status = 'active' and id <> old.id
+     )
+  then
+    raise exception
+      'Cannot remove the last active administrator (%): appoint another first', old.employee_no
+      using errcode = '23514';
+  end if;
+
+  return case tg_op when 'DELETE' then old else new end;
+end;
+$$;
+
+create trigger app_users_admin_remains
+  before update or delete on ceedo_collections.app_users
+  for each row execute function ceedo_collections.assert_admin_remains();
+
 create trigger app_users_updated_at
   before update on ceedo_collections.app_users
   for each row execute function ceedo_collections.touch_updated_at();
@@ -89,17 +126,23 @@ create policy app_users_admin_write on ceedo_collections.app_users
 revoke select on ceedo_collections.app_users from authenticated;
 grant select (id, employee_no, full_name, role, status, created_at, updated_at, row_version)
   on ceedo_collections.app_users to authenticated;
-grant insert, update, delete on ceedo_collections.app_users to authenticated;
+-- Only the two columns the admin edit form writes. A table-level grant would also make
+-- pin_hash writable by any admin JWT, and DELETE reachable — see the note below, which
+-- previously described only service_role while reading as a statement about the system.
+-- Phase 3 writes pin_hash through an Edge Function, not as `authenticated`.
+revoke insert, update, delete on ceedo_collections.app_users from authenticated;
+grant update (role, status) on ceedo_collections.app_users to authenticated;
 
 -- Migration 0001's default privileges give service_role SELECT and INSERT only. This table
 -- does not go through apply_master_data_policies(), so it states its own case:
 --   UPDATE  — yes. A role correction, a suspension, and the Phase 3 Edge Function writing
 --             pin_hash are all updates to an existing row, and app_users.id references
 --             auth.users so the row cannot simply be replaced.
---   DELETE  — no, deliberately withheld. An app_users row is referenced by
---             booklet_assignments, collector_assignments and audit_log.actor_id; removing
---             a staff member is `status = 'suspended'`, which keeps their history
---             attributable. Nothing in this system deletes a person.
+--   DELETE  — no, deliberately withheld from EVERY role, service_role and authenticated
+--             alike. An app_users row is referenced by booklet_assignments,
+--             collector_assignments and audit_log.actor_id; removing a staff member is
+--             `status = 'suspended'`, which keeps their history attributable. Nothing in
+--             this system deletes a person, and nothing is granted the privilege to.
 grant update on ceedo_collections.app_users to service_role;
 
 revoke execute on function ceedo_collections.active_role() from public;
