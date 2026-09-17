@@ -82,6 +82,11 @@ create policy app_users_admin_write on ceedo_collections.app_users
 
 -- pin_hash is deliberately absent. PIN verification happens server-side in a Phase 3
 -- Edge Function; no web client, at any role, has a reason to read the hash itself.
+--
+-- The revoke below is defensive, not decorative: with migration 0001 no longer granting
+-- a default table-level SELECT, this table starts with none anyway, but making the
+-- column grant the only SELECT path holds even if something upstream changes.
+revoke select on ceedo_collections.app_users from authenticated;
 grant select (id, employee_no, full_name, role, status, created_at, updated_at, row_version)
   on ceedo_collections.app_users to authenticated;
 grant insert, update, delete on ceedo_collections.app_users to authenticated;
@@ -90,7 +95,7 @@ revoke execute on function ceedo_collections.active_role() from public;
 revoke execute on function ceedo_collections.has_role(variadic ceedo_collections.app_role[]) from public;
 revoke execute on function ceedo_collections.is_admin() from public;
 
-grant execute on function ceedo_collections.active_role() to authenticated, anon;
+grant execute on function ceedo_collections.active_role() to authenticated;
 grant execute on function ceedo_collections.has_role(variadic ceedo_collections.app_role[]) to authenticated;
 grant execute on function ceedo_collections.is_admin() to authenticated;
 

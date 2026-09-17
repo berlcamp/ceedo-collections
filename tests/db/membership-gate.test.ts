@@ -100,6 +100,34 @@ describe("membership gate", () => {
     expect(data).toEqual([]);
   });
 
+  it("hides pin_hash from a supervisor", async () => {
+    const { client } = await createAppUser({ email: "pin-sup@example.com", role: "supervisor" });
+    const { data, error } = await client.from("app_users").select("id, pin_hash");
+    // Verified against the live REST endpoint: requesting a column the role has no SELECT
+    // privilege on makes Postgres reject the whole query (42501, "permission denied for
+    // table app_users") rather than PostgREST silently dropping the column — so an error
+    // here, with no data, is the pass condition.
+    expect(error).not.toBeNull();
+    expect(error?.code).toBe("42501");
+    expect(data).toBeNull();
+  });
+
+  it("hides pin_hash from an accounting user", async () => {
+    const { client } = await createAppUser({ email: "pin-acct@example.com", role: "accounting" });
+    const { data, error } = await client.from("app_users").select("id, pin_hash");
+    expect(error).not.toBeNull();
+    expect(error?.code).toBe("42501");
+    expect(data).toBeNull();
+  });
+
+  it("hides pin_hash from an admin", async () => {
+    const { client } = await createAppUser({ email: "pin-admin@example.com", role: "admin" });
+    const { data, error } = await client.from("app_users").select("id, pin_hash");
+    expect(error).not.toBeNull();
+    expect(error?.code).toBe("42501");
+    expect(data).toBeNull();
+  });
+
   it("refuses a collector attempting to promote themselves", async () => {
     const { client, userId } = await createAppUser({
       email: "collector4@example.com",

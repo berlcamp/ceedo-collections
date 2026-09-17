@@ -46,8 +46,11 @@ $$;
 
 grant usage on schema ceedo_collections to ceedo_app, anon, authenticated, service_role;
 
-alter default privileges in schema ceedo_collections
-  grant select on tables to anon, authenticated;
+-- No default SELECT for anon or authenticated. This schema's security model is explicit
+-- denial, and an implicit table-level grant silently subsumes any narrower column-level
+-- grant written later — which is exactly how pin_hash stayed readable. Every table grants
+-- what it means to grant, explicitly. apply_master_data_policies() does this for master
+-- data; app_users does it by hand.
 alter default privileges in schema ceedo_collections
   grant select, insert, update, delete on tables to service_role;
 alter default privileges in schema ceedo_collections
