@@ -4350,7 +4350,43 @@ const configs: ResourceConfig[] = [
 for (const config of configs) registerResource(config);
 ```
 
-- [ ] **Step 4: Write the seed**
+- [ ] **Step 4: Grant supervisors write access where the spec says they need it**
+
+`apply_master_data_policies()` grants writes to admins only, but spec §11.1 gives
+supervisors booklet assignment and return verification — and Task 13's configs give them
+write access to booklets and tablets. Without this migration a supervisor sees a form that
+always fails with 42501.
+
+Create `supabase/migrations/20260917000008_supervisor_writes.sql`:
+
+```sql
+-- Spec 11.1: supervisors assign booklets, verify returns, and manage the tablets their
+-- collectors use. apply_master_data_policies() is admin-only by design; RLS policies are
+-- permissive and OR together, so this adds supervisors alongside admins on exactly these
+-- five tables and changes nothing elsewhere.
+do $$
+declare
+  t text;
+begin
+  foreach t in array array[
+    'booklets', 'booklet_assignments', 'spoiled_forms', 'devices', 'device_assignments'
+  ]
+  loop
+    execute format(
+      'create policy %I on ceedo_collections.%I for all to authenticated
+         using (ceedo_collections.has_role(''supervisor'', ''admin''))
+         with check (ceedo_collections.has_role(''supervisor'', ''admin''))',
+      t || '_supervisor_write', t);
+  end loop;
+end;
+$$;
+```
+
+Test both directions: a supervisor can insert a booklet and a device; a **collector still
+cannot**; and an admin is unaffected. A policy that accidentally widened to all authenticated
+roles would pass the first assertion while being badly wrong.
+
+- [ ] **Step 5: Write the seed**
 
 `supabase/seed.sql`:
 
@@ -4407,12 +4443,12 @@ insert into ceedo_collections.form_types (code, name) values
   ('OR51', 'Official Receipt (Accountable Form 51)');
 ```
 
-- [ ] **Step 5: Reset, seed and run everything**
+- [ ] **Step 6: Reset, seed and run everything**
 
 Run: `supabase db reset && pnpm db:types && pnpm typecheck && pnpm build && pnpm test`
 Expected: all pass. `supabase db reset` applies `seed.sql` automatically.
 
-- [ ] **Step 6: Smoke-test the app by hand**
+- [ ] **Step 7: Smoke-test the app by hand**
 
 Run: `pnpm --filter @ceedo/web dev`
 
@@ -4423,10 +4459,10 @@ Then, with a Google OAuth client configured in `.env`:
 4. Sign in again — expect the admin shell listing Facilities through Staff.
 5. Open **Sections**, try adding a section to `IBJT` — expect the message "Sections may only belong to a market facility, not terminal".
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add apps/web/lib/admin/registry.ts supabase/seed.sql tests
+git add apps/web/lib/admin/registry.ts supabase/migrations supabase/seed.sql tests
 git commit -m "feat(web): register Phase 1 admin resources and add development seed"
 ```
 
@@ -4439,7 +4475,7 @@ git commit -m "feat(web): register Phase 1 admin resources and add development s
 Spec §11.4: every consequential action is logged with actor, timestamp, entity and before/after. Each action it names — changing a rate, assigning or returning a booklet, creating or deactivating a user — happens in Phase 1, so the log belongs here rather than later.
 
 **Files:**
-- Create: `supabase/migrations/20260917000008_audit_log.sql`
+- Create: `supabase/migrations/20260917000009_audit_log.sql`
 - Create: `tests/db/audit-log.test.ts`
 - Modify: `apps/web/lib/admin/registry.ts`
 
@@ -4569,7 +4605,7 @@ Expected: FAIL — relation `audit_log` does not exist.
 
 - [ ] **Step 3: Write the migration**
 
-`supabase/migrations/20260917000008_audit_log.sql`:
+`supabase/migrations/20260917000009_audit_log.sql`:
 
 ```sql
 create table ceedo_collections.audit_log (
