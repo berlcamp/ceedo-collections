@@ -572,8 +572,11 @@ $$;
 
 grant usage on schema ceedo_collections to ceedo_app, anon, authenticated, service_role;
 
-alter default privileges in schema ceedo_collections
-  grant select on tables to anon, authenticated;
+-- No default SELECT for anon or authenticated. This schema's security model is explicit
+-- denial, and an implicit table-level grant silently subsumes any narrower column-level
+-- grant written later — which is exactly how pin_hash stayed readable through two fix
+-- rounds while every test passed. Every table grants what it means to grant, explicitly:
+-- apply_master_data_policies() does this for master data, app_users does it by hand.
 alter default privileges in schema ceedo_collections
   grant select, insert, update, delete on tables to service_role;
 alter default privileges in schema ceedo_collections
@@ -1047,6 +1050,10 @@ create policy app_users_admin_write on ceedo_collections.app_users
   using (ceedo_collections.is_admin())
   with check (ceedo_collections.is_admin());
 
+-- Defensive: ensure the column list below is the ONLY SELECT path, whatever preceded it.
+-- A table-level grant is wider than a column-level one and silently wins.
+revoke select on ceedo_collections.app_users from authenticated;
+
 -- pin_hash is deliberately absent from this column list. PIN verification happens
 -- server-side in a Phase 3 Edge Function; no web client, at any role, has a reason to
 -- read the hash itself. A table-level grant here would expose it to supervisor and
@@ -1071,6 +1078,12 @@ alter default privileges in schema ceedo_collections revoke select on tables fro
 revoke select on all tables in schema ceedo_collections from anon;
 revoke usage on schema ceedo_collections from anon;
 ```
+
+**Test that `pin_hash` is unreadable by every web role** — supervisor, accounting and
+admin. PostgREST rejects the whole query with 42501 rather than silently omitting the
+column, so the error is the pass condition; verify that behaviour empirically before
+writing the assertion rather than assuming it. Without these tests the suite passes at
+full green while the hash is readable, which is what happened here.
 
 **Two tests must be written so they fail if their policy is deleted.** `app_users_admin_write`
 is `FOR ALL`, so its `USING` backstops `SELECT` for admins — meaning an admin-read test
