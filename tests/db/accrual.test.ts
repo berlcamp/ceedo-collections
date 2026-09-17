@@ -24,6 +24,34 @@ async function countCharges(leaseId: string): Promise<number> {
   return rows[0].n;
 }
 
+/**
+ * Calls lease_periods() directly. It is `immutable` and takes the cutover as a plain
+ * argument, so it needs no `settings` row at all -- unlike every test above, which only
+ * ever reaches it through run_accrual() with the cutover pinned at the seeded 2026-10-01
+ * (Ruling 3). That route can vary lease_start against a FIXED cutover, but never the
+ * other way around, so it structurally cannot exercise the half of Ruling 11's
+ * greatest(lease_start, cutover) guard where the cutover itself is the binding bound.
+ * These tests pin both halves, and the boundary between them, independently.
+ */
+async function leasePeriods(
+  accrualPeriod: "daily" | "weekly" | "monthly",
+  leaseStart: string,
+  leaseEnd: string | null,
+  cutover: string,
+  through: string,
+  dueDay: number | null,
+): Promise<Array<{ period_start: string; period_end: string; due_date: string }>> {
+  const { rows } = await db.query(
+    `select period_start::text as period_start, period_end::text as period_end,
+            due_date::text as due_date
+       from ceedo_collections.lease_periods(
+         $1::ceedo_collections.accrual_period, $2::date, $3::date, $4::date, $5::date, $6::smallint)
+      order by period_start`,
+    [accrualPeriod, leaseStart, leaseEnd, cutover, through, dueDay],
+  );
+  return rows;
+}
+
 beforeAll(async () => {
   db = new Client({ connectionString: POSTGRES_URL });
   await db.connect();
@@ -191,5 +219,63 @@ describe("run_accrual", () => {
     } finally {
       await restoreCutover();
     }
+  });
+});
+
+describe("lease_periods (Ruling 11: greatest(lease_start, cutover))", () => {
+  it("suppresses a partial month when the CUTOVER lands mid-month", async () => {
+    // Lease running well before a mid-month cutover: v_start resolves to the cutover, not
+    // to lease_start. October would be the naive first month (truncating the cursor to
+    // the 1st) but must be suppressed -- it starts twelve days before the cutover.
+    const rows = await leasePeriods("monthly", "2026-09-15", null, "2026-10-20", "2026-11-30", 5);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({
+      period_start: "2026-11-01", period_end: "2026-11-30", due_date: "2026-11-05",
+    });
+  });
+
+  it("suppresses a partial month when the LEASE START lands mid-month", async () => {
+    // Mirror of the above: cutover is on the 1st, lease starts mid-October. v_start
+    // resolves to lease_start. October must still be suppressed.
+    const rows = await leasePeriods("monthly", "2026-10-15", null, "2026-10-01", "2026-12-31", 5);
+    expect(rows.map((r) => r.period_start)).toEqual(["2026-11-01", "2026-12-01"]);
+    expect(rows.some((r) => r.period_start === "2026-10-01")).toBe(false);
+  });
+
+  it("bills the first month when both bounds land on its 1st (lease start far in the past)", async () => {
+    const rows = await leasePeriods("monthly", "2024-01-01", null, "2026-10-01", "2026-11-30", 5);
+    expect(rows.map((r) => r.period_start)).toEqual(["2026-10-01", "2026-11-01"]);
+  });
+
+  it("bills the first month at the exact boundary (lease start == cutover)", async () => {
+    const rows = await leasePeriods("monthly", "2026-10-01", null, "2026-10-01", "2026-10-31", 5);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({
+      period_start: "2026-10-01", period_end: "2026-10-31", due_date: "2026-10-05",
+    });
+  });
+
+  it("bills the first month when the cutover itself falls on the 1st", async () => {
+    // Cutover does not bisect this month -- it lands exactly on its boundary -- so October
+    // is owed in full even though the lease predates the cutover by a month.
+    const rows = await leasePeriods("monthly", "2026-09-01", null, "2026-10-01", "2026-11-30", 5);
+    expect(rows.map((r) => r.period_start)).toEqual(["2026-10-01", "2026-11-01"]);
+  });
+
+  it("does not misfire for a daily lease with a mid-month cutover", async () => {
+    // The guard only bites monthly: daily initialises v_cursor := v_start directly, so
+    // period_start can never land before v_start in the first place.
+    const rows = await leasePeriods("daily", "2026-09-01", null, "2026-10-15", "2026-10-18", null);
+    expect(rows.map((r) => r.period_start)).toEqual([
+      "2026-10-15", "2026-10-16", "2026-10-17", "2026-10-18",
+    ]);
+  });
+
+  it("does not misfire for a weekly lease with a mid-month cutover", async () => {
+    const rows = await leasePeriods("weekly", "2026-09-01", null, "2026-10-14", "2026-10-27", null);
+    expect(rows).toEqual([
+      { period_start: "2026-10-14", period_end: "2026-10-20", due_date: "2026-10-20" },
+      { period_start: "2026-10-21", period_end: "2026-10-27", due_date: "2026-10-27" },
+    ]);
   });
 });
