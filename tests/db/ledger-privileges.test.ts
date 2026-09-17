@@ -21,8 +21,23 @@ import { anonClient, createAppUser, serviceClient, type TestClient } from "../he
  * empty string fails to cast to `uuid` (22P02, "invalid input syntax for type uuid") before
  * the query ever reaches the permission check, which would assert the wrong thing entirely
  * -- also confirmed by direct observation, not assumed.
+ *
+ * The UPDATE probe sets `row_version` rather than `amount`: extending LEDGER_TABLES to the
+ * Task 6 tables surfaced that `amount` is not a column on `collections` or
+ * `collection_cancellations` at all (PostgREST fails those with PGRST204, "column not found
+ * in schema cache", before the request reaches Postgres) and is a GENERATED column on
+ * `collection_lines` (Postgres refuses that with 428C9, "generated_always", before the
+ * privilege check runs) -- both confirmed by direct observation. `row_version` exists as an
+ * ordinary, non-generated bigint column on every table in LEDGER_TABLES, so it reaches the
+ * same 42501 GRANT check `amount` did on `charges` alone.
  */
-const LEDGER_TABLES = ["charges"] as const;
+const LEDGER_TABLES = [
+  "charges",
+  "collections",
+  "collection_allocations",
+  "collection_lines",
+  "collection_cancellations",
+] as const;
 const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
 describe("ledger tables refuse mutation", () => {
@@ -43,7 +58,7 @@ describe("ledger tables refuse mutation", () => {
     });
 
     it(`${table}: authenticated cannot UPDATE`, async () => {
-      const { error } = await adminClient.from(table).update({ amount: 1 }).neq("id", NIL_UUID);
+      const { error } = await adminClient.from(table).update({ row_version: 1 }).neq("id", NIL_UUID);
       expect(error).not.toBeNull();
       expect(error!.code).toBe("42501");
     });
@@ -61,7 +76,7 @@ describe("ledger tables refuse mutation", () => {
     });
 
     it(`${table}: service_role cannot UPDATE`, async () => {
-      const { error } = await serviceClient().from(table).update({ amount: 1 }).neq("id", NIL_UUID);
+      const { error } = await serviceClient().from(table).update({ row_version: 1 }).neq("id", NIL_UUID);
       expect(error).not.toBeNull();
       expect(error!.code).toBe("42501");
     });

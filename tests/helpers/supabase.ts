@@ -342,3 +342,100 @@ export async function createLeaseFixture(
 
   return { leaseId, feeTypeId, stallId, tenantId };
 }
+
+/**
+ * Finds the seeded OR51 accountable-form type, or creates it if it does not exist yet —
+ * the same guard `ensureAccrualFeeType` applies, for the same reason: a `supabase db
+ * reset` skipped in a given test run must not be a hard requirement.
+ */
+async function ensureFormType(db: PgClient): Promise<string> {
+  const { rows } = await db.query(
+    "select id from ceedo_collections.form_types where code = 'OR51'",
+  );
+  if (rows.length > 0) return rows[0].id as string;
+
+  const { rows: created } = await db.query(
+    `insert into ceedo_collections.form_types (code, name)
+     values ('OR51', 'Official Receipt (Accountable Form 51)')
+     returning id`,
+  );
+  return created[0].id as string;
+}
+
+/**
+ * Builds everything `createLeaseFixture` builds, plus the collector/device/booklet chain
+ * every collections test needs: an `app_users` row with role `collector` (the only role
+ * `booklet_assignments`' trigger accepts — see migration 0006), a shared `devices` row, a
+ * `booklets` row whose 1000-1999 serial range comfortably covers the OR numbers tests use,
+ * and a `booklet_assignments` row linking the two with `assigned_at` in the past and
+ * `returned_at` null (an open assignment).
+ *
+ * The collector is inserted straight into `auth.users` (mirroring
+ * `createAuthUserWithoutProvider`) rather than through the admin API: nothing here needs
+ * the collector to sign in, only to exist as a valid `app_users.id`. A random per-fixture
+ * `serial_prefix` (via `uniqueCode`) keeps concurrent fixtures from colliding on
+ * `booklets_no_serial_overlap`, which excludes on `(form_type_id, serial_prefix,
+ * int4range(start_no, end_no))` — two fixtures sharing a prefix and range would collide,
+ * distinct prefixes never do.
+ *
+ * `db` must already be connected; the caller owns its lifecycle (connect/end), same as
+ * `createLeaseFixture`.
+ */
+export async function createCollectionFixture(
+  db: PgClient,
+  opts: Parameters<typeof createLeaseFixture>[1] = {},
+): Promise<{
+  leaseId: string;
+  feeTypeId: string;
+  collectorId: string;
+  deviceId: string;
+  bookletId: string;
+  stallId: string;
+  tenantId: string;
+}> {
+  const { leaseId, feeTypeId, stallId, tenantId } = await createLeaseFixture(db, opts);
+
+  const collectorId = randomUUID();
+  const collectorEmail = uniqueEmail("collection-fixture-collector@example.com");
+  await db.query(
+    `insert into auth.users
+       (id, instance_id, aud, role, email, email_confirmed_at,
+        raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+        confirmation_token, is_sso_user, is_anonymous)
+     values
+       ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2, now(),
+        '{"provider": "email", "providers": ["email"]}'::jsonb, '{}'::jsonb, now(), now(),
+        '', false, false)`,
+    [collectorId, collectorEmail],
+  );
+  await db.query(
+    `insert into ceedo_collections.app_users (id, employee_no, full_name, role, status)
+     values ($1, $2, $3, 'collector', 'active')`,
+    [collectorId, `E-${uniqueCode("CFX")}`, `Collection Fixture Collector ${uniqueCode("CFX")}`],
+  );
+
+  const { rows: deviceRows } = await db.query(
+    `insert into ceedo_collections.devices (label) values ($1) returning id`,
+    [uniqueCode("DEV")],
+  );
+  const deviceId = deviceRows[0].id as string;
+
+  const formTypeId = await ensureFormType(db);
+  const { rows: bookletRows } = await db.query(
+    `insert into ceedo_collections.booklets
+       (form_type_id, serial_prefix, start_no, end_no, received_date)
+     values ($1, $2, 1000, 1999, current_date - 30)
+     returning id`,
+    [formTypeId, uniqueCode("BK")],
+  );
+  const bookletId = bookletRows[0].id as string;
+
+  await db.query(
+    `insert into ceedo_collections.booklet_assignments
+       (booklet_id, collector_id, assigned_at, returned_at)
+     values ($1, $2, current_date - 7, null)`,
+    [bookletId, collectorId],
+  );
+
+  return { leaseId, feeTypeId, collectorId, deviceId, bookletId, stallId, tenantId };
+}
