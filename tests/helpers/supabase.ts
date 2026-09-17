@@ -289,7 +289,12 @@ export async function createLeaseFixture(
     startDate?: string;
     endDate?: string | null;
     dueDay?: number | null;
-    rateAmount?: number;
+    // string | number, not just number: a string is the safer way to express an exact
+    // decimal for a numeric(14,2) column (no float round-trip through JS), and the Task 5
+    // accrual tests already pass amounts this way (e.g. "50.00"). Do not narrow this back
+    // to `number` -- pg accepts both and coerces identically, but the string form is the
+    // one callers should actually prefer.
+    rateAmount?: number | string;
     status?: "active" | "ended" | "terminated";
   } = {},
 ): Promise<{ leaseId: string; feeTypeId: string; stallId: string; tenantId: string }> {
