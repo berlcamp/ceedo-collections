@@ -1630,11 +1630,12 @@ create table ceedo_collections.leases (
   constraint leases_monthly_needs_due_day
     check (accrual_period <> 'monthly' or due_day is not null),
 
-  -- One active tenancy per stall at a time. 'infinity' models an open-ended lease.
+  -- One active tenancy per stall at a time. A NULL end_date is already an unbounded
+  -- upper bound in Postgres, which is exactly what an open-ended lease means.
   constraint leases_no_active_overlap
     exclude using gist (
       stall_id with =,
-      daterange(start_date, coalesce(end_date, 'infinity'::date), '[]') with &&
+      daterange(start_date, end_date, '[]') with &&
     ) where (status = 'active')
 );
 
@@ -1968,7 +1969,7 @@ create table ceedo_collections.rates (
     exclude using gist (
       fee_type_id with =,
       rate_class with =,
-      daterange(effective_from, coalesce(effective_to, 'infinity'::date), '[]') with &&
+      daterange(effective_from, effective_to, '[]') with &&
     )
 );
 
@@ -2327,7 +2328,7 @@ create table ceedo_collections.booklet_assignments (
   constraint booklet_one_holder
     exclude using gist (
       booklet_id with =,
-      daterange(assigned_at, coalesce(returned_at, 'infinity'::date), '[]') with &&
+      daterange(assigned_at, returned_at, '[]') with &&
     )
 );
 
