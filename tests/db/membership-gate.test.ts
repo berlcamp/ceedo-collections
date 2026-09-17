@@ -45,18 +45,38 @@ describe("membership gate", () => {
 
   it("hides other users' rows from a collector", async () => {
     await createAppUser({ email: "collector2@example.com", role: "collector" });
-    const { client } = await createAppUser({
+    const { client, userId } = await createAppUser({
       email: "collector3@example.com",
       role: "collector",
     });
     const { data } = await client.from("app_users").select("id");
-    expect(data).toHaveLength(1);
+    // Not just a count: a policy that returned exactly one wrong row would also pass a
+    // length-only assertion. Assert it is specifically the caller's own row.
+    expect(data).toEqual([{ id: userId }]);
   });
 
   it("lets an admin read every user", async () => {
     const { client } = await createAppUser({ email: "admin1@example.com", role: "admin" });
     const { data } = await client.from("app_users").select("id");
-    expect((data ?? []).length).toBeGreaterThan(1);
+    const { count } = await serviceClient()
+      .from("app_users")
+      .select("id", { count: "exact", head: true });
+    // Compared against the service-client count taken at the same moment, not a fixed
+    // number: this test must stand alone (e.g. `vitest -t` in isolation) as well as in
+    // the full suite, where earlier tests have already left other rows behind.
+    expect(data).toHaveLength(count ?? -1);
+  });
+
+  it("lets a supervisor read every user", async () => {
+    const { client } = await createAppUser({ email: "sup-read@example.com", role: "supervisor" });
+    const { data } = await client.from("app_users").select("id");
+    const { count } = await serviceClient()
+      .from("app_users")
+      .select("id", { count: "exact", head: true });
+    // This is the test that guards app_users_read_all specifically: app_users_admin_write
+    // is FOR ALL, so its USING clause backstops SELECT for admins even if read_all is
+    // deleted. Supervisor and accounting are the only two roles read_all uniquely serves.
+    expect(data).toHaveLength(count ?? -1);
   });
 
   it("treats a suspended user as having no role", async () => {
@@ -67,6 +87,17 @@ describe("membership gate", () => {
     await serviceClient().from("app_users").update({ status: "suspended" }).eq("id", userId);
     const { data } = await client.rpc("active_role");
     expect(data).toBeNull();
+  });
+
+  it("hides a suspended user's own row from a table read", async () => {
+    const { client, userId } = await createAppUser({
+      email: "suspended2@example.com",
+      role: "accounting",
+    });
+    await serviceClient().from("app_users").update({ status: "suspended" }).eq("id", userId);
+    const { data, error } = await client.from("app_users").select("id");
+    expect(error).toBeNull();
+    expect(data).toEqual([]);
   });
 
   it("refuses a collector attempting to promote themselves", async () => {

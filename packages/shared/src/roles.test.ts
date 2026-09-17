@@ -3,6 +3,7 @@ import {
   canManageMasterData,
   canResolveExceptions,
   canUseWeb,
+  canVerifyRemittance,
   canViewReports,
   ROLES,
 } from "./roles.js";
@@ -28,5 +29,9 @@ describe("role predicates", () => {
 
   it("hides reports from collectors only", () => {
     expect(ROLES.filter((role) => !canViewReports(role))).toEqual(["collector"]);
+  });
+
+  it("allows accounting and admins to verify remittance", () => {
+    expect(ROLES.filter(canVerifyRemittance)).toEqual(["accounting", "admin"]);
   });
 });

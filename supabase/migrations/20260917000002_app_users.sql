@@ -31,6 +31,10 @@ create trigger app_users_updated_at
 --
 -- security definer because the function reads app_users while app_users' own policies
 -- are being evaluated.
+--
+-- Depends on app_users NOT having FORCE ROW LEVEL SECURITY: this function is owned by the
+-- table's owner and so bypasses RLS when reading it. Enabling force RLS here would make
+-- the policies recurse through this function infinitely.
 create or replace function ceedo_collections.active_role()
 returns ceedo_collections.app_role
 language sql
@@ -76,8 +80,24 @@ create policy app_users_admin_write on ceedo_collections.app_users
   using (ceedo_collections.is_admin())
   with check (ceedo_collections.is_admin());
 
-grant select on ceedo_collections.app_users to authenticated;
+-- pin_hash is deliberately absent. PIN verification happens server-side in a Phase 3
+-- Edge Function; no web client, at any role, has a reason to read the hash itself.
+grant select (id, employee_no, full_name, role, status, created_at, updated_at, row_version)
+  on ceedo_collections.app_users to authenticated;
 grant insert, update, delete on ceedo_collections.app_users to authenticated;
+
+revoke execute on function ceedo_collections.active_role() from public;
+revoke execute on function ceedo_collections.has_role(variadic ceedo_collections.app_role[]) from public;
+revoke execute on function ceedo_collections.is_admin() from public;
+
 grant execute on function ceedo_collections.active_role() to authenticated, anon;
 grant execute on function ceedo_collections.has_role(variadic ceedo_collections.app_role[]) to authenticated;
 grant execute on function ceedo_collections.is_admin() to authenticated;
+
+-- Nothing in this system is served to anonymous callers: the web app authenticates via
+-- Google and the collector app goes through Edge Functions. Task 3's default-privileges
+-- grant would otherwise make every future table (including the Phase 2 ledger) readable
+-- by anon as soon as one policy omits an explicit role list.
+alter default privileges in schema ceedo_collections revoke select on tables from anon;
+revoke select on all tables in schema ceedo_collections from anon;
+revoke usage on schema ceedo_collections from anon;

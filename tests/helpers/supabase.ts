@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { Role } from "@ceedo/shared";
 import { createClient } from "@supabase/supabase-js";
 
 /**
@@ -37,8 +38,6 @@ export function anonClient() {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
-
-export type Role = "collector" | "supervisor" | "accounting" | "admin";
 
 /**
  * The client type, inferred rather than annotated. A bare `SupabaseClient` defaults its
