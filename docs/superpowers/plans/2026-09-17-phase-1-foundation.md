@@ -2667,6 +2667,12 @@ create table ceedo_collections.devices (
   row_version   bigint not null default 0
 );
 
+-- Referenced by the composite foreign keys below, so an assignment cannot name a section
+-- belonging to some other facility. `sections` already enforces the analogous invariant
+-- through assert_market_facility; these tables must not be the gap.
+alter table ceedo_collections.sections
+  add constraint sections_id_facility_key unique (id, facility_id);
+
 -- Determines WHAT SYNCS to the tablet. Scoping to the device rather than the
 -- collector keeps the payload stable as collectors rotate through it.
 create table ceedo_collections.device_assignments (
@@ -2676,7 +2682,13 @@ create table ceedo_collections.device_assignments (
   section_id  uuid references ceedo_collections.sections (id),
   active      boolean not null default true,
   created_at  timestamptz not null default now(),
-  row_version bigint not null default 0
+  row_version bigint not null default 0,
+
+  -- The named section must actually belong to the named facility. MATCH SIMPLE means a
+  -- NULL section_id (facility-wide assignment) skips this check, which is intended.
+  constraint device_assignments_section_in_facility
+    foreign key (section_id, facility_id)
+    references ceedo_collections.sections (id, facility_id)
 );
 
 create unique index device_assignments_one_active
@@ -2690,7 +2702,12 @@ create table ceedo_collections.collector_assignments (
   section_id   uuid references ceedo_collections.sections (id),
   active       boolean not null default true,
   created_at   timestamptz not null default now(),
-  row_version  bigint not null default 0
+  row_version  bigint not null default 0,
+
+  -- As above: a named section must belong to the named facility.
+  constraint collector_assignments_section_in_facility
+    foreign key (section_id, facility_id)
+    references ceedo_collections.sections (id, facility_id)
 );
 
 create index collector_assignments_collector_idx
@@ -2742,7 +2759,12 @@ select ceedo_collections.apply_master_data_policies('collector_assignments');
 - [ ] **Step 4: Reset and run**
 
 Run: `supabase db reset && pnpm vitest run tests/db/devices.test.ts`
-Expected: PASS — 7 tests.
+Expected: PASS — 13 tests. Cover the full overlap matrix, not a sample: collector-section
+with device-section (match and mismatch), collector facility-wide with device-section,
+collector-section with device facility-wide, both facility-wide, and different facilities.
+Then each negative condition independently — inactive device, inactive device assignment,
+inactive collector assignment, suspended user, non-collector role — so that fixing one
+cannot accidentally satisfy another.
 
 - [ ] **Step 5: Commit**
 
