@@ -250,3 +250,95 @@ export async function createUnregisteredAuthUser(
   const client = await signIn(email);
   return { userId, client };
 }
+
+/**
+ * Finds the seeded accruing market fee type matching an accrual period (`MKT_DAILY`,
+ * `MKT_MONTHLY`), or creates it if it does not exist yet — `weekly` has no seed row, and a
+ * `supabase db reset` skipped in a given test run must not be a hard requirement either.
+ */
+async function ensureAccrualFeeType(db: PgClient, accrualPeriod: string): Promise<string> {
+  const code =
+    accrualPeriod === "daily" ? "MKT_DAILY" : accrualPeriod === "monthly" ? "MKT_MONTHLY" : "MKT_WEEKLY";
+  const { rows } = await db.query(
+    "select id from ceedo_collections.fee_types where code = $1",
+    [code],
+  );
+  if (rows.length > 0) return rows[0].id as string;
+
+  const { rows: created } = await db.query(
+    `insert into ceedo_collections.fee_types (code, name, accrues, surcharge_bps)
+     values ($1, $2, true, 300)
+     returning id`,
+    [code, `Market stall rental (${accrualPeriod})`],
+  );
+  return created[0].id as string;
+}
+
+/**
+ * Builds a minimal facility -> section -> stall -> tenant -> lease chain plus the matching
+ * accruing fee type, over a direct Postgres connection (as table owner, so it works
+ * regardless of client-role privileges — every ledger test needs this same chain, which is
+ * why it lives here rather than being rebuilt per test file.
+ *
+ * `db` must already be connected; the caller owns its lifecycle (connect/end).
+ */
+export async function createLeaseFixture(
+  db: PgClient,
+  opts: {
+    accrualPeriod?: "daily" | "weekly" | "monthly";
+    startDate?: string;
+    endDate?: string | null;
+    dueDay?: number | null;
+    rateAmount?: number;
+    status?: "active" | "ended" | "terminated";
+  } = {},
+): Promise<{ leaseId: string; feeTypeId: string; stallId: string; tenantId: string }> {
+  const accrualPeriod = opts.accrualPeriod ?? "daily";
+  const startDate = opts.startDate ?? "2026-01-01";
+  const endDate = opts.endDate ?? null;
+  // due_day is required for a monthly lease (leases_monthly_needs_due_day) and constrained
+  // to 1-28 (leases.due_day check); irrelevant, so left null, for daily/weekly.
+  const dueDay = opts.dueDay ?? (accrualPeriod === "monthly" ? 5 : null);
+  const rateAmount = opts.rateAmount ?? 100.0;
+  const status = opts.status ?? "active";
+
+  const facilityCode = uniqueCode("LFX");
+  const { rows: facilityRows } = await db.query(
+    `insert into ceedo_collections.facilities (code, name, type)
+     values ($1, $2, 'market') returning id`,
+    [facilityCode, `Lease Fixture Market ${facilityCode}`],
+  );
+  const facilityId = facilityRows[0].id as string;
+
+  const { rows: sectionRows } = await db.query(
+    `insert into ceedo_collections.sections (facility_id, name, default_accrual_period)
+     values ($1, $2, $3) returning id`,
+    [facilityId, `Section ${uniqueCode("SEC")}`, accrualPeriod],
+  );
+  const sectionId = sectionRows[0].id as string;
+
+  const { rows: stallRows } = await db.query(
+    `insert into ceedo_collections.stalls (section_id, stall_no) values ($1, '01') returning id`,
+    [sectionId],
+  );
+  const stallId = stallRows[0].id as string;
+
+  const { rows: tenantRows } = await db.query(
+    `insert into ceedo_collections.tenants (full_name) values ($1) returning id`,
+    [`Lease Fixture Tenant ${uniqueCode("TEN")}`],
+  );
+  const tenantId = tenantRows[0].id as string;
+
+  const feeTypeId = await ensureAccrualFeeType(db, accrualPeriod);
+
+  const { rows: leaseRows } = await db.query(
+    `insert into ceedo_collections.leases
+       (stall_id, tenant_id, start_date, end_date, rate_amount, accrual_period, due_day, status)
+     values ($1, $2, $3, $4, $5, $6, $7, $8)
+     returning id`,
+    [stallId, tenantId, startDate, endDate, rateAmount, accrualPeriod, dueDay, status],
+  );
+  const leaseId = leaseRows[0].id as string;
+
+  return { leaseId, feeTypeId, stallId, tenantId };
+}
