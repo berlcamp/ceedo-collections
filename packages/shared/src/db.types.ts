@@ -57,6 +57,8 @@ export type Database = {
           entity: string
           entity_id: string | null
           id: number
+          note: string | null
+          pg_role: string
         }
         Insert: {
           action: string
@@ -67,6 +69,8 @@ export type Database = {
           entity: string
           entity_id?: string | null
           id?: never
+          note?: string | null
+          pg_role: string
         }
         Update: {
           action?: string
@@ -77,6 +81,8 @@ export type Database = {
           entity?: string
           entity_id?: string | null
           id?: never
+          note?: string | null
+          pg_role?: string
         }
         Relationships: [
           {
