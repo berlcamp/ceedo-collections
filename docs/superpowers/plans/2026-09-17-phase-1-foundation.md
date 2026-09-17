@@ -851,8 +851,19 @@ describe("membership gate", () => {
       email: "collector4@example.com",
       role: "collector",
     });
-    const { error } = await client.from("app_users").update({ role: "admin" }).eq("id", userId);
-    expect(error).not.toBeNull();
+
+    await client.from("app_users").update({ role: "admin" }).eq("id", userId);
+
+    // Assert the stored role, not an error. An UPDATE filtered out by a policy's
+    // USING clause affects zero rows and returns no error at all — only a WITH CHECK
+    // violation raises 42501. Asserting on the error would fail while the security
+    // property it is meant to protect holds perfectly well.
+    const { data } = await serviceClient()
+      .from("app_users")
+      .select("role")
+      .eq("id", userId)
+      .single();
+    expect(data!.role).toBe("collector");
   });
 });
 ```
@@ -866,9 +877,16 @@ Add `import { randomUUID } from "node:crypto";` to the **top** of
 
 export type Role = "collector" | "supervisor" | "accounting" | "admin";
 
+/**
+ * The client type, inferred rather than annotated. A bare `SupabaseClient` defaults its
+ * schema generic to "public" and will not accept a client built with
+ * `db: { schema: "ceedo_collections" }` under exactOptionalPropertyTypes.
+ */
+export type TestClient = ReturnType<typeof anonClient>;
+
 const PASSWORD = "test-password-not-a-secret";
 
-async function signIn(email: string): Promise<SupabaseClient> {
+async function signIn(email: string): Promise<TestClient> {
   const client = anonClient();
   const { error } = await client.auth.signInWithPassword({ email, password: PASSWORD });
   if (error) throw new Error(`Sign-in failed for ${email}: ${error.message}`);
@@ -892,7 +910,7 @@ export async function createAppUser(opts: {
   role: Role;
   employeeNo?: string;
   fullName?: string;
-}): Promise<{ client: SupabaseClient; userId: string }> {
+}): Promise<{ client: TestClient; userId: string }> {
   const userId = await createAuthUser(opts.email);
   const { error } = await serviceClient().from("app_users").insert({
     id: userId,
@@ -906,7 +924,7 @@ export async function createAppUser(opts: {
 }
 
 /** Authenticated against the shared Supabase project but NOT registered in this system. */
-export async function createOutsiderClient(): Promise<SupabaseClient> {
+export async function createOutsiderClient(): Promise<TestClient> {
   const email = `outsider-${randomUUID().slice(0, 8)}@example.com`;
   await createAuthUser(email);
   return signIn(email);
