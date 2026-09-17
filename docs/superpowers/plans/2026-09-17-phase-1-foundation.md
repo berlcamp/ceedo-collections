@@ -3433,6 +3433,9 @@ export interface ResourceConfig<S extends ZodObject<ZodRawShape> = ZodObject<Zod
   /** PostgREST select expression, including any joined labels. */
   select: string;
   orderBy: string;
+  /** Column shown when this resource is another field's optionsFrom source. Guessing
+   *  name/code silently yields empty dropdowns for stalls and leases, which have neither. */
+  optionLabel: string;
   writeRoles: readonly Role[];
 }
 
@@ -3982,6 +3985,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, code, name, type, active",
     orderBy: "code",
+    optionLabel: "name",
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -4018,6 +4022,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, name, default_accrual_period, active, facilities(name)",
     orderBy: "name",
+    optionLabel: "name",
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -4045,6 +4050,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, stall_no, area_sqm, active, sections(name)",
     orderBy: "stall_no",
+    optionLabel: "stall_no",
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -4071,6 +4077,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, full_name, address, contact_no, active",
     orderBy: "full_name",
+    optionLabel: "full_name",
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -4128,6 +4135,7 @@ const configs: ResourceConfig[] = [
     select:
       "id, start_date, end_date, rate_amount, accrual_period, due_day, status, stalls(stall_no), tenants(full_name)",
     orderBy: "start_date",
+    optionLabel: "start_date",
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -4157,6 +4165,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, code, name, accrues, surcharge_bps, active",
     orderBy: "code",
+    optionLabel: "name",
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -4202,6 +4211,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, rate_class, effective_from, effective_to, amount, basis, fee_types(name)",
     orderBy: "effective_from",
+    optionLabel: "effective_from",
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -4221,6 +4231,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, code, name, active",
     orderBy: "code",
+    optionLabel: "code",
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -4264,6 +4275,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, serial_prefix, start_no, end_no, received_date, status, form_types(code)",
     orderBy: "start_no",
+    optionLabel: "serial_prefix",
     writeRoles: SUPERVISOR_UP,
   },
   {
@@ -4284,6 +4296,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, label, registered_at, last_seen_at, active",
     orderBy: "label",
+    optionLabel: "label",
     writeRoles: SUPERVISOR_UP,
   },
   {
@@ -4329,6 +4342,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, employee_no, full_name, role, status",
     orderBy: "full_name",
+    optionLabel: "full_name",
     writeRoles: ADMIN_ONLY,
   },
 ];
