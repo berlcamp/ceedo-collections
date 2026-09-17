@@ -53,6 +53,13 @@ select id, 'goat', '2026-01-01', 45.00, 'per_head' from ceedo_collections.fee_ty
 insert into ceedo_collections.form_types (code, name) values
   ('OR51', 'Official Receipt (Accountable Form 51)');
 
+-- Every later Phase 2 task's test dates are designed against this exact cutover date.
+-- `on conflict (id) do nothing` makes this idempotent across reseeds; settings.test.ts is
+-- the one file allowed to delete/mutate this row, and restores this exact date afterward.
+insert into ceedo_collections.settings (cutover_date)
+values ('2026-10-01')
+on conflict (id) do nothing;
+
 -- First administrator.
 --
 -- A fresh database has no app_users rows, and app_users.id references auth.users(id), which
