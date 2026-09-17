@@ -6,7 +6,7 @@
 
 **Architecture:** A pnpm monorepo with a Next.js web app and a pure-TypeScript `shared` package holding money arithmetic, rate resolution and OR validation. Postgres schema lives in plain SQL migrations under the Supabase CLI. Every table's access is gated by an `app_users` membership lookup rather than by Supabase's `authenticated` role, because `auth.users` is shared with unrelated projects on the same Supabase instance.
 
-**Tech Stack:** pnpm 10 workspaces, Turborepo, TypeScript 5.7+, Next.js 16 (App Router), React 19, Tailwind CSS 4, shadcn/ui, Supabase (Postgres 15 + Auth), Vitest 3, zod 4, Node 24.
+**Tech Stack:** pnpm 10 workspaces, Turborepo, TypeScript 5.7+, Next.js 16 (App Router), React 19, Tailwind CSS 4, shadcn/ui, Supabase (Postgres 15 + Auth), Vitest 3, zod 4, Node 22 LTS.
 
 **Spec:** `docs/superpowers/specs/2026-09-17-ceedo-collections-design.md`
 
@@ -24,7 +24,7 @@ Copied verbatim from the spec. Every task's requirements implicitly include thes
 - **`UPDATE` and `DELETE` are never granted on ledger tables** (`charges`, `collections`, `collection_allocations`, `collection_lines`). Phase 1 creates no ledger tables; Phase 2 must create them with these grants withheld from the start.
 - **Edge Functions must not use `service_role`.** Phase 1 creates no Edge Functions; the restricted role `ceedo_app` is created here for Phase 3 to use.
 - **Devices carry no `collector_id`.** Tablets are shared.
-- Node 24, pnpm 10. Package manager is pinned via `packageManager` in the root `package.json`.
+- **Node >= 22**, pnpm 10. Package manager is pinned via `packageManager` in the root `package.json`. (Ruled at pre-flight: the target machine runs Node v22.23.1 LTS; the stack supports it.)
 
 ## File Structure
 
@@ -87,7 +87,7 @@ packages:
   "name": "ceedo-collections",
   "private": true,
   "packageManager": "pnpm@10.0.0",
-  "engines": { "node": ">=24" },
+  "engines": { "node": ">=22" },
   "scripts": {
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
@@ -142,8 +142,12 @@ packages:
 `vitest.workspace.ts`:
 
 ```ts
-export default ["packages/*", "tests"];
+export default ["packages/*"];
 ```
+
+Only list directories that exist. Vitest exits non-zero on a workspace glob that
+matches nothing, so `tests` is added by Task 3 and `apps/web` by Task 11, each when
+it creates that directory.
 
 `.gitignore`:
 
@@ -219,12 +223,14 @@ jobs:
       - uses: pnpm/action-setup@v4
         with: { version: 10 }
       - uses: actions/setup-node@v4
-        with: { node-version: 24, cache: pnpm }
+        with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - uses: supabase/setup-cli@v1
         with: { version: latest }
       - run: supabase start
+      # Exports API_URL, ANON_KEY and SERVICE_ROLE_KEY, which the test helpers read.
+      - run: supabase status -o env >> "$GITHUB_ENV"
       - run: pnpm test
 ```
 
@@ -382,9 +388,20 @@ Expected: FAIL — cannot resolve `./money.js`.
  */
 export type Centavos = number & { readonly __brand: "Centavos" };
 
-/** Rounds half away from zero. All amounts here are non-negative in practice. */
+/**
+ * Rounds half away from zero. All amounts here are non-negative in practice.
+ *
+ * The `toFixed(9)` is not cosmetic. A value that is mathematically x.5 may be
+ * stored as x.49999999999999 — `1.005 * 100` is `100.49999999999999` — and
+ * `floor(x + 0.5)` would then round it DOWN, silently breaking half-up on
+ * exactly the inputs the rule exists for. Normalising to 9 decimal places first
+ * restores the intended decimal value; 9 is far below the precision at which a
+ * genuine sub-half value could be promoted, and far above any peso amount's
+ * significant digits.
+ */
 function roundHalfUp(value: number): number {
-  return Math.sign(value) * Math.floor(Math.abs(value) + 0.5);
+  const normalised = Number(value.toFixed(9));
+  return Math.sign(normalised) * Math.floor(Math.abs(normalised) + 0.5);
 }
 
 export function fromCentavos(n: number): Centavos {
@@ -452,7 +469,7 @@ export * from "./money.js";
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `pnpm vitest run packages/shared/src/money.test.ts`
-Expected: PASS — 18 tests.
+Expected: PASS — 19 tests.
 
 - [ ] **Step 6: Commit**
 
@@ -555,15 +572,43 @@ $$;
 
 grant usage on schema ceedo_collections to ceedo_app, anon, authenticated, service_role;
 
-alter default privileges in schema ceedo_collections
-  grant select on tables to anon, authenticated;
+-- No default SELECT for anon or authenticated. This schema's security model is explicit
+-- denial, and an implicit table-level grant silently subsumes any narrower column-level
+-- grant written later — which is exactly how pin_hash stayed readable through two fix
+-- rounds while every test passed. Every table grants what it means to grant, explicitly:
+-- apply_master_data_policies() does this for master data, app_users does it by hand.
 alter default privileges in schema ceedo_collections
   grant select, insert, update, delete on tables to service_role;
 alter default privileges in schema ceedo_collections
   grant usage, select on sequences to anon, authenticated, service_role, ceedo_app;
+
+-- ALTER DEFAULT PRIVILEGES applies only to objects created AFTER it runs. row_version_seq
+-- was created above, so it needs an explicit grant or next_row_version() fails with
+-- "42501 permission denied for sequence row_version_seq".
+grant usage, select on sequence ceedo_collections.row_version_seq
+  to anon, authenticated, service_role, ceedo_app;
 ```
 
 - [ ] **Step 3: Create the test workspace and Supabase helpers**
+
+First register the `tests` directory in both workspace files. Task 1 scoped each to
+what existed at the time.
+
+`vitest.workspace.ts`:
+
+```ts
+export default ["packages/*", "tests"];
+```
+
+`pnpm-workspace.yaml` — without this, `"@ceedo/shared": "workspace:*"` in
+`tests/package.json` cannot resolve:
+
+```yaml
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "tests"
+```
 
 `tests/package.json`:
 
@@ -593,6 +638,12 @@ alter default privileges in schema ceedo_collections
 }
 ```
 
+`pnpm typecheck` runs across every workspace package, so `tests` must typecheck
+cleanly. If `@supabase/supabase-js` options or client generics collide with
+`exactOptionalPropertyTypes`, prefer dropping explicit return-type annotations and
+letting inference work over loosening the compiler flag — the flag is a global
+constraint and the helpers are the only place it bites.
+
 `tests/helpers/supabase.ts`:
 
 ```ts
@@ -602,14 +653,18 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
  * Local Supabase connection details. `supabase status -o env` prints these;
  * CI exports them before running the suite.
  */
-const URL = process.env.SUPABASE_URL ?? "http://127.0.0.1:54321";
-const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? "";
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+// `supabase status -o env` emits API_URL / ANON_KEY / SERVICE_ROLE_KEY. Accept those
+// as well as SUPABASE_-prefixed names so `eval $(supabase status -o env)` just works
+// locally while CI and hosted environments can use the explicit names.
+const URL = process.env.SUPABASE_URL ?? process.env.API_URL ?? "http://127.0.0.1:54321";
+const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? process.env.ANON_KEY ?? "";
+const SERVICE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SERVICE_ROLE_KEY ?? "";
 
 if (!ANON_KEY || !SERVICE_KEY) {
   throw new Error(
-    "SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY must be set. " +
-      "Run: eval $(supabase status -o env)",
+    "Supabase keys are not set. Start the local stack and export them:\n" +
+      "  supabase start && eval $(supabase status -o env)",
   );
 }
 
@@ -629,21 +684,6 @@ export function anonClient(): SupabaseClient {
     db: { schema: SCHEMA },
     auth: { persistSession: false, autoRefreshToken: false },
   });
-}
-
-/** Raw SQL against the local database, for asserting on grants and catalogue state. */
-export async function sql<T = unknown>(query: string): Promise<T[]> {
-  const response = await fetch(`${URL}/rest/v1/rpc/exec_sql`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: SERVICE_KEY,
-      Authorization: `Bearer ${SERVICE_KEY}`,
-    },
-    body: JSON.stringify({ query }),
-  });
-  if (!response.ok) throw new Error(`SQL failed: ${await response.text()}`);
-  return (await response.json()) as T[];
 }
 ```
 
@@ -814,8 +854,19 @@ describe("membership gate", () => {
       email: "collector4@example.com",
       role: "collector",
     });
-    const { error } = await client.from("app_users").update({ role: "admin" }).eq("id", userId);
-    expect(error).not.toBeNull();
+
+    await client.from("app_users").update({ role: "admin" }).eq("id", userId);
+
+    // Assert the stored role, not an error. An UPDATE filtered out by a policy's
+    // USING clause affects zero rows and returns no error at all — only a WITH CHECK
+    // violation raises 42501. Asserting on the error would fail while the security
+    // property it is meant to protect holds perfectly well.
+    const { data } = await serviceClient()
+      .from("app_users")
+      .select("role")
+      .eq("id", userId)
+      .single();
+    expect(data!.role).toBe("collector");
   });
 });
 ```
@@ -829,13 +880,46 @@ Add `import { randomUUID } from "node:crypto";` to the **top** of
 
 export type Role = "collector" | "supervisor" | "accounting" | "admin";
 
+/**
+ * The client type, inferred rather than annotated. A bare `SupabaseClient` defaults its
+ * schema generic to "public" and will not accept a client built with
+ * `db: { schema: "ceedo_collections" }` under exactOptionalPropertyTypes.
+ */
+export type TestClient = ReturnType<typeof anonClient>;
+
 const PASSWORD = "test-password-not-a-secret";
 
-async function signIn(email: string): Promise<SupabaseClient> {
+async function signIn(email: string): Promise<TestClient> {
   const client = anonClient();
   const { error } = await client.auth.signInWithPassword({ email, password: PASSWORD });
   if (error) throw new Error(`Sign-in failed for ${email}: ${error.message}`);
   return client;
+}
+
+/**
+ * Makes a fixture email collision-proof by tagging its local part.
+ *
+ * `resetFixtures` can clear `app_users`, but it cannot clear `auth.users` — that is
+ * shared GoTrue state on a shared Supabase project. Without this, running any suite a
+ * second time without `supabase db reset` fails on "email already registered", and
+ * every task from 5 onward uses fixed fixture addresses. Tests never assert on the
+ * address itself, only on the client and id that come back.
+ */
+function uniqueEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  return `${local}+${randomUUID().slice(0, 8)}@${domain}`;
+}
+
+/**
+ * Makes a fixture facility or fee-type code collision-proof.
+ *
+ * Same reasoning as uniqueEmail: resetFixtures() clears app_users but not master data, so
+ * re-running a suite without `supabase db reset` collides on fixed codes. It fails loudly
+ * rather than silently, but it has twice been mistaken for a real failure while debugging
+ * something else. Tests never assert on the code itself.
+ */
+export function uniqueCode(prefix: string): string {
+  return `${prefix}-${randomUUID().slice(0, 6).toUpperCase()}`;
 }
 
 async function createAuthUser(email: string): Promise<string> {
@@ -855,8 +939,9 @@ export async function createAppUser(opts: {
   role: Role;
   employeeNo?: string;
   fullName?: string;
-}): Promise<{ client: SupabaseClient; userId: string }> {
-  const userId = await createAuthUser(opts.email);
+}): Promise<{ client: TestClient; userId: string }> {
+  const email = uniqueEmail(opts.email);
+  const userId = await createAuthUser(email);
   const { error } = await serviceClient().from("app_users").insert({
     id: userId,
     employee_no: opts.employeeNo ?? `E-${randomUUID().slice(0, 8)}`,
@@ -865,11 +950,11 @@ export async function createAppUser(opts: {
     status: "active",
   });
   if (error) throw new Error(`Could not create app_user: ${error.message}`);
-  return { client: await signIn(opts.email), userId };
+  return { client: await signIn(email), userId };
 }
 
 /** Authenticated against the shared Supabase project but NOT registered in this system. */
-export async function createOutsiderClient(): Promise<SupabaseClient> {
+export async function createOutsiderClient(): Promise<TestClient> {
   const email = `outsider-${randomUUID().slice(0, 8)}@example.com`;
   await createAuthUser(email);
   return signIn(email);
@@ -926,7 +1011,12 @@ create trigger app_users_updated_at
 -- on this Supabase project, so being signed in proves nothing about access here.
 --
 -- security definer because the function reads app_users while app_users' own policies
--- are being evaluated.
+-- are being evaluated. Note is_admin() and has_role() are security INVOKER and inherit
+-- that reach through this function — that layering is what stops the policies recursing.
+--
+-- Depends on app_users NOT having FORCE ROW LEVEL SECURITY: this function is owned by the
+-- table's owner and so bypasses RLS when reading it. Enabling force RLS here would make
+-- the policies recurse through this function infinitely.
 create or replace function ceedo_collections.active_role()
 returns ceedo_collections.app_role
 language sql
@@ -972,17 +1062,51 @@ create policy app_users_admin_write on ceedo_collections.app_users
   using (ceedo_collections.is_admin())
   with check (ceedo_collections.is_admin());
 
-grant select on ceedo_collections.app_users to authenticated;
+-- Defensive: ensure the column list below is the ONLY SELECT path, whatever preceded it.
+-- A table-level grant is wider than a column-level one and silently wins.
+revoke select on ceedo_collections.app_users from authenticated;
+
+-- pin_hash is deliberately absent from this column list. PIN verification happens
+-- server-side in a Phase 3 Edge Function; no web client, at any role, has a reason to
+-- read the hash itself. A table-level grant here would expose it to supervisor and
+-- accounting for every user — an offline-cracking surface handed to two non-admin roles.
+grant select (id, employee_no, full_name, role, status, created_at, updated_at, row_version)
+  on ceedo_collections.app_users to authenticated;
 grant insert, update, delete on ceedo_collections.app_users to authenticated;
-grant execute on function ceedo_collections.active_role() to authenticated, anon;
+
+revoke execute on function ceedo_collections.active_role() from public;
+revoke execute on function ceedo_collections.has_role(variadic ceedo_collections.app_role[]) from public;
+revoke execute on function ceedo_collections.is_admin() from public;
+
+grant execute on function ceedo_collections.active_role() to authenticated;
 grant execute on function ceedo_collections.has_role(variadic ceedo_collections.app_role[]) to authenticated;
 grant execute on function ceedo_collections.is_admin() to authenticated;
+
+-- Nothing in this system is served to anonymous callers: the web app authenticates via
+-- Google and the collector app goes through Edge Functions. Task 3's default-privileges
+-- grant would otherwise make every future table — including the Phase 2 cash ledger —
+-- readable by anon the moment one policy omits an explicit role list.
+alter default privileges in schema ceedo_collections revoke select on tables from anon;
+revoke select on all tables in schema ceedo_collections from anon;
+revoke usage on schema ceedo_collections from anon;
 ```
+
+**Test that `pin_hash` is unreadable by every web role** — supervisor, accounting and
+admin. PostgREST rejects the whole query with 42501 rather than silently omitting the
+column, so the error is the pass condition; verify that behaviour empirically before
+writing the assertion rather than assuming it. Without these tests the suite passes at
+full green while the hash is readable, which is what happened here.
+
+**Two tests must be written so they fail if their policy is deleted.** `app_users_admin_write`
+is `FOR ALL`, so its `USING` backstops `SELECT` for admins — meaning an admin-read test
+passes even with `app_users_read_all` dropped. Cover the roles that policy uniquely serves
+(supervisor, accounting) with a read test, and assert row counts against the service client
+rather than `toBeGreaterThan(1)`, which also removes the order dependency.
 
 - [ ] **Step 5: Reset and run the tests**
 
 Run: `supabase db reset && pnpm vitest run tests/db/membership-gate.test.ts`
-Expected: PASS — 8 tests.
+Expected: PASS — 10 tests.
 
 - [ ] **Step 6: Add the role predicates to `@ceedo/shared`**
 
@@ -1270,6 +1394,32 @@ create trigger sections_market_only
   before insert or update on ceedo_collections.sections
   for each row execute function ceedo_collections.assert_market_facility();
 
+-- The other half of the invariant. sections_market_only stops a section being attached to
+-- a non-market facility; this stops a market being reclassified out from under sections
+-- that already exist. An orphaned section is a stall tree hanging off a terminal, which
+-- corrupts collection reports and the Phase 3 sync scoping that keys off facility type.
+create or replace function ceedo_collections.assert_facility_keeps_sections_valid()
+returns trigger
+language plpgsql
+set search_path = ceedo_collections, pg_temp
+as $$
+begin
+  if old.type = 'market'
+     and new.type is distinct from 'market'
+     and exists (select 1 from ceedo_collections.sections where facility_id = old.id)
+  then
+    raise exception
+      'Cannot change facility % from market to % while it still has sections', old.code, new.type
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger facilities_keep_sections_valid
+  before update on ceedo_collections.facilities
+  for each row execute function ceedo_collections.assert_facility_keeps_sections_valid();
+
 create table ceedo_collections.stalls (
   id          uuid primary key default gen_random_uuid(),
   section_id  uuid not null references ceedo_collections.sections (id),
@@ -1292,7 +1442,9 @@ select ceedo_collections.apply_master_data_policies('stalls');
 - [ ] **Step 4: Reset and run**
 
 Run: `supabase db reset && pnpm vitest run tests/db/facilities.test.ts`
-Expected: PASS — 6 tests.
+Expected: PASS — 8 tests. Test both directions of the type guard: reclassifying a market
+that has sections must fail, and reclassifying an empty market must succeed — a guard that
+blocks everything passes the first test while being wrong.
 
 - [ ] **Step 5: Commit**
 
@@ -1490,11 +1642,12 @@ create table ceedo_collections.leases (
   constraint leases_monthly_needs_due_day
     check (accrual_period <> 'monthly' or due_day is not null),
 
-  -- One active tenancy per stall at a time. 'infinity' models an open-ended lease.
+  -- One active tenancy per stall at a time. A NULL end_date is already an unbounded
+  -- upper bound in Postgres, which is exactly what an open-ended lease means.
   constraint leases_no_active_overlap
     exclude using gist (
       stall_id with =,
-      daterange(start_date, coalesce(end_date, 'infinity'::date), '[]') with &&
+      daterange(start_date, end_date, '[]') with &&
     ) where (status = 'active')
 );
 
@@ -1510,7 +1663,53 @@ select ceedo_collections.apply_master_data_policies('leases');
 Run: `supabase db reset && pnpm vitest run tests/db/leases.test.ts`
 Expected: PASS — 6 tests.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Prove the master-data tables are reachable by a real user**
+
+Task 4 removed this schema's implicit grants, so `apply_master_data_policies()` is the
+single point of failure for reachability across every master-data table. Every other
+database test uses `serviceClient()`, which bypasses RLS and would not notice if that
+installer stopped granting — the tables would go unreachable to real users while the suite
+stayed fully green.
+
+Create `tests/db/master-data-policies.test.ts`:
+
+```ts
+import { beforeAll, describe, expect, it } from "vitest";
+import { createAppUser, type TestClient } from "../helpers/supabase.js";
+
+/**
+ * Every table apply_master_data_policies() is applied to. LATER TASKS MUST EXTEND THIS:
+ * fee_types and rates (Task 7); form_types, booklets, booklet_assignments and
+ * spoiled_forms (Task 8); devices, device_assignments and collector_assignments (Task 9).
+ */
+const MASTER_DATA_TABLES = [
+  "facilities",
+  "sections",
+  "stalls",
+  "tenants",
+  "leases",
+] as const;
+
+describe("master data reachability", () => {
+  let collector: TestClient;
+
+  beforeAll(async () => {
+    collector = (await createAppUser({ email: "mdp-col@example.com", role: "collector" })).client;
+  });
+
+  it.each(MASTER_DATA_TABLES)("lets a signed-in collector select from %s", async (table) => {
+    const { error } = await collector.from(table).select("id").limit(1);
+    expect(error).toBeNull();
+  });
+});
+```
+
+`createAppUser`, never `serviceClient()` — a service-role client passes this test with every
+grant and policy removed, which would make it worthless. Verify it bites: revoke `select` on
+one table from `authenticated` via psql, re-run, confirm the suite fails on that table
+specifically, then `supabase db reset`.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add supabase tests
@@ -1828,7 +2027,7 @@ create table ceedo_collections.rates (
     exclude using gist (
       fee_type_id with =,
       rate_class with =,
-      daterange(effective_from, coalesce(effective_to, 'infinity'::date), '[]') with &&
+      daterange(effective_from, effective_to, '[]') with &&
     )
 );
 
@@ -1844,6 +2043,10 @@ Run: `supabase db reset && pnpm test`
 Expected: PASS — all suites.
 
 - [ ] **Step 8: Commit**
+
+Before committing, add `fee_types` and `rates` to `MASTER_DATA_TABLES` in
+`tests/db/master-data-policies.test.ts`. A table absent from that list has no proof it is
+reachable by a real signed-in user.
 
 ```bash
 git add supabase packages tests
@@ -1971,6 +2174,7 @@ export interface OrEntryContext {
 
 export type OrRejectReason =
   | "not_in_assigned_booklet"
+  | "ambiguous_booklet"
   | "already_consumed"
   | "marked_spoiled";
 
@@ -1991,10 +2195,17 @@ export function formatSerial(prefix: string, orNo: number): string {
  * booklets legitimately get skipped.
  */
 export function validateOrEntry(context: OrEntryContext, orNo: number): OrEntryResult {
-  const booklet = context.booklets.find(
+  // Never pick between candidates. Serial ranges may legitimately overlap across form
+  // types, so a collector can hold two booklets containing the same number. Choosing one
+  // silently would put a wrong booklet_id on a real receipt, and the vendor walks away
+  // with the paper. resolveRate refuses to choose between matching rates for the same
+  // reason — ambiguity is never resolved silently anywhere in this system.
+  const matches = context.booklets.filter(
     (candidate) => orNo >= candidate.startNo && orNo <= candidate.endNo,
   );
-  if (!booklet) return { ok: false, reason: "not_in_assigned_booklet" };
+  if (matches.length === 0) return { ok: false, reason: "not_in_assigned_booklet" };
+  if (matches.length > 1) return { ok: false, reason: "ambiguous_booklet" };
+  const booklet = matches[0]!;
   if (context.spoiled.has(orNo)) return { ok: false, reason: "marked_spoiled" };
   if (context.consumed.has(orNo)) return { ok: false, reason: "already_consumed" };
 
@@ -2156,6 +2367,9 @@ create table ceedo_collections.booklets (
   start_no      integer not null check (start_no > 0),
   end_no        integer not null,
   received_date date not null,
+  -- NOT AUTHORITATIVE. Nothing transitions this column; it is clerk-maintained and can
+  -- drift from reality. Reporting must derive booklet state from booklet_assignments and
+  -- spoiled_forms. Phase 6 adds transition logic or drops the column.
   status        ceedo_collections.booklet_status not null default 'received',
   created_at    timestamptz not null default now(),
   row_version   bigint not null default 0,
@@ -2187,7 +2401,7 @@ create table ceedo_collections.booklet_assignments (
   constraint booklet_one_holder
     exclude using gist (
       booklet_id with =,
-      daterange(assigned_at, coalesce(returned_at, 'infinity'::date), '[]') with &&
+      daterange(assigned_at, returned_at, '[]') with &&
     )
 );
 
@@ -2225,6 +2439,35 @@ create trigger booklet_assignments_collector_only
   before insert or update on ceedo_collections.booklet_assignments
   for each row execute function ceedo_collections.assert_assignee_is_collector();
 
+-- The other half of the accountability binding. The trigger above stops a booklet reaching
+-- a non-collector; this stops a collector being reclassified while still holding one.
+-- Without it a promoted collector keeps custody of accountable forms while gaining
+-- oversight of the collections they are accountable for — the segregation-of-duties
+-- failure an audit looks for first.
+create or replace function ceedo_collections.assert_no_held_booklets_on_role_change()
+returns trigger
+language plpgsql
+set search_path = ceedo_collections, pg_temp
+as $$
+begin
+  if old.role = 'collector' and new.role is distinct from 'collector'
+     and exists (
+       select 1 from ceedo_collections.booklet_assignments
+       where collector_id = old.id and returned_at is null
+     )
+  then
+    raise exception
+      'Cannot change % from collector to %: they still hold unreturned booklets', old.employee_no, new.role
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger app_users_no_held_booklets_on_role_change
+  before update on ceedo_collections.app_users
+  for each row execute function ceedo_collections.assert_no_held_booklets_on_role_change();
+
 create index booklet_assignments_collector_idx
   on ceedo_collections.booklet_assignments (collector_id) where returned_at is null;
 
@@ -2240,6 +2483,10 @@ Run: `supabase db reset && pnpm test`
 Expected: PASS — all suites.
 
 - [ ] **Step 8: Commit**
+
+Before committing, add `form_types`, `booklets`, `booklet_assignments` and `spoiled_forms` to `MASTER_DATA_TABLES` in
+`tests/db/master-data-policies.test.ts`. A table absent from that list has no proof it is
+reachable by a real signed-in user.
 
 ```bash
 git add supabase packages tests
@@ -2420,6 +2667,12 @@ create table ceedo_collections.devices (
   row_version   bigint not null default 0
 );
 
+-- Referenced by the composite foreign keys below, so an assignment cannot name a section
+-- belonging to some other facility. `sections` already enforces the analogous invariant
+-- through assert_market_facility; these tables must not be the gap.
+alter table ceedo_collections.sections
+  add constraint sections_id_facility_key unique (id, facility_id);
+
 -- Determines WHAT SYNCS to the tablet. Scoping to the device rather than the
 -- collector keeps the payload stable as collectors rotate through it.
 create table ceedo_collections.device_assignments (
@@ -2429,7 +2682,13 @@ create table ceedo_collections.device_assignments (
   section_id  uuid references ceedo_collections.sections (id),
   active      boolean not null default true,
   created_at  timestamptz not null default now(),
-  row_version bigint not null default 0
+  row_version bigint not null default 0,
+
+  -- The named section must actually belong to the named facility. MATCH SIMPLE means a
+  -- NULL section_id (facility-wide assignment) skips this check, which is intended.
+  constraint device_assignments_section_in_facility
+    foreign key (section_id, facility_id)
+    references ceedo_collections.sections (id, facility_id)
 );
 
 create unique index device_assignments_one_active
@@ -2443,7 +2702,12 @@ create table ceedo_collections.collector_assignments (
   section_id   uuid references ceedo_collections.sections (id),
   active       boolean not null default true,
   created_at   timestamptz not null default now(),
-  row_version  bigint not null default 0
+  row_version  bigint not null default 0,
+
+  -- As above: a named section must belong to the named facility.
+  constraint collector_assignments_section_in_facility
+    foreign key (section_id, facility_id)
+    references ceedo_collections.sections (id, facility_id)
 );
 
 create index collector_assignments_collector_idx
@@ -2495,9 +2759,18 @@ select ceedo_collections.apply_master_data_policies('collector_assignments');
 - [ ] **Step 4: Reset and run**
 
 Run: `supabase db reset && pnpm vitest run tests/db/devices.test.ts`
-Expected: PASS — 7 tests.
+Expected: PASS — 13 tests. Cover the full overlap matrix, not a sample: collector-section
+with device-section (match and mismatch), collector facility-wide with device-section,
+collector-section with device facility-wide, both facility-wide, and different facilities.
+Then each negative condition independently — inactive device, inactive device assignment,
+inactive collector assignment, suspended user, non-collector role — so that fixing one
+cannot accidentally satisfy another.
 
 - [ ] **Step 5: Commit**
+
+Before committing, add `devices`, `device_assignments` and `collector_assignments` to `MASTER_DATA_TABLES` in
+`tests/db/master-data-policies.test.ts`. A table absent from that list has no proof it is
+reachable by a real signed-in user.
 
 ```bash
 git add supabase tests
@@ -2624,7 +2897,7 @@ Then edit `apps/web/package.json`:
   },
   "dependencies": {
     "@ceedo/shared": "workspace:*",
-    "@supabase/ssr": "^0.6.0",
+    "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.48.0",
     "next": "^16.0.0",
     "react": "^19.0.0",
@@ -2639,6 +2912,13 @@ Add `apps/web` to `vitest.workspace.ts`:
 ```ts
 export default ["packages/*", "apps/web", "tests"];
 ```
+
+Deviations found necessary during implementation, all verified and recorded in
+`.superpowers/sdd/2026-09-17-phase-1-foundation/task-11-report.md`: `@supabase/ssr` must be
+^0.12.0 for `supabase-js` compatibility (its `getAll`/`setAll` cookie API is what the code
+below uses); `packages/shared` internal imports become extensionless for Turbopack, which is
+also closer to what Metro expects for the Phase 3 Expo app; `next.config.ts` needs
+`transpilePackages: ["@ceedo/shared"]`; and `.gitignore` needs `.env*` with `!.env.example`.
 
 `apps/web/.env.example`:
 
@@ -3034,6 +3314,12 @@ Phase 1 needs eleven CRUD screens. Writing eleven bespoke ones invites eleven sl
 - Create: `apps/web/components/resource-table.tsx`, `apps/web/components/resource-form.tsx`, `apps/web/components/field.tsx`
 - Create: `apps/web/app/(admin)/layout.tsx`, `apps/web/app/(admin)/[resource]/page.tsx`
 
+**Structural rule this task establishes:** `app/(admin)/layout.tsx` calls `requireStaff()`,
+and because a Server Component layout's redirect prevents its children rendering at all,
+every page inside that route group is gated structurally rather than by convention. **Every
+authenticated page from here on lives under `(admin)`.** Only `/sign-in`, `/no-access` and
+`/auth/callback` stay outside it.
+
 **Interfaces:**
 - Consumes: `requireStaff()`, `getServerClient()`, `Database`, `Role`, `canManageMasterData`
 - Produces:
@@ -3147,6 +3433,9 @@ export interface ResourceConfig<S extends ZodObject<ZodRawShape> = ZodObject<Zod
   /** PostgREST select expression, including any joined labels. */
   select: string;
   orderBy: string;
+  /** Column shown when this resource is another field's optionsFrom source. Guessing
+   *  name/code silently yields empty dropdowns for stalls and leases, which have neither. */
+  optionLabel: string;
   writeRoles: readonly Role[];
 }
 
@@ -3696,6 +3985,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, code, name, type, active",
     orderBy: "code",
+    optionLabel: "name",
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -3732,6 +4022,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, name, default_accrual_period, active, facilities(name)",
     orderBy: "name",
+    optionLabel: "name",
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -3759,6 +4050,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, stall_no, area_sqm, active, sections(name)",
     orderBy: "stall_no",
+    optionLabel: "stall_no",
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -3785,6 +4077,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, full_name, address, contact_no, active",
     orderBy: "full_name",
+    optionLabel: "full_name",
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -3842,6 +4135,7 @@ const configs: ResourceConfig[] = [
     select:
       "id, start_date, end_date, rate_amount, accrual_period, due_day, status, stalls(stall_no), tenants(full_name)",
     orderBy: "start_date",
+    optionLabel: "start_date",
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -3871,6 +4165,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, code, name, accrues, surcharge_bps, active",
     orderBy: "code",
+    optionLabel: "name",
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -3916,6 +4211,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, rate_class, effective_from, effective_to, amount, basis, fee_types(name)",
     orderBy: "effective_from",
+    optionLabel: "effective_from",
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -3935,6 +4231,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, code, name, active",
     orderBy: "code",
+    optionLabel: "code",
     writeRoles: ADMIN_ONLY,
   },
   {
@@ -3978,6 +4275,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, serial_prefix, start_no, end_no, received_date, status, form_types(code)",
     orderBy: "start_no",
+    optionLabel: "serial_prefix",
     writeRoles: SUPERVISOR_UP,
   },
   {
@@ -3998,6 +4296,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, label, registered_at, last_seen_at, active",
     orderBy: "label",
+    optionLabel: "label",
     writeRoles: SUPERVISOR_UP,
   },
   {
@@ -4043,6 +4342,7 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, employee_no, full_name, role, status",
     orderBy: "full_name",
+    optionLabel: "full_name",
     writeRoles: ADMIN_ONLY,
   },
 ];
@@ -4050,7 +4350,43 @@ const configs: ResourceConfig[] = [
 for (const config of configs) registerResource(config);
 ```
 
-- [ ] **Step 4: Write the seed**
+- [ ] **Step 4: Grant supervisors write access where the spec says they need it**
+
+`apply_master_data_policies()` grants writes to admins only, but spec §11.1 gives
+supervisors booklet assignment and return verification — and Task 13's configs give them
+write access to booklets and tablets. Without this migration a supervisor sees a form that
+always fails with 42501.
+
+Create `supabase/migrations/20260917000008_supervisor_writes.sql`:
+
+```sql
+-- Spec 11.1: supervisors assign booklets, verify returns, and manage the tablets their
+-- collectors use. apply_master_data_policies() is admin-only by design; RLS policies are
+-- permissive and OR together, so this adds supervisors alongside admins on exactly these
+-- five tables and changes nothing elsewhere.
+do $$
+declare
+  t text;
+begin
+  foreach t in array array[
+    'booklets', 'booklet_assignments', 'spoiled_forms', 'devices', 'device_assignments'
+  ]
+  loop
+    execute format(
+      'create policy %I on ceedo_collections.%I for all to authenticated
+         using (ceedo_collections.has_role(''supervisor'', ''admin''))
+         with check (ceedo_collections.has_role(''supervisor'', ''admin''))',
+      t || '_supervisor_write', t);
+  end loop;
+end;
+$$;
+```
+
+Test both directions: a supervisor can insert a booklet and a device; a **collector still
+cannot**; and an admin is unaffected. A policy that accidentally widened to all authenticated
+roles would pass the first assertion while being badly wrong.
+
+- [ ] **Step 5: Write the seed**
 
 `supabase/seed.sql`:
 
@@ -4107,12 +4443,12 @@ insert into ceedo_collections.form_types (code, name) values
   ('OR51', 'Official Receipt (Accountable Form 51)');
 ```
 
-- [ ] **Step 5: Reset, seed and run everything**
+- [ ] **Step 6: Reset, seed and run everything**
 
 Run: `supabase db reset && pnpm db:types && pnpm typecheck && pnpm build && pnpm test`
 Expected: all pass. `supabase db reset` applies `seed.sql` automatically.
 
-- [ ] **Step 6: Smoke-test the app by hand**
+- [ ] **Step 7: Smoke-test the app by hand**
 
 Run: `pnpm --filter @ceedo/web dev`
 
@@ -4123,10 +4459,10 @@ Then, with a Google OAuth client configured in `.env`:
 4. Sign in again — expect the admin shell listing Facilities through Staff.
 5. Open **Sections**, try adding a section to `IBJT` — expect the message "Sections may only belong to a market facility, not terminal".
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add apps/web/lib/admin/registry.ts supabase/seed.sql tests
+git add apps/web/lib/admin/registry.ts supabase/migrations supabase/seed.sql tests
 git commit -m "feat(web): register Phase 1 admin resources and add development seed"
 ```
 
@@ -4139,7 +4475,7 @@ git commit -m "feat(web): register Phase 1 admin resources and add development s
 Spec §11.4: every consequential action is logged with actor, timestamp, entity and before/after. Each action it names — changing a rate, assigning or returning a booklet, creating or deactivating a user — happens in Phase 1, so the log belongs here rather than later.
 
 **Files:**
-- Create: `supabase/migrations/20260917000008_audit_log.sql`
+- Create: `supabase/migrations/20260917000009_audit_log.sql`
 - Create: `tests/db/audit-log.test.ts`
 - Modify: `apps/web/lib/admin/registry.ts`
 
@@ -4269,7 +4605,7 @@ Expected: FAIL — relation `audit_log` does not exist.
 
 - [ ] **Step 3: Write the migration**
 
-`supabase/migrations/20260917000008_audit_log.sql`:
+`supabase/migrations/20260917000009_audit_log.sql`:
 
 ```sql
 create table ceedo_collections.audit_log (

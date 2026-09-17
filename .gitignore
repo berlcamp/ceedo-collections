@@ -1,0 +1,10 @@
+node_modules/
+.next/
+dist/
+.turbo/
+.env
+.env.local
+*.log
+supabase/.branches/
+supabase/.temp/
+.superpowers/
