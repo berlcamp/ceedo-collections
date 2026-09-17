@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { createAppUser, serviceClient } from "../helpers/supabase.js";
+import { createAppUser, serviceClient, uniqueCode } from "../helpers/supabase.js";
 
 const service = serviceClient();
 
@@ -10,7 +10,7 @@ describe("booklets", () => {
   beforeAll(async () => {
     const { data } = await service
       .from("form_types")
-      .insert({ code: "OR51", name: "Official Receipt (Accountable Form 51)" })
+      .insert({ code: uniqueCode("OR51"), name: "Official Receipt (Accountable Form 51)" })
       .select("id")
       .single();
     formTypeId = data!.id as string;
