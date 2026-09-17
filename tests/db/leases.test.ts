@@ -1,12 +1,12 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { serviceClient } from "../helpers/supabase.js";
+import { serviceClient, uniqueCode } from "../helpers/supabase.js";
 
 const service = serviceClient();
 
 async function makeStall(code: string): Promise<string> {
   const { data: facility } = await service
     .from("facilities")
-    .insert({ name: `Market ${code}`, code, type: "market" })
+    .insert({ name: `Market ${code}`, code: uniqueCode(code), type: "market" })
     .select("id")
     .single();
   const { data: section } = await service

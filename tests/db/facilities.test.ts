@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { createAppUser, serviceClient } from "../helpers/supabase.js";
+import { createAppUser, serviceClient, uniqueCode } from "../helpers/supabase.js";
 
 describe("facilities, sections and stalls", () => {
   let adminClient: Awaited<ReturnType<typeof createAppUser>>["client"];
@@ -14,14 +14,14 @@ describe("facilities, sections and stalls", () => {
   it("lets an admin create a facility", async () => {
     const { error } = await adminClient
       .from("facilities")
-      .insert({ name: "Central Public Market", code: "CPM", type: "market" });
+      .insert({ name: "Central Public Market", code: uniqueCode("CPM"), type: "market" });
     expect(error).toBeNull();
   });
 
   it("refuses a collector creating a facility", async () => {
     const { error } = await collectorClient
       .from("facilities")
-      .insert({ name: "Rogue Market", code: "RGM", type: "market" });
+      .insert({ name: "Rogue Market", code: uniqueCode("RGM"), type: "market" });
     expect(error).not.toBeNull();
   });
 
@@ -35,7 +35,7 @@ describe("facilities, sections and stalls", () => {
     const service = serviceClient();
     const { data: terminal } = await service
       .from("facilities")
-      .insert({ name: "IBJT", code: "IBJT", type: "terminal" })
+      .insert({ name: "IBJT", code: uniqueCode("IBJT"), type: "terminal" })
       .select("id")
       .single();
     const { error } = await service
@@ -48,7 +48,7 @@ describe("facilities, sections and stalls", () => {
     const service = serviceClient();
     const { data: created } = await service
       .from("facilities")
-      .insert({ name: "Satellite Market", code: "SAT", type: "market" })
+      .insert({ name: "Satellite Market", code: uniqueCode("SAT"), type: "market" })
       .select("id, row_version")
       .single();
     const { data: updated } = await service
@@ -64,7 +64,7 @@ describe("facilities, sections and stalls", () => {
     const service = serviceClient();
     const { data: facility } = await service
       .from("facilities")
-      .insert({ name: "Dup Market", code: "DUP", type: "market" })
+      .insert({ name: "Dup Market", code: uniqueCode("DUP"), type: "market" })
       .select("id")
       .single();
     const { data: section } = await service
@@ -83,7 +83,7 @@ describe("facilities, sections and stalls", () => {
     const service = serviceClient();
     const { data: facility } = await service
       .from("facilities")
-      .insert({ name: "Reclass Market", code: "RCL", type: "market" })
+      .insert({ name: "Reclass Market", code: uniqueCode("RCL"), type: "market" })
       .select("id")
       .single();
     await service
@@ -102,7 +102,7 @@ describe("facilities, sections and stalls", () => {
     const service = serviceClient();
     const { data: facility } = await service
       .from("facilities")
-      .insert({ name: "Empty Market", code: "EMT", type: "market" })
+      .insert({ name: "Empty Market", code: uniqueCode("EMT"), type: "market" })
       .select("id")
       .single();
 

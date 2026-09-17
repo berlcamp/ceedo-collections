@@ -69,6 +69,18 @@ function uniqueEmail(email: string): string {
   return `${local}+${randomUUID().slice(0, 8)}@${domain}`;
 }
 
+/**
+ * Makes a fixture facility or fee-type code collision-proof.
+ *
+ * resetFixtures() clears app_users but not master data, so re-running a suite without
+ * `supabase db reset` collides on fixed codes with a unique violation. That fails loudly
+ * rather than silently, but it has twice been mistaken for a real failure while debugging
+ * something else. Tests never assert on the code itself.
+ */
+export function uniqueCode(prefix: string): string {
+  return `${prefix}-${randomUUID().slice(0, 6).toUpperCase()}`;
+}
+
 async function createAuthUser(email: string): Promise<string> {
   const admin = createClient(URL, SERVICE_KEY, { auth: { persistSession: false } });
   const { data, error } = await admin.auth.admin.createUser({
