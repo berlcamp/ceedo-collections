@@ -114,6 +114,11 @@ sync contract — and their test suites — stay authoritative.
 All money is `numeric(14,2)` in Postgres and **integer centavos** in TypeScript.
 Rounding is **half-up to the centavo**, explicitly, and tested. Floats never touch a peso.
 
+**Percentage rates are stored as integer basis points**, never floats — 3% is `300`.
+A float rate misrounds exact half-centavo results: `0.03 * 8350` is `250.49999999999997`
+in IEEE 754 and floors to 250 where the correct half-up answer is 251. Integer
+arithmetic — `floor((amount * bps + 5000) / 10000)` — gives the right answer always.
+
 ### 5.1 Reference data
 
 - `facilities` — id, name, code, type
@@ -133,7 +138,7 @@ lines, never leases or charges.
 
 ### 5.2 Rates
 
-`fee_types` — id, code, name, accrues (bool)
+`fee_types` — id, code, name, accrues (bool), surcharge_bps (integer, 0–10000)
 
 `rates` — id, fee_type_id, effective_from, effective_to, amount, basis
 (`per_day` | `per_week` | `per_month` | `per_entry` | `per_head` | `per_sqm`),
@@ -159,7 +164,7 @@ balance: **used + spoiled + unused = total serials**.
 ### 5.4 Ledger
 
 `charges` — id, lease_id, fee_type_id, charge_type (`rental` | `surcharge`),
-parent_charge_id, period_start, period_end, **due_date**, amount, surcharge_rate,
+parent_charge_id, period_start, period_end, **due_date**, amount, surcharge_bps,
 status, row_version
 
 `collections` — **id (uuid, client-generated)**, or_no, booklet_id, collector_id,
@@ -353,10 +358,10 @@ Once a rental charge passes `due_date + interval '1 month'` unpaid, a single sur
 charge is raised:
 
 - `charge_type = 'surcharge'`, `parent_charge_id` pointing at the rental
-- Amount = **3% of the base rental amount**
+- Amount = **3% of the base rental amount**, computed as `floor((amount * 300 + 5000) / 10000)`
 - **One-time.** It does not recur and does not compound.
-- `surcharge_rate` is stamped onto the row, so a future ordinance change cannot alter
-  a receipt already issued.
+- `surcharge_bps` is stamped onto the row as an integer, so a future ordinance change
+  cannot alter a receipt already issued.
 
 Guarded by a unique index on `(parent_charge_id, charge_type)`. Calendar-month
 arithmetic, so a 31 January charge becomes delinquent on 28 February.
