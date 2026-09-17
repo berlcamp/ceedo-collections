@@ -10,8 +10,6 @@ import { createAppUser, type TestClient } from "../helpers/supabase.js";
  * tables reachable by a real signed-in user, and every other database test uses
  * serviceClient(), which bypasses RLS and would not notice if it broke.
  *
- * Later tasks MUST add their tables here: devices, device_assignments
- * and collector_assignments (Task 9).
  */
 const MASTER_DATA_TABLES = [
   "facilities",
@@ -25,6 +23,9 @@ const MASTER_DATA_TABLES = [
   "booklets",
   "booklet_assignments",
   "spoiled_forms",
+  "devices",
+  "device_assignments",
+  "collector_assignments",
 ] as const;
 
 describe("master data reachability", () => {
