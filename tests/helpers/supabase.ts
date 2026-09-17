@@ -374,6 +374,30 @@ async function ensureFormType(db: PgClient): Promise<string> {
 export const SEEDED_CUTOVER_DATE = "2026-10-01";
 
 /**
+ * The serial range on the booklet `createCollectionFixture` builds, exported so a test
+ * picking OR numbers checks itself against the fixture instead of against a comment.
+ */
+export const FIXTURE_BOOKLET_START_NO = 1000;
+export const FIXTURE_BOOKLET_END_NO = 1999;
+
+/**
+ * When the fixture booklet was received and handed to its collector. A FIXED date, not
+ * `current_date - 30` / `current_date - 7`.
+ *
+ * post_collection authorises a post by checking that the booklet was assigned to the
+ * collector ON THE BUSINESS DATE, and every Phase 2 test posts at a fixed 2026-10-05 --
+ * fixed because the suite's real wall-clock date is before the seeded 2026-10-01 cutover,
+ * so nothing accrues at `current_date` at all. An assignment dated relative to today
+ * therefore walks forward while the collection date stands still, and on 2026-10-13
+ * `current_date - 7` would overtake 2026-10-05 and fail every post in
+ * post-collection.test.ts with `booklet_not_assigned` -- on a day nobody changed anything,
+ * blaming whatever commit happened to land that morning. A fixture that expires is worse
+ * than one that is simply wrong, so both dates are literals well before any test's
+ * collection date.
+ */
+export const FIXTURE_BOOKLET_DATE = "2026-01-01";
+
+/**
  * Puts `settings.cutover_date` back to the seeded date, whether or not a row exists.
  *
  * `settings` is a singleton shared by every test file, and `vitest.config.ts` sets
@@ -511,17 +535,23 @@ export async function createCollectionFixture(
   const { rows: bookletRows } = await db.query(
     `insert into ceedo_collections.booklets
        (form_type_id, serial_prefix, start_no, end_no, received_date)
-     values ($1, $2, 1000, 1999, current_date - 30)
+     values ($1, $2, $3, $4, $5::date)
      returning id`,
-    [formTypeId, uniqueCode("BK")],
+    [
+      formTypeId,
+      uniqueCode("BK"),
+      FIXTURE_BOOKLET_START_NO,
+      FIXTURE_BOOKLET_END_NO,
+      FIXTURE_BOOKLET_DATE,
+    ],
   );
   const bookletId = bookletRows[0].id as string;
 
   await db.query(
     `insert into ceedo_collections.booklet_assignments
        (booklet_id, collector_id, assigned_at, returned_at)
-     values ($1, $2, current_date - 7, null)`,
-    [bookletId, collectorId],
+     values ($1, $2, $3::date, null)`,
+    [bookletId, collectorId, FIXTURE_BOOKLET_DATE],
   );
 
   return {
@@ -546,6 +576,26 @@ export type CollectionFixture = Awaited<ReturnType<typeof createCollectionFixtur
  * `collections_serial_spent_once`.
  */
 let ownerOrNo = 1500;
+
+/**
+ * Fails loudly when a counter walks off the end of the fixture booklet.
+ *
+ * An OR number outside the booklet's range is not an error the caller sees as one: the
+ * engine returns `or_out_of_range`, which is a perfectly valid rejection, so a test file
+ * that quietly overran its range would fail with the wrong reason -- or, worse, an
+ * `or_out_of_range` test would keep passing for the wrong cause. This turns the overrun
+ * into the message that explains it.
+ */
+export function assertOrNoInFixtureRange(orNo: number): number {
+  if (orNo < FIXTURE_BOOKLET_START_NO || orNo > FIXTURE_BOOKLET_END_NO) {
+    throw new Error(
+      `OR ${orNo} is outside the fixture booklet range ` +
+        `${FIXTURE_BOOKLET_START_NO}-${FIXTURE_BOOKLET_END_NO}. ` +
+        "Reset the counter per test, or widen the range in createCollectionFixture.",
+    );
+  }
+  return orNo;
+}
 
 /**
  * Posts a collection through `post_collection` over the owner connection, and returns the
@@ -587,7 +637,7 @@ export async function postCollectionAsOwner(
   const id = opts.id ?? randomUUID();
   const payload = {
     id,
-    or_no: opts.orNo ?? ++ownerOrNo,
+    or_no: assertOrNoInFixtureRange(opts.orNo ?? ++ownerOrNo),
     booklet_id: fixture.bookletId,
     collector_id: fixture.collectorId,
     device_id: fixture.deviceId,
