@@ -1382,6 +1382,32 @@ create trigger sections_market_only
   before insert or update on ceedo_collections.sections
   for each row execute function ceedo_collections.assert_market_facility();
 
+-- The other half of the invariant. sections_market_only stops a section being attached to
+-- a non-market facility; this stops a market being reclassified out from under sections
+-- that already exist. An orphaned section is a stall tree hanging off a terminal, which
+-- corrupts collection reports and the Phase 3 sync scoping that keys off facility type.
+create or replace function ceedo_collections.assert_facility_keeps_sections_valid()
+returns trigger
+language plpgsql
+set search_path = ceedo_collections, pg_temp
+as $$
+begin
+  if old.type = 'market'
+     and new.type is distinct from 'market'
+     and exists (select 1 from ceedo_collections.sections where facility_id = old.id)
+  then
+    raise exception
+      'Cannot change facility % from market to % while it still has sections', old.code, new.type
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger facilities_keep_sections_valid
+  before update on ceedo_collections.facilities
+  for each row execute function ceedo_collections.assert_facility_keeps_sections_valid();
+
 create table ceedo_collections.stalls (
   id          uuid primary key default gen_random_uuid(),
   section_id  uuid not null references ceedo_collections.sections (id),
@@ -1404,7 +1430,9 @@ select ceedo_collections.apply_master_data_policies('stalls');
 - [ ] **Step 4: Reset and run**
 
 Run: `supabase db reset && pnpm vitest run tests/db/facilities.test.ts`
-Expected: PASS — 6 tests.
+Expected: PASS — 8 tests. Test both directions of the type guard: reclassifying a market
+that has sections must fail, and reclassifying an empty market must succeed — a guard that
+blocks everything passes the first test while being wrong.
 
 - [ ] **Step 5: Commit**
 
