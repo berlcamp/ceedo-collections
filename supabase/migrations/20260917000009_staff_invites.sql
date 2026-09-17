@@ -95,6 +95,10 @@ exception
 end;
 $$;
 
+-- Fires on INSERT and on the metadata UPDATE because GoTrue populates raw_app_meta_data in
+-- a separate statement from the row insert for at least some flows. Checking only on INSERT
+-- would silently refuse every legitimate sign-in while still admitting nothing — the worst
+-- possible outcome for a security check. Claiming is idempotent, so firing twice is safe.
 create trigger on_auth_user_created_claim_invite
-  after insert on auth.users
+  after insert or update of raw_app_meta_data on auth.users
   for each row execute function ceedo_collections.claim_staff_invite();

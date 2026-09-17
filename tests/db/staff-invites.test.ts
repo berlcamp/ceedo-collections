@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   createAppUser,
+  createAuthUserWithoutProvider,
   createGoogleAuthUser,
   createUnregisteredAuthUser,
   serviceClient,
+  setAuthUserProvider,
   signIn,
   uniqueCode,
   uniqueEmail,
@@ -28,6 +30,14 @@ const service = serviceClient();
  *      that never reaches this schema; verified separately (see the fix-round report);
  *   C. the trigger claims only a Google identity (tested below);
  *   D. the trigger never aborts the `auth.users` insert it fires on (tested below).
+ *
+ * Fix round 3: round 2 proved (via a temporary debug trigger) that GoTrue's admin API
+ * populates `raw_app_meta_data` in a separate UPDATE, not the original INSERT — a pattern
+ * that, if a genuine Google sign-in behaves the same way, would make the provider check
+ * refuse every legitimate sign-in forever while still admitting no one. The trigger now
+ * fires on `insert or update of raw_app_meta_data`, and the "two-step" tests below prove
+ * both that this pattern now claims correctly and that it stays idempotent and does not
+ * resurrect a suspended user.
  */
 describe("staff invites", () => {
   it("claims a matching Google identity on first sign-in, with the invited role, and removes the invite", async () => {
@@ -241,6 +251,135 @@ describe("staff invites", () => {
       .eq("email", email)
       .maybeSingle();
     expect(invite).not.toBeNull();
+  });
+
+  it("claims correctly when GoTrue populates the provider in a separate UPDATE — the two-step pattern that would have broken production", async () => {
+    // Proven by a temporary debug trigger (see the fix-round-2 report): GoTrue's admin API
+    // inserts auth.users with no meaningful raw_app_meta_data and patches the real value in
+    // via a separate UPDATE. If that also holds for a genuine external-OAuth sign-in, an
+    // AFTER-INSERT-only trigger would see no provider, refuse every real Google user
+    // forever, and never claim anything — the worst possible outcome for a security check.
+    // Round 3's trigger fires on `insert or update of raw_app_meta_data` specifically so
+    // this pattern still works.
+    const email = uniqueEmail("two.step.claim@example.com");
+    const employeeNo = uniqueCode("INV");
+    await service.from("staff_invites").insert({
+      email,
+      employee_no: employeeNo,
+      full_name: "Two Step",
+      role: "supervisor",
+    });
+
+    const userId = await createAuthUserWithoutProvider(email);
+
+    // Intermediate state: the INSERT fired the trigger, but with no provider present, so
+    // nothing was claimed yet.
+    const { data: afterInsert } = await service
+      .from("app_users")
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle();
+    expect(afterInsert).toBeNull();
+
+    await setAuthUserProvider(userId, "google");
+
+    // The UPDATE fires the trigger a second time, now with the provider present, and
+    // claims.
+    const { data: afterUpdate, error: afterUpdateError } = await service
+      .from("app_users")
+      .select("id, employee_no, full_name, role, status")
+      .eq("id", userId)
+      .maybeSingle();
+    expect(afterUpdateError).toBeNull();
+    expect(afterUpdate).toMatchObject({
+      employee_no: employeeNo,
+      full_name: "Two Step",
+      role: "supervisor",
+      status: "active",
+    });
+
+    const { data: remainingInvite } = await service
+      .from("staff_invites")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+    expect(remainingInvite).toBeNull();
+  });
+
+  it("still refuses an email-provider identity when the metadata arrives via UPDATE, not just INSERT", async () => {
+    const email = uniqueEmail("two.step.refuse@example.com");
+    await service.from("staff_invites").insert({
+      email,
+      employee_no: uniqueCode("INV"),
+      full_name: "Two Step Refuse",
+      role: "admin",
+    });
+
+    const userId = await createAuthUserWithoutProvider(email);
+    await setAuthUserProvider(userId, "email");
+
+    const { data: noRow } = await service
+      .from("app_users")
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle();
+    expect(noRow).toBeNull();
+
+    const { data: invite } = await service
+      .from("staff_invites")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+    expect(invite).not.toBeNull();
+  });
+
+  it("is idempotent on a repeat metadata UPDATE for an already-claimed user, and does not reactivate a suspended one", async () => {
+    const email = uniqueEmail("two.step.idempotent@example.com");
+    const employeeNo = uniqueCode("INV");
+    await service.from("staff_invites").insert({
+      email,
+      employee_no: employeeNo,
+      full_name: "Idempotent Check",
+      role: "supervisor",
+    });
+
+    const userId = await createGoogleAuthUser(email);
+    const { data: claimedRow } = await service
+      .from("app_users")
+      .select("id, role, status, row_version")
+      .eq("id", userId)
+      .single();
+    expect(claimedRow).toMatchObject({ role: "supervisor", status: "active" });
+
+    await service.from("app_users").update({ status: "suspended" }).eq("id", userId);
+    const { data: suspendedRow } = await service
+      .from("app_users")
+      .select("id, role, status, row_version")
+      .eq("id", userId)
+      .single();
+    expect(suspendedRow).toMatchObject({ role: "supervisor", status: "suspended" });
+
+    // A later metadata UPDATE (e.g. GoTrue refreshing app_metadata on a subsequent
+    // sign-in) fires the trigger again. The invite is already gone, so the SELECT finds
+    // nothing and the function returns early — it must not touch app_users at all, so
+    // row_version must be exactly what the suspend UPDATE above left it at, not bumped
+    // again by a phantom write from the trigger's own re-firing.
+    await setAuthUserProvider(userId, "google");
+
+    const { data: afterRepeat } = await service
+      .from("app_users")
+      .select("id, role, status, row_version")
+      .eq("id", userId)
+      .single();
+    expect(afterRepeat).toMatchObject({ role: "supervisor", status: "suspended" });
+    expect(afterRepeat!.row_version).toBe(suspendedRow!.row_version);
+
+    // No duplicate row was created for this identity either.
+    const { count } = await service
+      .from("app_users")
+      .select("id", { count: "exact", head: true })
+      .eq("id", userId);
+    expect(count).toBe(1);
   });
 
   it("rejects a second invite differing from an existing one only by email case", async () => {

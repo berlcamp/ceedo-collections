@@ -151,6 +151,57 @@ export async function createGoogleAuthUser(email: string): Promise<string> {
   }
 }
 
+/**
+ * Inserts an `auth.users` row with `raw_app_meta_data = '{}'` — no `provider` key at all —
+ * reproducing the *intermediate* state of the confirmed two-step pattern documented on
+ * `createGoogleAuthUser`: an initial INSERT with no meaningful metadata, followed by a
+ * separate UPDATE (see `setAuthUserProvider`) that patches it in. `claim_staff_invite()`
+ * now fires on both statements (`after insert or update of raw_app_meta_data`) precisely
+ * so that whichever one actually carries the provider still triggers a claim.
+ */
+export async function createAuthUserWithoutProvider(email: string): Promise<string> {
+  const client = new PgClient({ connectionString: PG_URL });
+  await client.connect();
+  try {
+    const id = randomUUID();
+    await client.query(
+      `insert into auth.users
+         (id, instance_id, aud, role, email, email_confirmed_at,
+          raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+          confirmation_token, is_sso_user, is_anonymous)
+       values
+         ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2, now(),
+          '{}'::jsonb, '{}'::jsonb, now(), now(),
+          '', false, false)`,
+      [id, email],
+    );
+    return id;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Sets `raw_app_meta_data` on an existing `auth.users` row in its own, separate UPDATE
+ * statement — this is exactly the statement the trigger's `update of raw_app_meta_data`
+ * clause exists to catch, and pairs with `createAuthUserWithoutProvider` to reproduce the
+ * two-step pattern end to end.
+ */
+export async function setAuthUserProvider(userId: string, provider: string): Promise<void> {
+  const client = new PgClient({ connectionString: PG_URL });
+  await client.connect();
+  try {
+    await client.query(
+      `update auth.users
+         set raw_app_meta_data = jsonb_build_object('provider', $2::text, 'providers', jsonb_build_array($2::text))
+       where id = $1`,
+      [userId, provider],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
 /** A registered user: an auth.users record plus the app_users row that grants access. */
 export async function createAppUser(opts: {
   email: string;
