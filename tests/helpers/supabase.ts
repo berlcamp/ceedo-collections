@@ -56,6 +56,20 @@ async function signIn(email: string): Promise<TestClient> {
   return client;
 }
 
+/**
+ * Makes a fixture email collision-proof by tagging its local part.
+ *
+ * `resetFixtures` can clear `app_users`, but it cannot clear `auth.users` — that is
+ * shared GoTrue state on a shared Supabase project. Without this, running any suite a
+ * second time without `supabase db reset` fails on "email already registered", and
+ * every task from 5 onward uses fixed fixture addresses. Tests never assert on the
+ * address itself, only on the client and id that come back.
+ */
+function uniqueEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  return `${local}+${randomUUID().slice(0, 8)}@${domain}`;
+}
+
 async function createAuthUser(email: string): Promise<string> {
   const admin = createClient(URL, SERVICE_KEY, { auth: { persistSession: false } });
   const { data, error } = await admin.auth.admin.createUser({
@@ -74,7 +88,8 @@ export async function createAppUser(opts: {
   employeeNo?: string;
   fullName?: string;
 }): Promise<{ client: TestClient; userId: string }> {
-  const userId = await createAuthUser(opts.email);
+  const email = uniqueEmail(opts.email);
+  const userId = await createAuthUser(email);
   const { error } = await serviceClient().from("app_users").insert({
     id: userId,
     employee_no: opts.employeeNo ?? `E-${randomUUID().slice(0, 8)}`,
@@ -83,7 +98,7 @@ export async function createAppUser(opts: {
     status: "active",
   });
   if (error) throw new Error(`Could not create app_user: ${error.message}`);
-  return { client: await signIn(opts.email), userId };
+  return { client: await signIn(email), userId };
 }
 
 /** Authenticated against the shared Supabase project but NOT registered in this system. */
