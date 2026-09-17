@@ -17,7 +17,8 @@ export interface OrEntryContext {
 export type OrRejectReason =
   | "not_in_assigned_booklet"
   | "already_consumed"
-  | "marked_spoiled";
+  | "marked_spoiled"
+  | "ambiguous_booklet";
 
 export type OrEntryResult =
   | { ok: true; bookletId: string; warning?: "sequence_skipped" }
@@ -36,10 +37,17 @@ export function formatSerial(prefix: string, orNo: number): string {
  * booklets legitimately get skipped.
  */
 export function validateOrEntry(context: OrEntryContext, orNo: number): OrEntryResult {
-  const booklet = context.booklets.find(
+  // The schema only bars serial overlap within the same form type and prefix, so a
+  // collector holding two booklets of different form types can have overlapping
+  // ranges. Ambiguity is never resolved silently in this system: a silently wrong
+  // booklet id on a real receipt is unrecoverable once the vendor walks away, so a
+  // tie is reported rather than broken by "first match wins".
+  const candidates = context.booklets.filter(
     (candidate) => orNo >= candidate.startNo && orNo <= candidate.endNo,
   );
-  if (!booklet) return { ok: false, reason: "not_in_assigned_booklet" };
+  if (candidates.length === 0) return { ok: false, reason: "not_in_assigned_booklet" };
+  if (candidates.length > 1) return { ok: false, reason: "ambiguous_booklet" };
+  const booklet = candidates[0]!;
   if (context.spoiled.has(orNo)) return { ok: false, reason: "marked_spoiled" };
   if (context.consumed.has(orNo)) return { ok: false, reason: "already_consumed" };
 

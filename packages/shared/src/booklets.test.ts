@@ -61,4 +61,23 @@ describe("validateOrEntry", () => {
       reason: "not_in_assigned_booklet",
     });
   });
+
+  it("rejects as ambiguous when two assigned booklets both cover the serial", () => {
+    // The schema only bars serial overlap within the same form type and prefix, so a
+    // collector can legitimately hold two overlapping booklets of different form
+    // types. This must never be resolved by picking the first match.
+    const ctx = context({
+      booklets: [
+        { id: "b1", serialPrefix: "OR", startNo: 1001, endNo: 1050 },
+        { id: "b2", serialPrefix: "AF", startNo: 1001, endNo: 1050 },
+      ],
+    });
+    expect(validateOrEntry(ctx, 1010)).toEqual({ ok: false, reason: "ambiguous_booklet" });
+  });
+
+  it("reports a serial that is both spoiled and consumed as spoiled", () => {
+    // Spoiled must win: a spoiled serial should never present as merely "already used".
+    const ctx = context({ consumed: new Set([1002]), spoiled: new Set([1002]) });
+    expect(validateOrEntry(ctx, 1002)).toEqual({ ok: false, reason: "marked_spoiled" });
+  });
 });

@@ -99,4 +99,73 @@ describe("booklets", () => {
       .insert({ booklet_id: booklet!.id, collector_id: accountant, assigned_at: "2026-09-01" });
     expect(error?.message ?? "").toMatch(/collector/i);
   });
+
+  it("refuses to reclassify a collector who still holds an unreturned booklet", async () => {
+    const collector = (await createAppUser({ email: "bk-role-held@example.com", role: "collector" }))
+      .userId;
+    const { data: booklet } = await service
+      .from("booklets")
+      .insert({
+        form_type_id: formTypeId,
+        serial_prefix: "OR",
+        start_no: 6001,
+        end_no: 6050,
+        received_date: "2026-09-01",
+      })
+      .select("id")
+      .single();
+    await service
+      .from("booklet_assignments")
+      .insert({ booklet_id: booklet!.id, collector_id: collector, assigned_at: "2026-09-01" });
+
+    const { error } = await service
+      .from("app_users")
+      .update({ role: "accounting" })
+      .eq("id", collector);
+    expect(error).not.toBeNull();
+  });
+
+  it("allows reclassifying a collector once their booklet has been returned", async () => {
+    const collector = (
+      await createAppUser({ email: "bk-role-returned@example.com", role: "collector" })
+    ).userId;
+    const { data: booklet } = await service
+      .from("booklets")
+      .insert({
+        form_type_id: formTypeId,
+        serial_prefix: "OR",
+        start_no: 7001,
+        end_no: 7050,
+        received_date: "2026-09-01",
+      })
+      .select("id")
+      .single();
+    const { data: assignment } = await service
+      .from("booklet_assignments")
+      .insert({ booklet_id: booklet!.id, collector_id: collector, assigned_at: "2026-09-01" })
+      .select("id")
+      .single();
+    await service
+      .from("booklet_assignments")
+      .update({ returned_at: "2026-09-15" })
+      .eq("id", assignment!.id);
+
+    const { error } = await service
+      .from("app_users")
+      .update({ role: "accounting" })
+      .eq("id", collector);
+    expect(error).toBeNull();
+  });
+
+  it("allows reclassifying a collector who never held a booklet", async () => {
+    const collector = (
+      await createAppUser({ email: "bk-role-none@example.com", role: "collector" })
+    ).userId;
+
+    const { error } = await service
+      .from("app_users")
+      .update({ role: "accounting" })
+      .eq("id", collector);
+    expect(error).toBeNull();
+  });
 });

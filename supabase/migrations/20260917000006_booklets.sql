@@ -17,6 +17,10 @@ create table ceedo_collections.booklets (
   start_no      integer not null check (start_no > 0),
   end_no        integer not null,
   received_date date not null,
+  -- Clerk-maintained, not authoritative: no trigger syncs this with
+  -- booklet_assignments or spoiled_forms, so it can drift from reality. Reporting
+  -- must derive a booklet's true state from booklet_assignments and spoiled_forms,
+  -- never from this column alone.
   status        ceedo_collections.booklet_status not null default 'received',
   created_at    timestamptz not null default now(),
   row_version   bigint not null default 0,
@@ -88,6 +92,34 @@ create trigger booklet_assignments_collector_only
 
 create index booklet_assignments_collector_idx
   on ceedo_collections.booklet_assignments (collector_id) where returned_at is null;
+
+-- The other half of the accountability binding. assert_assignee_is_collector stops a
+-- booklet reaching a non-collector; this stops a collector being reclassified while still
+-- holding one. Without it, a promoted collector keeps custody of accountable forms while
+-- gaining oversight of the collections they are accountable for.
+create or replace function ceedo_collections.assert_no_held_booklets_on_role_change()
+returns trigger
+language plpgsql
+set search_path = ceedo_collections, pg_temp
+as $$
+begin
+  if old.role = 'collector' and new.role is distinct from 'collector'
+     and exists (
+       select 1 from ceedo_collections.booklet_assignments
+       where collector_id = old.id and returned_at is null
+     )
+  then
+    raise exception
+      'Cannot change % from collector to %: they still hold unreturned booklets', old.employee_no, new.role
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger app_users_no_held_booklets_on_role_change
+  before update on ceedo_collections.app_users
+  for each row execute function ceedo_collections.assert_no_held_booklets_on_role_change();
 
 select ceedo_collections.apply_master_data_policies('form_types');
 select ceedo_collections.apply_master_data_policies('booklets');
