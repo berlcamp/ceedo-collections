@@ -50,6 +50,9 @@ Fish and meat may run daily while dry goods runs monthly.
 | Surcharge | One-time 3%, simple (not compounding) | Bounded row count; explainable at the stall |
 | Unsynced closeout | Permitted, flagged `closed_unsynced` | Blocking a collector over bad signal is unworkable |
 | Database schema | `ceedo_collections` on a shared Supabase project | Existing infrastructure |
+| Web authentication | Google Sign-In, invite-only | Staff use personal Gmail; no domain to restrict on |
+| App authentication | Device credential + collector PIN | OAuth needs network at the moment a collector may have none |
+| Device ownership | Shared, assigned per facility | Collectors rotate across tablets |
 
 ### Revisit triggers
 
@@ -61,8 +64,13 @@ The Expo decision should be revisited if any of the following becomes true:
 - Hardware is added: thermal printers, NFC, or barcode scanners.
 
 **Device procurement recommendation:** Android 13+, 4 GB RAM, 64 GB storage,
-5000 mAh battery. LGU-issued, one device per collector, not BYOD — both for data
-governance and because device-to-collector binding is a fraud signal.
+5000 mAh battery. LGU-issued, never BYOD — cash records and tenant data should not live
+on personal phones.
+
+**Devices are shared.** A tablet is assigned to a facility or section and whoever is
+rostered there that day signs in; supervisors may reassign a device, which forces a
+re-sync before it is used elsewhere. Accountability is therefore anchored to the
+booklet rather than to the device (§11.5).
 
 ## 4. Architecture
 
@@ -188,14 +196,19 @@ This is both what COA expects and what makes append-only sync sound — the same
 
 ### 5.6 Operations
 
-- `app_users` — id (FK `auth.users`), full_name, role, status
-- `devices` — id, collector_id, label, last_seen_at
+- `app_users` — id (FK `auth.users`), employee_no, full_name, role, pin_hash, status
+- `devices` — id, label, registered_at, credential_id, active, last_seen_at
+- `device_assignments` — id, device_id, facility_id, section_id (nullable), active
 - `collector_assignments` — id, collector_id, facility_id, section_id (nullable), active
 
 An assignment names a **facility**, optionally narrowed to one section. A market
 collector is assigned to the fish section; a terminal or slaughterhouse collector is
-assigned to the facility with no section. Assignment determines what syncs to the
-device and what that collector may collect.
+assigned to the facility with no section.
+
+**Devices carry no collector.** Because tablets are shared, `devices` has no owner
+column. A device's assignment determines **what data syncs to it**; a collector's
+assignment determines **where that person may collect**. A collector may sign in to a
+device only where the two overlap.
 - `sync_exceptions` — id, collection_uuid, collector_id, reason_code, payload,
   status, resolved_by, resolved_at, resolution, resolution_reason
 - `audit_log` — id, actor_id, action, entity, entity_id, before, after, at
@@ -214,7 +227,7 @@ lease means a collector cannot record a payment.
 ### 6.1 Pull — master data down
 
 `POST /sync-pull` with `{ cursor: bigint, device_id }`, returning everything with
-`row_version > cursor`, **scoped to the collector's assignments** (§5.6):
+`row_version > cursor`, **scoped to the device's assignment** (§5.6):
 
 - Facilities, sections, stalls, tenants and leases within those assignments
 - The rate table, including `rate_class` rows for classified fees
@@ -222,9 +235,13 @@ lease means a collector cannot record a payment.
 - **Unpaid** charges for those leases, plus paid charges from the last 90 days for the
   history view
 
-A fish-section collector receives that section's data, not the terminal's and not
-another collector's booklets. A slaughterhouse collector receives rates and booklets
-only — there are no tenancies or charges to carry. First sync is a few megabytes; deltas are kilobytes.
+A tablet assigned to the fish section receives that section's data, not the terminal's.
+Scoping to the device rather than the collector keeps the payload stable as collectors
+rotate through the tablet. Booklet data is the exception: a device receives the booklet
+assignments of every collector currently permitted to sign in to it.
+
+A device assigned to the slaughterhouse or terminal receives rates and booklets only —
+there are no tenancies or charges to carry. First sync is a few megabytes; deltas are kilobytes.
 A tenant two years delinquent on a daily stall contributes roughly 1,460 rows, which
 is acceptable.
 
@@ -271,6 +288,11 @@ States: `pending → in_flight → acked | rejected`.
 Acked entries are retained for closeout reconciliation and purged after 30 days.
 Rejected entries are retained until resolved.
 
+**Outbox entries carry `collector_id` and survive a change of collector.** On a shared
+tablet, one collector's unsynced receipts must never be lost, cleared, or attributed to
+the next person to sign in. Sync pushes every pending entry regardless of who is
+currently signed in; signing out clears a session, never data.
+
 ### 6.5 Closeout reconciliation
 
 Non-negotiable. At end of shift:
@@ -286,6 +308,11 @@ Non-negotiable. At end of shift:
 
 If genuinely offline, closeout proceeds with status `closed_unsynced`, and the shift
 appears on a supervisor dashboard until it reconciles.
+
+**A device permits only one open shift at a time.** A new collector cannot sign in while
+the previous collector's shift is still open — the device requires a closeout first,
+`closed_unsynced` if there is no signal. Without this rule a shared tablet accumulates
+overlapping open shifts and the cash accountability cannot be untangled afterwards.
 
 This check is what makes silent data loss impossible to overlook. Without it, a
 hand-rolled outbox can lose a receipt and nobody learns until an audit.
@@ -462,6 +489,42 @@ Every consequential action is logged with actor, timestamp, entity and before/af
 resolving an exception, condoning a charge, changing a rate, assigning or returning a
 booklet, creating or deactivating a user.
 
+### 11.5 Authentication
+
+Web and app authenticate differently because their constraints differ.
+
+**Web — Google Sign-In, invite-only.** Supabase Auth with the Google provider. Staff use
+personal Gmail accounts, so there is no domain to restrict on; access is therefore granted
+by invitation. An administrator creates the `app_users` row against a specific email
+address beforehand, and a Google account with no matching row is refused at the
+application even though Supabase authenticated it successfully.
+
+This distinction is not cosmetic. Per §12.1, `auth.users` is shared across the whole
+Supabase project: **signing in establishes who, the `app_users` row establishes whether.**
+
+**Collector app — device credential plus PIN.**
+
+| Layer | Mechanism | Network required |
+| --- | --- | --- |
+| Device | Registered once by an administrator; holds a long-lived credential | Once, at setup |
+| Collector | `employee_no` + 6-digit PIN, verified against a hash synced to the device | Never |
+
+OAuth is unusable here: it needs a round trip at exactly the moment a collector may have
+no signal — a 5am market round that cannot begin is a collector sent home. Email-and-password
+against Supabase fails the same test. So the device authenticates to the server, and the PIN
+identifies the person, entirely offline.
+
+**The PIN is not the security boundary — the booklet is.** Every pushed receipt is validated
+server-side against the booklet assigned to the claimed collector. A person who knows
+another collector's PIN still cannot post against that collector's booklet without
+physically holding it, and if they are holding it that is a physical control failure no
+login screen would have prevented. The PIN exists for attribution and convenience.
+
+Hardening: PINs hashed with argon2 at a real cost factor; five failed attempts lock the
+device until it next syncs; an administrator can deactivate a device server-side so its
+pushes are refused, which is the answer to a lost or stolen tablet. Android 13+ encrypts
+storage by default.
+
 ## 12. Shared Supabase project — required precautions
 
 The schema `ceedo_collections` lives on a Supabase project shared with unrelated
@@ -534,6 +597,7 @@ not match hand computation.
 | Card durability: lamination or vinyl stickers? | Decide before any print run; does not block build |
 | Collector device model | Android 13+, 4 GB RAM (§3); revisit stack if lower |
 | Exact `due_day` convention for monthly leases | Stored per lease; office to confirm default |
+| Forgotten PIN with no signal | **Known limitation.** A supervisor resets the PIN on the web and the device picks it up on its next sync; a collector who forgets mid-round offline cannot sign in. Mitigated by syncing at the office before rounds. |
 | Terminal vehicle classes and slaughterhouse animal classes | From the current ordinances; modelled as `rate_class` rows, not code |
 
 ## 15. Out of scope
@@ -553,7 +617,7 @@ absorbed into this one.
 
 | Phase | Scope | Ships when |
 | --- | --- | --- |
-| 1 | Schema, auth, roles, master data, rates, booklet management | Office can set up markets, stalls, tenants, leases, rates, booklets |
+| 1 | Schema, Google Sign-In, roles, master data, rates, booklet management, device registration | Office can set up facilities, stalls, tenants, leases, rates, booklets and tablets |
 | 2 | Accrual job, charge ledger, surcharge, subsidiary ledger view | Arrears and aging are correct on the web before any device exists |
 | 3 | Collector app — market rentals, offline, sync, closeout | A collector can work a market round end to end |
 | 4 | QR cards, scan flow, amount-driven FIFO entry | Cards printed and in use |
@@ -578,5 +642,8 @@ These hold at all times and every change is checked against them:
 7. A returned booklet balances: used + spoiled + unused = total.
 8. No RLS policy relies on `authenticated` alone; all check `app_users` membership.
 9. A collection's allocations and lines together sum to its `gross_amount`.
-10. Money is integer centavos in code, rounded half-up.
-11. A shift reaches `closed` only when device and server totals agree; otherwise it is `closed_unsynced`.
+10. A device holds at most one open shift; a new sign-in requires the previous shift closed.
+11. Outbox entries survive a change of collector and are never reattributed.
+12. Authentication establishes identity; `app_users` membership establishes access.
+13. Money is integer centavos in code, rounded half-up.
+14. A shift reaches `closed` only when device and server totals agree; otherwise it is `closed_unsynced`.
