@@ -6,7 +6,7 @@
 
 **Architecture:** A pnpm monorepo with a Next.js web app and a pure-TypeScript `shared` package holding money arithmetic, rate resolution and OR validation. Postgres schema lives in plain SQL migrations under the Supabase CLI. Every table's access is gated by an `app_users` membership lookup rather than by Supabase's `authenticated` role, because `auth.users` is shared with unrelated projects on the same Supabase instance.
 
-**Tech Stack:** pnpm 10 workspaces, Turborepo, TypeScript 5.7+, Next.js 16 (App Router), React 19, Tailwind CSS 4, shadcn/ui, Supabase (Postgres 15 + Auth), Vitest 3, zod 4, Node 24.
+**Tech Stack:** pnpm 10 workspaces, Turborepo, TypeScript 5.7+, Next.js 16 (App Router), React 19, Tailwind CSS 4, shadcn/ui, Supabase (Postgres 15 + Auth), Vitest 3, zod 4, Node 22 LTS.
 
 **Spec:** `docs/superpowers/specs/2026-09-17-ceedo-collections-design.md`
 
@@ -24,7 +24,7 @@ Copied verbatim from the spec. Every task's requirements implicitly include thes
 - **`UPDATE` and `DELETE` are never granted on ledger tables** (`charges`, `collections`, `collection_allocations`, `collection_lines`). Phase 1 creates no ledger tables; Phase 2 must create them with these grants withheld from the start.
 - **Edge Functions must not use `service_role`.** Phase 1 creates no Edge Functions; the restricted role `ceedo_app` is created here for Phase 3 to use.
 - **Devices carry no `collector_id`.** Tablets are shared.
-- Node 24, pnpm 10. Package manager is pinned via `packageManager` in the root `package.json`.
+- **Node >= 22**, pnpm 10. Package manager is pinned via `packageManager` in the root `package.json`. (Ruled at pre-flight: the target machine runs Node v22.23.1 LTS; the stack supports it.)
 
 ## File Structure
 
@@ -87,7 +87,7 @@ packages:
   "name": "ceedo-collections",
   "private": true,
   "packageManager": "pnpm@10.0.0",
-  "engines": { "node": ">=24" },
+  "engines": { "node": ">=22" },
   "scripts": {
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
@@ -219,7 +219,7 @@ jobs:
       - uses: pnpm/action-setup@v4
         with: { version: 10 }
       - uses: actions/setup-node@v4
-        with: { node-version: 24, cache: pnpm }
+        with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - uses: supabase/setup-cli@v1
