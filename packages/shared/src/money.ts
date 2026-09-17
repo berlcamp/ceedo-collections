@@ -5,9 +5,20 @@
  */
 export type Centavos = number & { readonly __brand: "Centavos" };
 
-/** Rounds half away from zero. All amounts here are non-negative in practice. */
+/**
+ * Rounds half away from zero. All amounts here are non-negative in practice.
+ *
+ * The `toFixed(9)` is not cosmetic. A value that is mathematically x.5 may be
+ * stored as x.49999999999999 — `1.005 * 100` is `100.49999999999999` — and
+ * `floor(x + 0.5)` would then round it DOWN, silently breaking half-up on
+ * exactly the inputs the rule exists for. Normalising to 9 decimal places first
+ * restores the intended decimal value; 9 is far below the precision at which a
+ * genuine sub-half value could be promoted, and far above any peso amount's
+ * significant digits.
+ */
 function roundHalfUp(value: number): number {
-  return Math.sign(value) * Math.floor(Math.abs(value) + 0.5);
+  const normalised = Number(value.toFixed(9));
+  return Math.sign(normalised) * Math.floor(Math.abs(normalised) + 0.5);
 }
 
 export function fromCentavos(n: number): Centavos {
