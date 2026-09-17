@@ -9,8 +9,9 @@
 ## 1. Purpose
 
 CEEDO collects revenue in the field across several enterprises: public market stall
-rentals, ambulant vendor fees, parking, and terminal fees at the Integrated Bus and
-Jeepney Terminal (IBJT). Collection is done daily, on foot, in places with unreliable
+rentals, ambulant vendor fees, parking, slaughterhouse fees, and terminal fees at the
+Integrated Bus and Jeepney Terminal (IBJT). Collection is done daily, on foot, in
+places with unreliable
 mobile data.
 
 This system provides:
@@ -31,6 +32,7 @@ reports; the Accounting Office keeps the books of account.
 | Ambulant / daily vendor fee | Per day, on the spot | No |
 | Parking fee | Per entry | No |
 | Terminal fee (IBJT) | Per entry, by vehicle class | No |
+| Slaughter fee | Per head, by animal class | No |
 
 Accrual frequency is a property of the **lease**, defaulting from its **section**.
 Fish and meat may run daily while dry goods runs monthly.
@@ -106,8 +108,9 @@ Rounding is **half-up to the centavo**, explicitly, and tested. Floats never tou
 
 ### 5.1 Reference data
 
-- `markets` — id, name, code
-- `sections` — id, market_id, name, default_accrual_period
+- `facilities` — id, name, code, type
+  (`market` | `terminal` | `parking` | `slaughterhouse`)
+- `sections` — id, facility_id, name, default_accrual_period
 - `stalls` — id, section_id, stall_no, area_sqm, status
 - `tenants` — id, name, address, contact
 - `leases` — id, stall_id, tenant_id, start_date, end_date, rate_amount,
@@ -116,12 +119,21 @@ Rounding is **half-up to the centavo**, explicitly, and tested. Floats never tou
 **Leases, not stalls, are the billing unit.** Stalls get re-let; the lease preserves
 each tenant's history across that.
 
+**Only market facilities have sections and stalls.** The terminal, parking areas and
+slaughterhouse are collection points with no tenancies — they carry rates and collection
+lines, never leases or charges.
+
 ### 5.2 Rates
 
 `fee_types` — id, code, name, accrues (bool)
 
 `rates` — id, fee_type_id, effective_from, effective_to, amount, basis
-(`per_day` | `per_week` | `per_month` | `per_entry` | `per_sqm`), vehicle_class
+(`per_day` | `per_week` | `per_month` | `per_entry` | `per_head` | `per_sqm`),
+rate_class
+
+`rate_class` is the classifying dimension for per-unit fees: vehicle class at the
+terminal, animal class at the slaughterhouse. One column rather than one per facility
+type, so a new classified fee needs rate rows, not a migration.
 
 Rate rows are **never updated in place**. A new ordinance inserts a new row with an
 effectivity date, so historical receipts still recompute correctly.
@@ -147,11 +159,19 @@ device_id, collected_at, fee_type_id, payer_ref, gross_amount, notes, synced_at,
 
 `collection_allocations` — collection_id, charge_id, amount
 
+`collection_lines` — collection_id, fee_type_id, rate_class, quantity, unit_rate, amount
+
 `collection_cancellations` — collection_id, reason, cancelled_by, cancelled_at
 
-**Cash-only streams create no charges.** Ambulant, parking and terminal collections are
-`collections` rows with no allocations. Only fee types with `accrues = true` produce
-`charges`, and only those appear in aging and delinquency reports.
+**Two ways a collection is itemised, and they do not overlap.**
+`collection_allocations` settles existing `charges` — market arrears. `collection_lines`
+describes on-the-spot items as quantity × rate — twelve hogs at the per-head rate, or
+several vehicle classes on one terminal receipt. Both sum to `gross_amount`.
+
+**Cash-only streams create no charges.** Ambulant, parking, terminal and slaughterhouse
+collections are `collections` rows with lines and no allocations. Only fee types with
+`accrues = true` produce `charges`, and only those appear in aging and delinquency
+reports.
 
 **`due_date` is explicit on every charge.** For daily accruals it is the day itself;
 for monthly leases it is the lease's `due_day`. Without an explicit column this gets
@@ -170,6 +190,12 @@ This is both what COA expects and what makes append-only sync sound — the same
 
 - `app_users` — id (FK `auth.users`), full_name, role, status
 - `devices` — id, collector_id, label, last_seen_at
+- `collector_assignments` — id, collector_id, facility_id, section_id (nullable), active
+
+An assignment names a **facility**, optionally narrowed to one section. A market
+collector is assigned to the fish section; a terminal or slaughterhouse collector is
+assigned to the facility with no section. Assignment determines what syncs to the
+device and what that collector may collect.
 - `sync_exceptions` — id, collection_uuid, collector_id, reason_code, payload,
   status, resolved_by, resolved_at, resolution, resolution_reason
 - `audit_log` — id, actor_id, action, entity, entity_id, before, after, at
@@ -188,16 +214,17 @@ lease means a collector cannot record a payment.
 ### 6.1 Pull — master data down
 
 `POST /sync-pull` with `{ cursor: bigint, device_id }`, returning everything with
-`row_version > cursor`, **scoped to the collector's assignment**:
+`row_version > cursor`, **scoped to the collector's assignments** (§5.6):
 
-- Sections, stalls, tenants and leases for their assigned sections
-- The rate table
+- Facilities, sections, stalls, tenants and leases within those assignments
+- The rate table, including `rate_class` rows for classified fees
 - Their own booklet assignments, and consumed serials within them
 - **Unpaid** charges for those leases, plus paid charges from the last 90 days for the
   history view
 
 A fish-section collector receives that section's data, not the terminal's and not
-another collector's booklets. First sync is a few megabytes; deltas are kilobytes.
+another collector's booklets. A slaughterhouse collector receives rates and booklets
+only — there are no tenancies or charges to carry. First sync is a few megabytes; deltas are kilobytes.
 A tenant two years delinquent on a daily stall contributes roughly 1,460 rows, which
 is acceptable.
 
@@ -507,7 +534,7 @@ not match hand computation.
 | Card durability: lamination or vinyl stickers? | Decide before any print run; does not block build |
 | Collector device model | Android 13+, 4 GB RAM (§3); revisit stack if lower |
 | Exact `due_day` convention for monthly leases | Stored per lease; office to confirm default |
-| Terminal fee vehicle classes and rates | From the current ordinance; modelled as rate rows |
+| Terminal vehicle classes and slaughterhouse animal classes | From the current ordinances; modelled as `rate_class` rows, not code |
 
 ## 15. Out of scope
 
@@ -516,7 +543,8 @@ not match hand computation.
 - Multi-LGU tenancy
 - Online or cashless tenant payments
 - Thermal receipt printing
-- Slaughterhouse, cemetery and other enterprises not named in §2
+- Cemetery and other economic enterprises not named in §2
+- Slaughterhouse receivables — accredited dealers with running accounts (walk-in cash only)
 
 Each of these is a separate project if it is ever wanted. None should be quietly
 absorbed into this one.
@@ -529,7 +557,7 @@ absorbed into this one.
 | 2 | Accrual job, charge ledger, surcharge, subsidiary ledger view | Arrears and aging are correct on the web before any device exists |
 | 3 | Collector app — market rentals, offline, sync, closeout | A collector can work a market round end to end |
 | 4 | QR cards, scan flow, amount-driven FIFO entry | Cards printed and in use |
-| 5 | Parking and terminal fees | Same transaction spine, different rate rules |
+| 5 | Parking, terminal and slaughterhouse fees | Same transaction spine; classified per-unit rates |
 | 6 | Full report suite with Excel and PDF export | Accounting stops re-deriving figures by hand |
 
 Phase 2 before Phase 3 is deliberate: the ledger must be provably right on the web
@@ -549,5 +577,6 @@ These hold at all times and every change is checked against them:
 6. A surcharge exists at most once per rental charge and never changes after posting.
 7. A returned booklet balances: used + spoiled + unused = total.
 8. No RLS policy relies on `authenticated` alone; all check `app_users` membership.
-9. Money is integer centavos in code, rounded half-up.
-10. A shift reaches `closed` only when device and server totals agree; otherwise it is `closed_unsynced`.
+9. A collection's allocations and lines together sum to its `gross_amount`.
+10. Money is integer centavos in code, rounded half-up.
+11. A shift reaches `closed` only when device and server totals agree; otherwise it is `closed_unsynced`.
