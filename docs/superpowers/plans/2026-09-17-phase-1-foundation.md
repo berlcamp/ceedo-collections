@@ -910,6 +910,18 @@ function uniqueEmail(email: string): string {
   return `${local}+${randomUUID().slice(0, 8)}@${domain}`;
 }
 
+/**
+ * Makes a fixture facility or fee-type code collision-proof.
+ *
+ * Same reasoning as uniqueEmail: resetFixtures() clears app_users but not master data, so
+ * re-running a suite without `supabase db reset` collides on fixed codes. It fails loudly
+ * rather than silently, but it has twice been mistaken for a real failure while debugging
+ * something else. Tests never assert on the code itself.
+ */
+export function uniqueCode(prefix: string): string {
+  return `${prefix}-${randomUUID().slice(0, 6).toUpperCase()}`;
+}
+
 async function createAuthUser(email: string): Promise<string> {
   const admin = createClient(URL, SERVICE_KEY, { auth: { persistSession: false } });
   const { data, error } = await admin.auth.admin.createUser({
@@ -1651,7 +1663,53 @@ select ceedo_collections.apply_master_data_policies('leases');
 Run: `supabase db reset && pnpm vitest run tests/db/leases.test.ts`
 Expected: PASS — 6 tests.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Prove the master-data tables are reachable by a real user**
+
+Task 4 removed this schema's implicit grants, so `apply_master_data_policies()` is the
+single point of failure for reachability across every master-data table. Every other
+database test uses `serviceClient()`, which bypasses RLS and would not notice if that
+installer stopped granting — the tables would go unreachable to real users while the suite
+stayed fully green.
+
+Create `tests/db/master-data-policies.test.ts`:
+
+```ts
+import { beforeAll, describe, expect, it } from "vitest";
+import { createAppUser, type TestClient } from "../helpers/supabase.js";
+
+/**
+ * Every table apply_master_data_policies() is applied to. LATER TASKS MUST EXTEND THIS:
+ * fee_types and rates (Task 7); form_types, booklets, booklet_assignments and
+ * spoiled_forms (Task 8); devices, device_assignments and collector_assignments (Task 9).
+ */
+const MASTER_DATA_TABLES = [
+  "facilities",
+  "sections",
+  "stalls",
+  "tenants",
+  "leases",
+] as const;
+
+describe("master data reachability", () => {
+  let collector: TestClient;
+
+  beforeAll(async () => {
+    collector = (await createAppUser({ email: "mdp-col@example.com", role: "collector" })).client;
+  });
+
+  it.each(MASTER_DATA_TABLES)("lets a signed-in collector select from %s", async (table) => {
+    const { error } = await collector.from(table).select("id").limit(1);
+    expect(error).toBeNull();
+  });
+});
+```
+
+`createAppUser`, never `serviceClient()` — a service-role client passes this test with every
+grant and policy removed, which would make it worthless. Verify it bites: revoke `select` on
+one table from `authenticated` via psql, re-run, confirm the suite fails on that table
+specifically, then `supabase db reset`.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add supabase tests
@@ -1985,6 +2043,10 @@ Run: `supabase db reset && pnpm test`
 Expected: PASS — all suites.
 
 - [ ] **Step 8: Commit**
+
+Before committing, add `fee_types` and `rates` to `MASTER_DATA_TABLES` in
+`tests/db/master-data-policies.test.ts`. A table absent from that list has no proof it is
+reachable by a real signed-in user.
 
 ```bash
 git add supabase packages tests
@@ -2382,6 +2444,10 @@ Expected: PASS — all suites.
 
 - [ ] **Step 8: Commit**
 
+Before committing, add `form_types`, `booklets`, `booklet_assignments` and `spoiled_forms` to `MASTER_DATA_TABLES` in
+`tests/db/master-data-policies.test.ts`. A table absent from that list has no proof it is
+reachable by a real signed-in user.
+
 ```bash
 git add supabase packages tests
 git commit -m "feat: OR booklets, assignments and pure serial validation"
@@ -2639,6 +2705,10 @@ Run: `supabase db reset && pnpm vitest run tests/db/devices.test.ts`
 Expected: PASS — 7 tests.
 
 - [ ] **Step 5: Commit**
+
+Before committing, add `devices`, `device_assignments` and `collector_assignments` to `MASTER_DATA_TABLES` in
+`tests/db/master-data-policies.test.ts`. A table absent from that list has no proof it is
+reachable by a real signed-in user.
 
 ```bash
 git add supabase tests
