@@ -2174,6 +2174,7 @@ export interface OrEntryContext {
 
 export type OrRejectReason =
   | "not_in_assigned_booklet"
+  | "ambiguous_booklet"
   | "already_consumed"
   | "marked_spoiled";
 
@@ -2194,10 +2195,17 @@ export function formatSerial(prefix: string, orNo: number): string {
  * booklets legitimately get skipped.
  */
 export function validateOrEntry(context: OrEntryContext, orNo: number): OrEntryResult {
-  const booklet = context.booklets.find(
+  // Never pick between candidates. Serial ranges may legitimately overlap across form
+  // types, so a collector can hold two booklets containing the same number. Choosing one
+  // silently would put a wrong booklet_id on a real receipt, and the vendor walks away
+  // with the paper. resolveRate refuses to choose between matching rates for the same
+  // reason — ambiguity is never resolved silently anywhere in this system.
+  const matches = context.booklets.filter(
     (candidate) => orNo >= candidate.startNo && orNo <= candidate.endNo,
   );
-  if (!booklet) return { ok: false, reason: "not_in_assigned_booklet" };
+  if (matches.length === 0) return { ok: false, reason: "not_in_assigned_booklet" };
+  if (matches.length > 1) return { ok: false, reason: "ambiguous_booklet" };
+  const booklet = matches[0]!;
   if (context.spoiled.has(orNo)) return { ok: false, reason: "marked_spoiled" };
   if (context.consumed.has(orNo)) return { ok: false, reason: "already_consumed" };
 
@@ -2359,6 +2367,9 @@ create table ceedo_collections.booklets (
   start_no      integer not null check (start_no > 0),
   end_no        integer not null,
   received_date date not null,
+  -- NOT AUTHORITATIVE. Nothing transitions this column; it is clerk-maintained and can
+  -- drift from reality. Reporting must derive booklet state from booklet_assignments and
+  -- spoiled_forms. Phase 6 adds transition logic or drops the column.
   status        ceedo_collections.booklet_status not null default 'received',
   created_at    timestamptz not null default now(),
   row_version   bigint not null default 0,
@@ -2427,6 +2438,35 @@ $$;
 create trigger booklet_assignments_collector_only
   before insert or update on ceedo_collections.booklet_assignments
   for each row execute function ceedo_collections.assert_assignee_is_collector();
+
+-- The other half of the accountability binding. The trigger above stops a booklet reaching
+-- a non-collector; this stops a collector being reclassified while still holding one.
+-- Without it a promoted collector keeps custody of accountable forms while gaining
+-- oversight of the collections they are accountable for — the segregation-of-duties
+-- failure an audit looks for first.
+create or replace function ceedo_collections.assert_no_held_booklets_on_role_change()
+returns trigger
+language plpgsql
+set search_path = ceedo_collections, pg_temp
+as $$
+begin
+  if old.role = 'collector' and new.role is distinct from 'collector'
+     and exists (
+       select 1 from ceedo_collections.booklet_assignments
+       where collector_id = old.id and returned_at is null
+     )
+  then
+    raise exception
+      'Cannot change % from collector to %: they still hold unreturned booklets', old.employee_no, new.role
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger app_users_no_held_booklets_on_role_change
+  before update on ceedo_collections.app_users
+  for each row execute function ceedo_collections.assert_no_held_booklets_on_role_change();
 
 create index booklet_assignments_collector_idx
   on ceedo_collections.booklet_assignments (collector_id) where returned_at is null;
