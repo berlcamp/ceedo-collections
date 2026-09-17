@@ -175,9 +175,13 @@ describe("cancel_collection", () => {
     expect(error).toBeNull();
 
     // The paper receipt is void but the serial is consumed: it must still be accounted
-    // for in the booklet reconciliation, not reissued.
+    // for in the booklet reconciliation, not reissued. Assert the specific reason code
+    // (postCollectionAsOwner puts it in the thrown message) rather than a bare
+    // `.rejects.toThrow()` -- otherwise this test would still pass, proving nothing,
+    // if the repost failed for any unrelated reason (a broken FK, fixture drift, a new
+    // validation added earlier in post_collection's branch order).
     await expect(
       postCollectionAsOwner(db, fx, { groupRanks: [1], orNo }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/or_already_used/);
   });
 });
