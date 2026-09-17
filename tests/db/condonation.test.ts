@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Client } from "pg";
-import { POSTGRES_URL, createAppUser, createLeaseFixture, type TestClient } from "../helpers/supabase.js";
+import {
+  POSTGRES_URL,
+  createAppUser,
+  createLeaseFixture,
+  resetCutover,
+  type TestClient,
+} from "../helpers/supabase.js";
 
 let db: Client;
 let admin: TestClient;
@@ -36,7 +42,12 @@ beforeEach(async () => {
   await db.query("insert into ceedo_collections.settings (cutover_date) values ('2026-10-01')");
 });
 
-afterAll(async () => { await db.end(); });
+afterAll(async () => {
+  // Leave the cutover as this file found it: `settings` is a shared singleton and
+  // fileParallelism is off, so whatever is left here is what the next file starts from.
+  await resetCutover(db);
+  await db.end();
+});
 
 describe("condone_charge", () => {
   it("reduces the outstanding balance", async () => {

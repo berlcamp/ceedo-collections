@@ -6,6 +6,7 @@ import {
   createCollectionFixture,
   createLeaseFixture,
   POSTGRES_URL,
+  resetCutover,
   uniqueCode,
   type TestClient,
 } from "../helpers/supabase";
@@ -70,6 +71,11 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
+  // Leave the cutover as this file found it: `settings` is a shared singleton and
+  // fileParallelism is off, so whatever is left here is what the next file starts from.
+  // This file is the one that needs a 2027 cutover, so it is the one that was actually
+  // leaving a foreign date behind for everybody else.
+  await resetCutover(db);
   await db.end();
 });
 

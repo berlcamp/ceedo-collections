@@ -5,6 +5,7 @@ import {
   POSTGRES_URL,
   createCollectionFixture,
   postCollectionAsOwner,
+  resetCutover,
   type CollectionFixture,
 } from "../helpers/supabase";
 
@@ -74,6 +75,9 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
+  // Leave the cutover as this file found it: `settings` is a shared singleton and
+  // fileParallelism is off, so whatever is left here is what the next file starts from.
+  await resetCutover(db);
   await db.end();
 });
 

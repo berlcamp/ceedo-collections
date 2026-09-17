@@ -368,6 +368,38 @@ async function ensureFormType(db: PgClient): Promise<string> {
 }
 
 /**
+ * The cutover date every Phase 2 test's dates are designed against, and the one
+ * `supabase/seed.sql` installs.
+ */
+export const SEEDED_CUTOVER_DATE = "2026-10-01";
+
+/**
+ * Puts `settings.cutover_date` back to the seeded date, whether or not a row exists.
+ *
+ * `settings` is a singleton shared by every test file, and `vitest.config.ts` sets
+ * `fileParallelism: false`, so whatever one file leaves behind is what the next file
+ * starts from. Six files mutate this row; five of them happened to re-insert the seeded
+ * date and so restored it by coincidence rather than by design, and the sixth
+ * (surcharge.test.ts, which legitimately needs a 2027 cutover) did not — which made the
+ * suite pass only on the first run after `supabase db reset` and then fail, on a second
+ * run, inside files that never touched settings at all. Every file that mutates it calls
+ * this in `afterAll`, so each one leaves the world as it found it.
+ *
+ * `on conflict ((true))` rather than delete-then-insert: `settings_singleton` is a unique
+ * index on the constant expression `(true)`, so a plain insert fails whenever a row
+ * already exists, and this infers that index by its expression and updates in place
+ * instead. One statement, no window in which the row is missing, and it works from either
+ * starting state.
+ */
+export async function resetCutover(db: PgClient): Promise<void> {
+  await db.query(
+    `insert into ceedo_collections.settings (cutover_date) values ($1::date)
+     on conflict ((true)) do update set cutover_date = excluded.cutover_date`,
+    [SEEDED_CUTOVER_DATE],
+  );
+}
+
+/**
  * Finds the seeded non-accruing per-head fee type (`SLAUGHTER`) and its `hog` rate, or
  * creates both if they do not exist yet — the same guard `ensureAccrualFeeType` and
  * `ensureFormType` apply, for the same reason.

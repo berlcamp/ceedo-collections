@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
-import { POSTGRES_URL, createAppUser, createLeaseFixture, type TestClient } from "../helpers/supabase.js";
+import {
+  POSTGRES_URL,
+  createAppUser,
+  createLeaseFixture,
+  resetCutover,
+  type TestClient,
+} from "../helpers/supabase.js";
 
 let db: Client;
 let leaseId: string;
@@ -20,6 +26,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Leave the cutover as this file found it: `settings` is a shared singleton and
+  // fileParallelism is off, so whatever is left here is what the next file starts from.
+  await resetCutover(db);
   await db.end();
 });
 
