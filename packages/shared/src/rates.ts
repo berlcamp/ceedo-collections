@@ -1,4 +1,4 @@
-import type { Centavos } from "./money.js";
+import type { Centavos } from "./money";
 
 export type RateBasis =
   | "per_day"

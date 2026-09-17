@@ -1,5 +1,5 @@
-export * from "./booklets.js";
-export * from "./money.js";
-export * from "./rates.js";
-export * from "./roles.js";
-export type { Database } from "./db.types.js";
+export * from "./booklets";
+export * from "./money";
+export * from "./rates";
+export * from "./roles";
+export type { Database } from "./db.types";
