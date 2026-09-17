@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 
 /**
  * Local Supabase connection details. `supabase status -o env` prints these;
@@ -22,7 +22,7 @@ if (!ANON_KEY || !SERVICE_KEY) {
 const SCHEMA = "ceedo_collections";
 
 /** Bypasses RLS. Used only for fixtures and assertions, never to test policy behaviour. */
-export function serviceClient(): SupabaseClient {
+export function serviceClient() {
   return createClient(URL, SERVICE_KEY, {
     db: { schema: SCHEMA },
     auth: { persistSession: false, autoRefreshToken: false },
@@ -30,7 +30,7 @@ export function serviceClient(): SupabaseClient {
 }
 
 /** An unauthenticated client. */
-export function anonClient(): SupabaseClient {
+export function anonClient() {
   return createClient(URL, ANON_KEY, {
     db: { schema: SCHEMA },
     auth: { persistSession: false, autoRefreshToken: false },
