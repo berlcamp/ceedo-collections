@@ -1,1 +1,1 @@
-export const PACKAGE_NAME = "@ceedo/shared";
+export * from "./money.js";
