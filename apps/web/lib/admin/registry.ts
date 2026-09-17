@@ -458,6 +458,29 @@ const configs: ResourceConfig[] = [
     optionLabel: "full_name",
     writeRoles: [],
   },
+  {
+    // Read-only, append-only at the database (migration 0010 revokes insert/update/delete
+    // from every role). No writeRoles, so the engine renders no form — but the empty array
+    // is what the server-side write path actually enforces; the absent form is not itself
+    // the guarantee.
+    key: "audit-log",
+    table: "audit_log",
+    title: "Audit log",
+    singular: "entry",
+    schema: z.object({}),
+    fields: [],
+    columns: [
+      { key: "at", label: "When" },
+      { key: "app_users", label: "Who" },
+      { key: "action", label: "Action" },
+      { key: "entity", label: "Record type" },
+      { key: "entity_id", label: "Record" },
+    ],
+    select: "id, at, action, entity, entity_id, app_users(full_name)",
+    orderBy: "at",
+    optionLabel: "action",
+    writeRoles: [],
+  },
 ];
 
 for (const config of configs) registerResource(config);
