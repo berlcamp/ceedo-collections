@@ -113,7 +113,8 @@ penalties; a fresh 3% charges twice for the same delinquency.
 
 **Six ledger tables** (§3.1–3.4), append-only, each carrying `row_version bigint` fed by
 `ceedo_collections.row_version_seq` via trigger, per the global constraint — plus **two
-supporting tables** (§3.5) that are deliberately outside that regime.
+supporting tables** (§3.5) that are deliberately outside that regime. §3.6 covers audit
+attachment, §3.7 the privilege model.
 
 ### 3.1 `charges`
 
@@ -252,7 +253,24 @@ consequential enough to need an actor's name against it.
 `accrual_runs` carries `UPDATE` (the job marks its own completion) and is therefore
 explicitly **not** a ledger table. Nothing in it is a cash fact.
 
-### 3.6 Privileges — the guarantee
+### 3.6 Audit attachment — deliberately partial
+
+Phase 1's `attach_audit(table_name)` installs a trigger recording every insert, update and
+delete into `audit_log`. Phase 2 attaches it to **`charge_condonations`,
+`collection_cancellations` and `settings` only.**
+
+Not to `charges`, `collections`, `collection_allocations` or `collection_lines`. Those
+tables are already immutable, already timestamped, and already carry their actor — they
+*are* the audit record. Attaching the trigger would copy every row into `audit_log` a
+second time, doubling a table that §8.1 puts at ~200,000 rows a year, and would record no
+fact that reading the ledger does not already give you.
+
+The three that do get it are the discretionary acts — writing off a debt, voiding a
+receipt, moving the cutover date. §11.4 names condonation explicitly. These are low-volume
+and are precisely the actions where "who decided this, and when" is the question asked
+later.
+
+### 3.7 Privileges — the guarantee
 
 ```sql
 grant select on <every ledger table> to authenticated, service_role;
