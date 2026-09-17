@@ -996,7 +996,12 @@ create trigger app_users_updated_at
 -- on this Supabase project, so being signed in proves nothing about access here.
 --
 -- security definer because the function reads app_users while app_users' own policies
--- are being evaluated.
+-- are being evaluated. Note is_admin() and has_role() are security INVOKER and inherit
+-- that reach through this function — that layering is what stops the policies recursing.
+--
+-- Depends on app_users NOT having FORCE ROW LEVEL SECURITY: this function is owned by the
+-- table's owner and so bypasses RLS when reading it. Enabling force RLS here would make
+-- the policies recurse through this function infinitely.
 create or replace function ceedo_collections.active_role()
 returns ceedo_collections.app_role
 language sql
@@ -1042,17 +1047,41 @@ create policy app_users_admin_write on ceedo_collections.app_users
   using (ceedo_collections.is_admin())
   with check (ceedo_collections.is_admin());
 
-grant select on ceedo_collections.app_users to authenticated;
+-- pin_hash is deliberately absent from this column list. PIN verification happens
+-- server-side in a Phase 3 Edge Function; no web client, at any role, has a reason to
+-- read the hash itself. A table-level grant here would expose it to supervisor and
+-- accounting for every user — an offline-cracking surface handed to two non-admin roles.
+grant select (id, employee_no, full_name, role, status, created_at, updated_at, row_version)
+  on ceedo_collections.app_users to authenticated;
 grant insert, update, delete on ceedo_collections.app_users to authenticated;
-grant execute on function ceedo_collections.active_role() to authenticated, anon;
+
+revoke execute on function ceedo_collections.active_role() from public;
+revoke execute on function ceedo_collections.has_role(variadic ceedo_collections.app_role[]) from public;
+revoke execute on function ceedo_collections.is_admin() from public;
+
+grant execute on function ceedo_collections.active_role() to authenticated;
 grant execute on function ceedo_collections.has_role(variadic ceedo_collections.app_role[]) to authenticated;
 grant execute on function ceedo_collections.is_admin() to authenticated;
+
+-- Nothing in this system is served to anonymous callers: the web app authenticates via
+-- Google and the collector app goes through Edge Functions. Task 3's default-privileges
+-- grant would otherwise make every future table — including the Phase 2 cash ledger —
+-- readable by anon the moment one policy omits an explicit role list.
+alter default privileges in schema ceedo_collections revoke select on tables from anon;
+revoke select on all tables in schema ceedo_collections from anon;
+revoke usage on schema ceedo_collections from anon;
 ```
+
+**Two tests must be written so they fail if their policy is deleted.** `app_users_admin_write`
+is `FOR ALL`, so its `USING` backstops `SELECT` for admins — meaning an admin-read test
+passes even with `app_users_read_all` dropped. Cover the roles that policy uniquely serves
+(supervisor, accounting) with a read test, and assert row counts against the service client
+rather than `toBeGreaterThan(1)`, which also removes the order dependency.
 
 - [ ] **Step 5: Reset and run the tests**
 
 Run: `supabase db reset && pnpm vitest run tests/db/membership-gate.test.ts`
-Expected: PASS — 8 tests.
+Expected: PASS — 10 tests.
 
 - [ ] **Step 6: Add the role predicates to `@ceedo/shared`**
 
