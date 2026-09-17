@@ -56,6 +56,25 @@ describe("generatePeriods — daily", () => {
       }),
     ).toEqual([]);
   });
+
+  it("is unaffected by the lease-start guard — a daily period is always exactly one lease-covered day", () => {
+    // Explicit regression pin: the head guard added for the monthly asymmetry must not
+    // affect daily periods. A daily period's cursor is always `start` itself
+    // (= max(leaseStart, cutover)), never floored to an earlier boundary, so periodStart
+    // can never land before leaseStart.
+    const periods = generatePeriods({
+      accrualPeriod: "daily",
+      leaseStart: "2026-10-15",
+      leaseEnd: null,
+      cutover: "2026-10-01",
+      through: "2026-10-16",
+      dueDay: null,
+    });
+    expect(periods).toEqual([
+      { periodStart: "2026-10-15", periodEnd: "2026-10-15", dueDate: "2026-10-15" },
+      { periodStart: "2026-10-16", periodEnd: "2026-10-16", dueDate: "2026-10-16" },
+    ]);
+  });
 });
 
 describe("generatePeriods — weekly", () => {
@@ -84,6 +103,24 @@ describe("generatePeriods — weekly", () => {
       dueDay: null,
     });
     expect(periods).toHaveLength(1);
+  });
+
+  it("is unaffected by the lease-start guard when the lease starts mid-week", () => {
+    // A weekly period's cursor starts exactly at `start` (= max(leaseStart, cutover)) rather
+    // than being floored to some calendar-week boundary, so there is no partial-first-period
+    // case to guard against here -- unlike monthly, where the cursor floors to the 1st. This
+    // pins that the fix for the monthly asymmetry did not introduce a false skip for weekly.
+    const periods = generatePeriods({
+      accrualPeriod: "weekly",
+      leaseStart: "2026-10-07", // a Wednesday
+      leaseEnd: null,
+      cutover: "2026-10-01",
+      through: "2026-10-13",
+      dueDay: null,
+    });
+    expect(periods).toEqual([
+      { periodStart: "2026-10-07", periodEnd: "2026-10-13", dueDate: "2026-10-13" },
+    ]);
   });
 });
 
@@ -142,14 +179,48 @@ describe("generatePeriods — monthly", () => {
     ).toThrow(/due day/i);
   });
 
-  it("floors a mid-month lease start to the first of that month, billing the whole calendar month", () => {
-    // Not in the brief's own test list. Added to characterize a real billing decision:
-    // a lease starting on the 15th still raises a period for the 1st-through-end-of-month,
-    // not a stub period from the 15th. Confirms the code comment's claim against behaviour,
-    // and documents it as an explicit, tested decision rather than an incidental one.
+  it("does not bill a partial first month when the lease starts mid-month", () => {
+    // Not in the brief's own test list. This is the inverse of an earlier characterization
+    // test that asserted the opposite (a mid-month start billing the whole calendar month).
+    // That was found to be an asymmetric bug: the code already refused a partial *trailing*
+    // period (`periodEnd > hardEnd`) but had no matching guard on the head, so a lease
+    // *ending* mid-month billed nothing for that month while a lease *starting* mid-month
+    // billed the full month. The head now matches the tail: no period is raised at all here,
+    // because through (2026-10-31) never reaches a fully-lease-covered month.
     const periods = generatePeriods({
       accrualPeriod: "monthly",
       leaseStart: "2026-10-15",
+      leaseEnd: null,
+      cutover: "2026-10-01",
+      through: "2026-10-31",
+      dueDay: 5,
+    });
+    expect(periods).toEqual([]);
+  });
+
+  it("skips the partial first month and starts billing the following month", () => {
+    // Mirror of the case above with a longer `through`, so the skipped October period and
+    // the first genuinely billed period (November) are both visible.
+    const periods = generatePeriods({
+      accrualPeriod: "monthly",
+      leaseStart: "2026-10-15",
+      leaseEnd: null,
+      cutover: "2026-10-01",
+      through: "2026-12-31",
+      dueDay: 5,
+    });
+    expect(periods).toEqual([
+      { periodStart: "2026-11-01", periodEnd: "2026-11-30", dueDate: "2026-11-05" },
+      { periodStart: "2026-12-01", periodEnd: "2026-12-31", dueDate: "2026-12-05" },
+    ]);
+  });
+
+  it("does bill the first month when the lease starts exactly on the first of the month", () => {
+    // The off-by-one the head guard could easily introduce: a lease starting precisely on
+    // the 1st must not be treated as "starting mid-month" and skipped.
+    const periods = generatePeriods({
+      accrualPeriod: "monthly",
+      leaseStart: "2026-10-01",
       leaseEnd: null,
       cutover: "2026-10-01",
       through: "2026-10-31",
