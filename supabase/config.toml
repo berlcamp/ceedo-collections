@@ -172,7 +172,18 @@ enable_refresh_token_rotation = true
 # Requires enable_refresh_token_rotation = true.
 refresh_token_reuse_interval = 10
 # Allow/disallow new user signups to your project.
-enable_signup = true
+# Disabled: this app is Google-only (apps/web/app/sign-in/page.tsx signs in via
+# signInWithOAuth({ provider: "google" }) only). Self-service signup lets anyone mint an
+# auth.users row with the anon key — the exact input ceedo_collections.claim_staff_invite()
+# keys on — which was the second layer of the invite-read privilege escalation. This maps
+# to GoTrue's GOTRUE_DISABLE_SIGNUP, which blocks the public /signup (and OAuth-first-login)
+# endpoint but not the admin API (auth.admin.createUser) — tests still create users that
+# way. Deliberately NOT auth.email.enable_signup: that key maps to
+# GOTRUE_EXTERNAL_EMAIL_ENABLED, the whole email provider on/off switch, which also blocks
+# signInWithPassword for already-existing users — confirmed by inspecting the auth
+# container's env and by running the suite, which broke 32 tests that authenticate test
+# fixtures via password sign-in. This setting closes the same hole without that.
+enable_signup = false
 # Allow/disallow anonymous sign-ins to your project.
 enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts

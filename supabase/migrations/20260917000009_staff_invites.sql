@@ -8,11 +8,14 @@
 -- `id` is a surrogate uuid primary key, not `email` itself: the generic admin resource
 -- engine's save action (apps/web/lib/admin/actions.ts, untouched by this migration) always
 -- does `.insert(...).select("id").single()` to read back the new row's id, matching every
--- other admin-writable table in this schema. `email` stays `unique` and is what the claim
--- trigger and the deletion below key on.
+-- other admin-writable table in this schema.
+--
+-- A leading/trailing-whitespace email would insert successfully but never match
+-- `new.email` from a real sign-in (GoTrue does not send untrimmed addresses), leaving a
+-- silently dead invite — so it is rejected at insert time instead.
 create table ceedo_collections.staff_invites (
   id          uuid primary key default gen_random_uuid(),
-  email       text not null unique,
+  email       text not null check (email = btrim(email)),
   employee_no text not null unique,
   full_name   text not null,
   role        ceedo_collections.app_role not null,
@@ -21,7 +24,28 @@ create table ceedo_collections.staff_invites (
   row_version bigint not null default 0
 );
 
+-- `email` is matched case-insensitively (see claim_staff_invite below), so uniqueness must
+-- be too: a plain `unique` on `email` still lets 'a@x.com' and 'A@x.com' coexist, and the
+-- trigger would then pick whichever row happens to match first — an arbitrary, silent
+-- choice of which role gets granted. A unique index on lower(email) makes that a rejected
+-- insert instead.
+create unique index staff_invites_email_lower_key on ceedo_collections.staff_invites (lower(email));
+
+-- apply_master_data_policies() also attaches the standard grants and the row-version
+-- trigger, which this table needs like every other master-data table — call it first, then
+-- immediately replace the read policy it installs (see below).
 select ceedo_collections.apply_master_data_policies('staff_invites');
+
+-- A pending invite is a claimable grant, not ordinary master data: anyone who can read one
+-- learns an address that, until claimed, confers the role it names. The standard
+-- apply_master_data_policies() read policy grants SELECT to every registered staff member
+-- (correct for facilities, rates, booklets, ...) — that is exactly what let a collector
+-- read a pending admin invite and self-register into it. Admins only.
+drop policy staff_invites_read on ceedo_collections.staff_invites;
+
+create policy staff_invites_read on ceedo_collections.staff_invites
+  for select to authenticated
+  using (ceedo_collections.is_admin());
 
 -- Fires on the auth schema, so it must be security definer with a pinned search_path:
 -- the signing-in user has no privileges in ceedo_collections at this moment.
@@ -34,6 +58,19 @@ as $$
 declare
   invite ceedo_collections.staff_invites;
 begin
+  -- Only a Google identity may claim an invite. Self-service email/password signup is
+  -- disabled at the auth level (supabase/config.toml, auth.email.enable_signup = false),
+  -- but that is a project-wide setting that could be re-enabled or bypassed by another
+  -- provider; this is an independent, second gate on the exact mechanism the claim trigger
+  -- itself uses. Confirmed by inspection (local Supabase, GoTrue via the admin API) that
+  -- raw_app_meta_data is a jsonb column shaped {"provider": <name>, "providers": [...]}
+  -- for every provider — verified directly against a password-provider row, whose
+  -- raw_app_meta_data was exactly {"provider": "email", "providers": ["email"]} — so the
+  -- same ->> 'provider' lookup is expected to read "google" for a real Google sign-in.
+  if coalesce(new.raw_app_meta_data ->> 'provider', '') <> 'google' then
+    return new;
+  end if;
+
   select * into invite
   from ceedo_collections.staff_invites
   where lower(email) = lower(new.email);
@@ -48,6 +85,13 @@ begin
 
   delete from ceedo_collections.staff_invites where email = invite.email;
   return new;
+exception
+  when others then
+    -- Never abort an auth.users insert: this table is shared with other applications on
+    -- this Supabase project, and a bad invite (e.g. a duplicate employee_no colliding with
+    -- an existing app_users row) must not stop anyone signing in. The invite is left in
+    -- place for an administrator to correct; the person simply sees /no-access.
+    return new;
 end;
 $$;
 

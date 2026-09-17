@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Role } from "@ceedo/shared";
 import { createClient } from "@supabase/supabase-js";
+import { Client as PgClient } from "pg";
 
 /**
  * Local Supabase connection details. `supabase status -o env` prints these;
@@ -22,6 +23,12 @@ if (!ANON_KEY || !SERVICE_KEY) {
 }
 
 const SCHEMA = "ceedo_collections";
+// `supabase status -o env` also emits DB_URL, the direct Postgres connection used only by
+// createGoogleAuthUser below (see its doc comment for why).
+const PG_URL =
+  process.env.SUPABASE_DB_URL ??
+  process.env.DB_URL ??
+  "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
 
 /** Bypasses RLS. Used only for fixtures and assertions, never to test policy behaviour. */
 export function serviceClient() {
@@ -48,7 +55,7 @@ export type TestClient = ReturnType<typeof anonClient>;
 
 const PASSWORD = "test-password-not-a-secret";
 
-async function signIn(email: string): Promise<TestClient> {
+export async function signIn(email: string): Promise<TestClient> {
   const client = anonClient();
   const { error } = await client.auth.signInWithPassword({ email, password: PASSWORD });
   if (error) throw new Error(`Sign-in failed for ${email}: ${error.message}`);
@@ -82,6 +89,13 @@ export function uniqueCode(prefix: string): string {
   return `${prefix}-${randomUUID().slice(0, 6).toUpperCase()}`;
 }
 
+/**
+ * The admin API's own default `raw_app_meta_data` is `{"provider": "email", "providers":
+ * ["email"]}` (confirmed by inspection) — a real non-Google identity, which is what makes
+ * this usable to test `ceedo_collections.claim_staff_invite()`'s provider gate from the
+ * refusing side. It is NOT usable to construct a "google" identity for that trigger: see
+ * `createGoogleAuthUser` below for why, and for the one that is.
+ */
 async function createAuthUser(email: string): Promise<string> {
   const admin = createClient(URL, SERVICE_KEY, { auth: { persistSession: false } });
   const { data, error } = await admin.auth.admin.createUser({
@@ -91,6 +105,50 @@ async function createAuthUser(email: string): Promise<string> {
   });
   if (error) throw new Error(`Could not create auth user ${email}: ${error.message}`);
   return data.user.id;
+}
+
+/**
+ * Inserts an `auth.users` row directly via Postgres, with `raw_app_meta_data` already set
+ * to `{"provider": "google", "providers": ["google"]}` in the same INSERT statement — the
+ * only reliable way found to construct a row shaped like a genuine external-OAuth sign-in
+ * for testing `claim_staff_invite()`'s `AFTER INSERT` provider check.
+ *
+ * `admin.auth.admin.createUser({ app_metadata: { provider: "google", ... } })` does NOT
+ * do this: proven by attaching a temporary debug trigger (`AFTER INSERT ON auth.users`,
+ * logging `NEW.raw_app_meta_data` to a scratch table, removed after use) that captured
+ * `{"provider": "email", ...}` for BOTH a default-created row and one created with an
+ * explicit "google" `app_metadata` override. GoTrue's admin handler inserts the row with
+ * its own default metadata first and patches any caller-supplied override in afterward, as
+ * a separate statement — invisible to a trigger on the original INSERT. There is no
+ * supabase-js path around this (PostgREST does not expose the `auth` schema at all), so
+ * this talks to Postgres directly instead — the one thing in this test suite that does.
+ *
+ * This could not be checked against a genuine Google sign-in (no OAuth credentials exist
+ * for this project yet); it constructs the most faithful row obtainable locally, using
+ * the exact `instance_id`/`aud`/`role` values a real GoTrue-created row has. No password
+ * is set, so the returned identity cannot sign in — tests use `serviceClient()` to inspect
+ * its effects instead.
+ */
+export async function createGoogleAuthUser(email: string): Promise<string> {
+  const client = new PgClient({ connectionString: PG_URL });
+  await client.connect();
+  try {
+    const id = randomUUID();
+    await client.query(
+      `insert into auth.users
+         (id, instance_id, aud, role, email, email_confirmed_at,
+          raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+          confirmation_token, is_sso_user, is_anonymous)
+       values
+         ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2, now(),
+          '{"provider": "google", "providers": ["google"]}'::jsonb, '{}'::jsonb, now(), now(),
+          '', false, false)`,
+      [id, email],
+    );
+    return id;
+  } finally {
+    await client.end();
+  }
 }
 
 /** A registered user: an auth.users record plus the app_users row that grants access. */
@@ -121,11 +179,11 @@ export async function createOutsiderClient(): Promise<TestClient> {
 }
 
 /**
- * Creates an `auth.users` row for an exact, caller-chosen email and signs in as it.
- * Unlike `createAppUser` and `createOutsiderClient`, this never touches `app_users`
- * itself — used to test the `staff_invites` claim trigger, which fires on `auth.users`
- * insert and needs full control over the email (including its casing) to test matching
- * a pre-existing invite.
+ * Creates an `auth.users` row for an exact, caller-chosen email (as the admin API's own
+ * default "email" provider — see `createAuthUser`) and signs in as it. Unlike
+ * `createAppUser` and `createOutsiderClient`, this never touches `app_users` itself —
+ * used to test the `staff_invites` claim trigger's email matching (including case) and,
+ * being a non-Google identity, its provider gate from the refusing side.
  */
 export async function createUnregisteredAuthUser(
   email: string,

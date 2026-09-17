@@ -6,6 +6,8 @@
   "scripts": { "typecheck": "tsc --noEmit" },
   "devDependencies": {
     "@supabase/supabase-js": "^2.48.0",
+    "@types/pg": "^8.11.0",
+    "pg": "^8.13.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
