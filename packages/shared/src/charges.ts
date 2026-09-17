@@ -93,22 +93,22 @@ export function generatePeriods(input: GeneratePeriodsInput): ChargePeriod[] {
 
     const next = accrualPeriod === "monthly" ? startOfNextMonth(cursor) : addDays(periodEnd, 1);
 
-    // A period is billed only when the lease covers it end to end -- symmetric with the
-    // trailing guard just below (`periodEnd > hardEnd`). A monthly lease starting mid-month
-    // is therefore not billed a partial first month; billing starts the following calendar
-    // month. This guard only bites monthly periods: the cursor there is floored to the 1st
-    // of the month regardless of where in the month the lease (or the cutover) actually
-    // falls, so `cursor` (== periodStart) can land before leaseStart. Daily and weekly
-    // periods start exactly on `start` (= max(leaseStart, cutover)), so periodStart is never
-    // earlier than leaseStart for them and this branch never fires.
+    // A period is billed only when BOTH the lease and the post-cutover window cover it end to
+    // end -- symmetric with the trailing guard just below (`periodEnd > hardEnd`). Compare
+    // against `start` (= max(leaseStart, cutover)), not leaseStart alone: leaseStart and
+    // cutover each constrain independently, and the max enforces both at once. Guarding only
+    // against leaseStart (an earlier version of this guard) let a monthly period begin before
+    // the cutover whenever the cutover landed mid-month on an already-running lease --
+    // exactly the case `GeneratePeriodsInput.cutover`'s own doc comment ("No period may begin
+    // before this date") forbids, and it double-bills: the opening balance already covers
+    // through cutover-1.
     //
-    // The cutover interacts with this cleanly, not additionally: `start` already floors to
-    // the cutover when the lease predates it, so a lease already running when the cutover
-    // landed still gets billed for the calendar period the cutover falls inside -- that
-    // period is wholly covered by the already-running lease, just not by the accrual window
-    // before cutover. Those pre-cutover arrears belong to the opening balance, not to this
-    // function.
-    if (cursor < leaseStartDate) {
+    // This guard only bites monthly periods: the cursor there is floored to the 1st of the
+    // month regardless of where in the month `start` actually falls, so `cursor` (==
+    // periodStart) can land before `start`. Daily and weekly periods start exactly on `start`
+    // itself, so periodStart is never earlier than `start` for them and this branch never
+    // fires.
+    if (cursor < start) {
       cursor = next;
       continue;
     }

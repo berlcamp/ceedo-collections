@@ -230,6 +230,44 @@ describe("generatePeriods — monthly", () => {
       { periodStart: "2026-10-01", periodEnd: "2026-10-31", dueDate: "2026-10-05" },
     ]);
   });
+
+  it("skips a period the cutover lands in the middle of, even on a lease that started well before it", () => {
+    // Fix-round-2 regression: an earlier version of the head guard compared cursor against
+    // leaseStart alone, which let a monthly period begin *before* the cutover whenever the
+    // cutover landed mid-month on an already-running lease -- exactly what
+    // GeneratePeriodsInput.cutover's own doc comment ("No period may begin before this date")
+    // forbids, and it double-bills: the opening balance already covers through cutover-1
+    // (2026-10-19 here), and this would separately raise a charge covering 1-31 October too.
+    // The guard must compare against `start` (= max(leaseStart, cutover)), not leaseStart
+    // alone, so both bounds are enforced.
+    const periods = generatePeriods({
+      accrualPeriod: "monthly",
+      leaseStart: "2026-09-15",
+      leaseEnd: null,
+      cutover: "2026-10-20",
+      through: "2026-11-30",
+      dueDay: 5,
+    });
+    expect(periods).toEqual([
+      { periodStart: "2026-11-01", periodEnd: "2026-11-30", dueDate: "2026-11-05" },
+    ]);
+  });
+
+  it("skips the whole month when the lease starts on the 2nd, not just the 1st", () => {
+    // Pins the boundary from the other side of the earlier day-1 and day-15 cases: the guard
+    // must fire for *any* start after the 1st, not merely a start deep in the month.
+    const periods = generatePeriods({
+      accrualPeriod: "monthly",
+      leaseStart: "2026-10-02",
+      leaseEnd: null,
+      cutover: "2026-10-01",
+      through: "2026-11-30",
+      dueDay: 5,
+    });
+    expect(periods).toEqual([
+      { periodStart: "2026-11-01", periodEnd: "2026-11-30", dueDate: "2026-11-05" },
+    ]);
+  });
 });
 
 describe("computeSurcharge", () => {
@@ -258,5 +296,12 @@ describe("surchargeDueFrom", () => {
 
   it("is an ordinary month step otherwise", () => {
     expect(surchargeDueFrom("2026-10-05")).toBe("2026-11-05");
+  });
+
+  it("clamps 30 January to 28 February too, not just the 31st", () => {
+    // Cheap extra pin confirming this exercises the Math.min(day, lastDay) clamp branch, not
+    // some 31-specific special case. Verified against a live Postgres instance:
+    // date '2027-01-30' + interval '1 month' = 2027-02-28, matching this exactly.
+    expect(surchargeDueFrom("2027-01-30")).toBe("2027-02-28");
   });
 });
