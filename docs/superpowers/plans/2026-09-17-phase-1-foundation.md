@@ -578,14 +578,33 @@ alter default privileges in schema ceedo_collections
   grant select, insert, update, delete on tables to service_role;
 alter default privileges in schema ceedo_collections
   grant usage, select on sequences to anon, authenticated, service_role, ceedo_app;
+
+-- ALTER DEFAULT PRIVILEGES applies only to objects created AFTER it runs. row_version_seq
+-- was created above, so it needs an explicit grant or next_row_version() fails with
+-- "42501 permission denied for sequence row_version_seq".
+grant usage, select on sequence ceedo_collections.row_version_seq
+  to anon, authenticated, service_role, ceedo_app;
 ```
 
 - [ ] **Step 3: Create the test workspace and Supabase helpers**
 
-First add `tests` to `vitest.workspace.ts`, which Task 1 left scoped to `packages/*`:
+First register the `tests` directory in both workspace files. Task 1 scoped each to
+what existed at the time.
+
+`vitest.workspace.ts`:
 
 ```ts
 export default ["packages/*", "tests"];
+```
+
+`pnpm-workspace.yaml` — without this, `"@ceedo/shared": "workspace:*"` in
+`tests/package.json` cannot resolve:
+
+```yaml
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "tests"
 ```
 
 `tests/package.json`:
@@ -615,6 +634,12 @@ export default ["packages/*", "tests"];
   "include": ["**/*.ts"]
 }
 ```
+
+`pnpm typecheck` runs across every workspace package, so `tests` must typecheck
+cleanly. If `@supabase/supabase-js` options or client generics collide with
+`exactOptionalPropertyTypes`, prefer dropping explicit return-type annotations and
+letting inference work over loosening the compiler flag — the flag is a global
+constraint and the helpers are the only place it bites.
 
 `tests/helpers/supabase.ts`:
 
