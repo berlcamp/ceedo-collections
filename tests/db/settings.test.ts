@@ -26,17 +26,24 @@ describe("settings holds exactly one row", () => {
     await db.query(
       "insert into ceedo_collections.settings (cutover_date) values ('2026-10-01')",
     );
+    // settings.id is a generated uuid (not the boolean the single-row trick usually uses:
+    // a real uuid is what lets write_audit() audit this table unmodified). The singleton
+    // is enforced by settings_singleton, a unique index on the constant expression
+    // `(true)`, so a second row collides on that index regardless of its own id.
     await expect(
       db.query("insert into ceedo_collections.settings (cutover_date) values ('2026-11-01')"),
-    ).rejects.toThrow(/settings_pkey/);
+    ).rejects.toThrow(/settings_singleton/);
   });
 
-  it("refuses a row with id false", async () => {
+  it("refuses a second row regardless of the id supplied", async () => {
+    // Same guarantee, from the other direction: since id is a generated uuid rather than a
+    // fixed sentinel, a caller could supply any distinct id and get past a primary-key
+    // check alone. settings_singleton refuses it anyway.
     await expect(
       db.query(
-        "insert into ceedo_collections.settings (id, cutover_date) values (false, '2026-11-01')",
+        "insert into ceedo_collections.settings (id, cutover_date) values (gen_random_uuid(), '2026-11-01')",
       ),
-    ).rejects.toThrow(/settings_id_check/);
+    ).rejects.toThrow(/settings_singleton/);
   });
 });
 
@@ -66,6 +73,12 @@ describe("cutover_date()", () => {
 describe("settings access control", () => {
   it("a non-admin cannot change the cutover date", async () => {
     const { client } = await createAppUser({ email: "accounting", role: "accounting" });
+    // PostgREST refuses an UPDATE with no WHERE clause at all ("UPDATE requires a WHERE
+    // clause", confirmed by direct observation) -- id is a generated uuid the client
+    // never sees up front, so it is fetched via a SELECT (settings_read permits it for
+    // accounting) and used as the filter, as a real caller would.
+    const { data: current } = await client.from("settings").select("id").single();
+
     // RLS filters rather than errors here: settings_admin_write's USING clause makes the
     // row invisible to an UPDATE from a non-admin, and with 0 candidate rows Postgres
     // reports success with nothing affected rather than a permission-denied error --
@@ -75,23 +88,22 @@ describe("settings access control", () => {
     const { data, error } = await client
       .from("settings")
       .update({ cutover_date: "2020-01-01" })
-      .eq("id", true)
+      .eq("id", current!.id)
       .select();
     expect(error).toBeNull();
     expect(data).toEqual([]);
 
-    const { rows } = await db.query(
-      "select cutover_date::text as d from ceedo_collections.settings where id",
-    );
+    const { rows } = await db.query("select cutover_date::text as d from ceedo_collections.settings");
     expect(rows[0].d).not.toBe("2020-01-01");
   });
 
   it("an admin can change the cutover date", async () => {
     const { client } = await createAppUser({ email: "admin", role: "admin" });
+    const { data: current } = await client.from("settings").select("id").single();
     const { error } = await client
       .from("settings")
       .update({ cutover_date: "2026-10-02" })
-      .eq("id", true);
+      .eq("id", current!.id);
     expect(error).toBeNull();
   });
 

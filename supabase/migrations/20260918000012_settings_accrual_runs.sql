@@ -4,17 +4,21 @@
 -- outage. apply_ledger_policies() is never called here -- both tables are legitimately
 -- mutable, and calling the ledger installer on them would withhold UPDATE they actually need.
 
--- One row, enforced by the type system rather than by a trigger or by convention.
--- `id boolean primary key default true` with `check (id)` admits exactly one row: the
--- only permitted value is true, and the primary key stops it appearing twice. Two cutover
--- dates are therefore unrepresentable, so no code needs to decide which one applies.
+-- Exactly one row, enforced by an index rather than by a trigger or by convention: the
+-- indexed expression `(true)` is constant, so a second row always collides with the first
+-- on that expression -- two cutover dates are therefore unrepresentable, so no code needs
+-- to decide which one applies. A uuid id (rather than the boolean the single-row trick
+-- usually uses) is what lets Phase 1's write_audit() audit this table completely
+-- unmodified: it casts every audited row's id to uuid, and a real uuid here just works.
 create table ceedo_collections.settings (
-  id           boolean primary key default true check (id),
+  id           uuid primary key default gen_random_uuid(),
   cutover_date date not null,
   updated_at   timestamptz not null default now(),
   updated_by   uuid references ceedo_collections.app_users (id),
   row_version  bigint not null default 0
 );
+
+create unique index settings_singleton on ceedo_collections.settings ((true));
 
 comment on column ceedo_collections.settings.cutover_date is
   'The accrual job raises no charge whose period begins before this date. Arrears older '
@@ -44,70 +48,10 @@ create trigger settings_touch
   for each row execute function ceedo_collections.touch_updated_at();
 
 -- Moving the cutover date is a decision someone makes, with consequences for what gets
--- billed. Who and when is exactly what gets asked later.
---
--- NOT attach_audit(): that installer's write_audit() (migration 0010) computes entity_id
--- as `(to_jsonb(row) ->> 'id')::uuid`, which assumes a uuid id -- true of every table it
--- has been attached to so far. settings.id is boolean by design (see above), and casting
--- 'true'/'false' to uuid raises. write_audit()'s own exception handler already anticipated
--- an id that "is not uuid-castable" (see its comment in migration 0010), and its documented,
--- deliberate response to that is to swallow the failure into an 'audit_failed' marker
--- rather than record the real change -- confirmed by direct observation against the local
--- stack (attaching it here made every settings write log as 'audit_failed', never
--- 'update', which is exactly the outcome migration 0010's own regression test
--- (audit-log.test.ts, "a forced audit failure produces an audit_failed marker") asserts is
--- correct for a table whose id genuinely cannot be identified). That is the right behaviour
--- for an accidental non-uuid id; it is the wrong one for settings, where the point of this
--- comment is that the change itself must be logged. So settings gets its own small trigger
--- instead of the shared one, rather than changing write_audit()'s well-tested behaviour for
--- every other table. entity_id is always null here: the single row has no identity beyond
--- the fact that it is the row, which "settings" as the entity name already says.
-create or replace function ceedo_collections.write_settings_audit()
-returns trigger
-language plpgsql
-security definer
-set search_path = ceedo_collections, pg_temp
-as $$
-declare
-  caller_role text;
-begin
-  caller_role := coalesce(nullif(current_setting('role', true), 'none'), session_user);
-
-  begin
-    insert into ceedo_collections.audit_log
-      (actor_id, pg_role, action, entity, entity_id, before, after)
-    values (
-      auth.uid(),
-      caller_role,
-      lower(tg_op),
-      'settings',
-      null,
-      case when tg_op in ('UPDATE', 'DELETE') then to_jsonb(old) end,
-      case when tg_op in ('INSERT', 'UPDATE') then to_jsonb(new) end
-    );
-  exception
-    when others then
-      -- Same posture as write_audit(): a secondary, observational effect must never abort
-      -- the primary operation it is attached to.
-      raise warning 'write_settings_audit failed for %: %', tg_op, sqlerrm;
-
-      begin
-        insert into ceedo_collections.audit_log
-          (actor_id, pg_role, action, entity, entity_id, note)
-        values (auth.uid(), caller_role, 'audit_failed', 'settings', null, sqlerrm);
-      exception
-        when others then
-          raise warning 'write_settings_audit failure marker also failed for %: %', tg_op, sqlerrm;
-      end;
-  end;
-
-  return case tg_op when 'DELETE' then old else new end;
-end;
-$$;
-
-create trigger settings_audit
-  after insert or update or delete on ceedo_collections.settings
-  for each row execute function ceedo_collections.write_settings_audit();
+-- billed. Who and when is exactly what gets asked later. This is the shared installer,
+-- unmodified: settings' uuid id (see above) is exactly what lets write_audit() (migration
+-- 0010) audit this table like any other, rather than needing a table-specific trigger.
+select ceedo_collections.attach_audit('settings');
 
 -- Reads the cutover date, or fails loudly. A missing settings row means the system was
 -- never configured; returning null instead would let run_accrual() compare every period
@@ -122,7 +66,8 @@ as $$
 declare
   d date;
 begin
-  select cutover_date into d from ceedo_collections.settings where id;
+  -- No `where` clause needed: settings_singleton guarantees at most one row exists.
+  select cutover_date into d from ceedo_collections.settings limit 1;
   if d is null then
     raise exception 'No cutover date configured. Insert the ceedo_collections.settings row before running accrual.'
       using errcode = 'no_data_found';

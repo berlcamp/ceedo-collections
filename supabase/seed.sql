@@ -54,11 +54,14 @@ insert into ceedo_collections.form_types (code, name) values
   ('OR51', 'Official Receipt (Accountable Form 51)');
 
 -- Every later Phase 2 task's test dates are designed against this exact cutover date.
--- `on conflict (id) do nothing` makes this idempotent across reseeds; settings.test.ts is
--- the one file allowed to delete/mutate this row, and restores this exact date afterward.
+-- settings.id is a generated uuid, not a fixed value `on conflict` could target -- the
+-- singleton is enforced by settings_singleton (a unique index on the constant expression
+-- `(true)`), not by id -- so idempotency across reseeds is a `where not exists` guard
+-- instead. settings.test.ts is the one file allowed to delete/mutate this row, and
+-- restores this exact date afterward.
 insert into ceedo_collections.settings (cutover_date)
-values ('2026-10-01')
-on conflict (id) do nothing;
+select '2026-10-01'
+where not exists (select 1 from ceedo_collections.settings);
 
 -- First administrator.
 --

@@ -229,7 +229,8 @@ Two tables outside the append-only regime, because their job is to record and be
 rather than to hold cash facts.
 
 ```
-settings:      id boolean pk default true, check (id)   -- one row, enforced
+settings:      id uuid pk default gen_random_uuid()
+               + unique index on ((true))               -- one row, enforced
                cutover_date date not null
                updated_at, updated_by → app_users
 
@@ -244,9 +245,15 @@ accrual_runs:  id uuid pk
                unique (business_date, started_at)
 ```
 
-`settings` is a one-row table: `id boolean primary key default true` with
-`check (id)` admits exactly one row and no more, so there is no way to end up with two
-cutover dates and no way to guess which one applies. Writable by admin only, audit-logged —
+`settings` is a one-row table: a unique index on the constant expression `((true))` admits
+exactly one row and no more, so there is no way to end up with two cutover dates and no way
+to guess which one applies.
+
+The id stays a **uuid** rather than the boolean the single-row trick more usually uses,
+because Phase 1's `write_audit()` casts every audited row's id to uuid. A boolean id makes
+each settings change log an `audit_failed` marker instead of a real entry — migration 0010's
+own comment anticipated this — and the alternative, a second copy of `write_audit()`, would
+duplicate the function where `pin_hash` redaction and the nested failure handling live. Writable by admin only, audit-logged —
 moving the cutover date after go-live changes what the accrual job will raise, which is
 consequential enough to need an actor's name against it.
 
