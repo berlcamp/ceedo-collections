@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
 /**
@@ -35,4 +36,67 @@ export function anonClient() {
     db: { schema: SCHEMA },
     auth: { persistSession: false, autoRefreshToken: false },
   });
+}
+
+export type Role = "collector" | "supervisor" | "accounting" | "admin";
+
+/**
+ * The client type, inferred rather than annotated. A bare `SupabaseClient` defaults its
+ * schema generic to "public" and will not accept a client built with
+ * `db: { schema: "ceedo_collections" }` under exactOptionalPropertyTypes.
+ */
+export type TestClient = ReturnType<typeof anonClient>;
+
+const PASSWORD = "test-password-not-a-secret";
+
+async function signIn(email: string): Promise<TestClient> {
+  const client = anonClient();
+  const { error } = await client.auth.signInWithPassword({ email, password: PASSWORD });
+  if (error) throw new Error(`Sign-in failed for ${email}: ${error.message}`);
+  return client;
+}
+
+async function createAuthUser(email: string): Promise<string> {
+  const admin = createClient(URL, SERVICE_KEY, { auth: { persistSession: false } });
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    password: PASSWORD,
+    email_confirm: true,
+  });
+  if (error) throw new Error(`Could not create auth user ${email}: ${error.message}`);
+  return data.user.id;
+}
+
+/** A registered user: an auth.users record plus the app_users row that grants access. */
+export async function createAppUser(opts: {
+  email: string;
+  role: Role;
+  employeeNo?: string;
+  fullName?: string;
+}): Promise<{ client: TestClient; userId: string }> {
+  const userId = await createAuthUser(opts.email);
+  const { error } = await serviceClient().from("app_users").insert({
+    id: userId,
+    employee_no: opts.employeeNo ?? `E-${randomUUID().slice(0, 8)}`,
+    full_name: opts.fullName ?? opts.email,
+    role: opts.role,
+    status: "active",
+  });
+  if (error) throw new Error(`Could not create app_user: ${error.message}`);
+  return { client: await signIn(opts.email), userId };
+}
+
+/** Authenticated against the shared Supabase project but NOT registered in this system. */
+export async function createOutsiderClient(): Promise<TestClient> {
+  const email = `outsider-${randomUUID().slice(0, 8)}@example.com`;
+  await createAuthUser(email);
+  return signIn(email);
+}
+
+/** Clears fixture data between suites. Order matters: children before parents. */
+export async function resetFixtures(): Promise<void> {
+  const client = serviceClient();
+  for (const table of ["app_users"]) {
+    await client.from(table).delete().neq("id", "00000000-0000-0000-0000-000000000000");
+  }
 }
