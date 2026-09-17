@@ -2897,7 +2897,7 @@ Then edit `apps/web/package.json`:
   },
   "dependencies": {
     "@ceedo/shared": "workspace:*",
-    "@supabase/ssr": "^0.6.0",
+    "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.48.0",
     "next": "^16.0.0",
     "react": "^19.0.0",
@@ -2912,6 +2912,13 @@ Add `apps/web` to `vitest.workspace.ts`:
 ```ts
 export default ["packages/*", "apps/web", "tests"];
 ```
+
+Deviations found necessary during implementation, all verified and recorded in
+`.superpowers/sdd/2026-09-17-phase-1-foundation/task-11-report.md`: `@supabase/ssr` must be
+^0.12.0 for `supabase-js` compatibility (its `getAll`/`setAll` cookie API is what the code
+below uses); `packages/shared` internal imports become extensionless for Turbopack, which is
+also closer to what Metro expects for the Phase 3 Expo app; `next.config.ts` needs
+`transpilePackages: ["@ceedo/shared"]`; and `.gitignore` needs `.env*` with `!.env.example`.
 
 `apps/web/.env.example`:
 
@@ -3306,6 +3313,12 @@ Phase 1 needs eleven CRUD screens. Writing eleven bespoke ones invites eleven sl
 - Create: `apps/web/lib/admin/registry.ts` (empty stub; Task 13 fills it)
 - Create: `apps/web/components/resource-table.tsx`, `apps/web/components/resource-form.tsx`, `apps/web/components/field.tsx`
 - Create: `apps/web/app/(admin)/layout.tsx`, `apps/web/app/(admin)/[resource]/page.tsx`
+
+**Structural rule this task establishes:** `app/(admin)/layout.tsx` calls `requireStaff()`,
+and because a Server Component layout's redirect prevents its children rendering at all,
+every page inside that route group is gated structurally rather than by convention. **Every
+authenticated page from here on lives under `(admin)`.** Only `/sign-in`, `/no-access` and
+`/auth/callback` stay outside it.
 
 **Interfaces:**
 - Consumes: `requireStaff()`, `getServerClient()`, `Database`, `Role`, `canManageMasterData`
