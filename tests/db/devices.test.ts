@@ -1,12 +1,12 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { createAppUser, serviceClient } from "../helpers/supabase.js";
+import { createAppUser, serviceClient, uniqueCode } from "../helpers/supabase.js";
 
 const service = serviceClient();
 
 async function marketWithSections(code: string) {
   const { data: facility } = await service
     .from("facilities")
-    .insert({ name: `Market ${code}`, code, type: "market" })
+    .insert({ name: `Market ${code}`, code: uniqueCode(code), type: "market" })
     .select("id")
     .single();
   const { data: fish } = await service
@@ -32,7 +32,7 @@ describe("devices and assignments", () => {
     ({ facilityId, fishId, meatId } = await marketWithSections("DEV"));
     const { data: device } = await service
       .from("devices")
-      .insert({ label: "Tablet 01" })
+      .insert({ label: uniqueCode("Tablet-01") })
       .select("id")
       .single();
     deviceId = device!.id as string;
@@ -95,7 +95,7 @@ describe("devices and assignments", () => {
     const { userId } = await createAppUser({ email: "dev-dead@example.com", role: "collector" });
     const { data: device } = await service
       .from("devices")
-      .insert({ label: "Tablet 99", active: false })
+      .insert({ label: uniqueCode("Tablet-99"), active: false })
       .select("id")
       .single();
     await service
@@ -117,6 +117,104 @@ describe("devices and assignments", () => {
       .from("collector_assignments")
       .insert({ collector_id: userId, facility_id: facilityId, section_id: fishId })
       .select();
+    const { data } = await service.rpc("can_collector_use_device", {
+      collector: userId,
+      device: deviceId,
+    });
+    expect(data).toBe(false);
+  });
+
+  it("permits a collector assigned to a section when the device is assigned facility-wide", async () => {
+    const { data: device } = await service
+      .from("devices")
+      .insert({ label: uniqueCode("Tablet-FW1") })
+      .select("id")
+      .single();
+    await service
+      .from("device_assignments")
+      .insert({ device_id: device!.id, facility_id: facilityId, section_id: null });
+    const { userId } = await createAppUser({ email: "dev-fw-col@example.com", role: "collector" });
+    await service
+      .from("collector_assignments")
+      .insert({ collector_id: userId, facility_id: facilityId, section_id: fishId });
+    const { data } = await service.rpc("can_collector_use_device", {
+      collector: userId,
+      device: device!.id,
+    });
+    expect(data).toBe(true);
+  });
+
+  it("permits a facility-wide collector on a facility-wide device", async () => {
+    const { data: device } = await service
+      .from("devices")
+      .insert({ label: uniqueCode("Tablet-FW2") })
+      .select("id")
+      .single();
+    await service
+      .from("device_assignments")
+      .insert({ device_id: device!.id, facility_id: facilityId, section_id: null });
+    const { userId } = await createAppUser({ email: "dev-fw-fw@example.com", role: "collector" });
+    await service
+      .from("collector_assignments")
+      .insert({ collector_id: userId, facility_id: facilityId, section_id: null });
+    const { data } = await service.rpc("can_collector_use_device", {
+      collector: userId,
+      device: device!.id,
+    });
+    expect(data).toBe(true);
+  });
+
+  it("refuses a collector and device assigned to different facilities", async () => {
+    const { facilityId: otherFacilityId } = await marketWithSections("DEV-OTHER");
+    const { userId } = await createAppUser({ email: "dev-other-fac@example.com", role: "collector" });
+    await service
+      .from("collector_assignments")
+      .insert({ collector_id: userId, facility_id: otherFacilityId, section_id: null });
+    const { data } = await service.rpc("can_collector_use_device", {
+      collector: userId,
+      device: deviceId,
+    });
+    expect(data).toBe(false);
+  });
+
+  it("refuses when the device_assignments row is inactive while the device itself is active", async () => {
+    const { data: device } = await service
+      .from("devices")
+      .insert({ label: uniqueCode("Tablet-INACT-DA") })
+      .select("id")
+      .single();
+    await service
+      .from("device_assignments")
+      .insert({ device_id: device!.id, facility_id: facilityId, section_id: fishId, active: false });
+    const { userId } = await createAppUser({ email: "dev-inact-da@example.com", role: "collector" });
+    await service
+      .from("collector_assignments")
+      .insert({ collector_id: userId, facility_id: facilityId, section_id: fishId });
+    const { data } = await service.rpc("can_collector_use_device", {
+      collector: userId,
+      device: device!.id,
+    });
+    expect(data).toBe(false);
+  });
+
+  it("refuses when the collector_assignments row is inactive", async () => {
+    const { userId } = await createAppUser({ email: "dev-inact-ca@example.com", role: "collector" });
+    await service
+      .from("collector_assignments")
+      .insert({ collector_id: userId, facility_id: facilityId, section_id: fishId, active: false });
+    const { data } = await service.rpc("can_collector_use_device", {
+      collector: userId,
+      device: deviceId,
+    });
+    expect(data).toBe(false);
+  });
+
+  it("refuses a suspended collector", async () => {
+    const { userId } = await createAppUser({ email: "dev-suspended@example.com", role: "collector" });
+    await service.from("app_users").update({ status: "suspended" }).eq("id", userId);
+    await service
+      .from("collector_assignments")
+      .insert({ collector_id: userId, facility_id: facilityId, section_id: fishId });
     const { data } = await service.rpc("can_collector_use_device", {
       collector: userId,
       device: deviceId,

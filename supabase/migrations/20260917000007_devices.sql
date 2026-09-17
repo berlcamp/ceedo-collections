@@ -13,6 +13,11 @@ create table ceedo_collections.devices (
   row_version   bigint not null default 0
 );
 
+-- Referenced by the composite foreign keys below. A section's facility is part of its
+-- identity as far as assignments are concerned.
+alter table ceedo_collections.sections
+  add constraint sections_id_facility_key unique (id, facility_id);
+
 -- Determines WHAT SYNCS to the tablet. Scoping to the device rather than the
 -- collector keeps the payload stable as collectors rotate through it.
 create table ceedo_collections.device_assignments (
@@ -22,7 +27,13 @@ create table ceedo_collections.device_assignments (
   section_id  uuid references ceedo_collections.sections (id),
   active      boolean not null default true,
   created_at  timestamptz not null default now(),
-  row_version bigint not null default 0
+  row_version bigint not null default 0,
+  -- A section named here must actually belong to the facility named here. MATCH SIMPLE
+  -- means a NULL section_id (facility-wide assignment) skips this check, which is the
+  -- intended behaviour.
+  constraint device_assignments_section_in_facility
+    foreign key (section_id, facility_id)
+    references ceedo_collections.sections (id, facility_id)
 );
 
 create unique index device_assignments_one_active
@@ -36,7 +47,13 @@ create table ceedo_collections.collector_assignments (
   section_id   uuid references ceedo_collections.sections (id),
   active       boolean not null default true,
   created_at   timestamptz not null default now(),
-  row_version  bigint not null default 0
+  row_version  bigint not null default 0,
+  -- A section named here must actually belong to the facility named here. MATCH SIMPLE
+  -- means a NULL section_id (facility-wide assignment) skips this check, which is the
+  -- intended behaviour.
+  constraint collector_assignments_section_in_facility
+    foreign key (section_id, facility_id)
+    references ceedo_collections.sections (id, facility_id)
 );
 
 create index collector_assignments_collector_idx
