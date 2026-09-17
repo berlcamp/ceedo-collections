@@ -142,8 +142,12 @@ packages:
 `vitest.workspace.ts`:
 
 ```ts
-export default ["packages/*", "tests"];
+export default ["packages/*"];
 ```
+
+Only list directories that exist. Vitest exits non-zero on a workspace glob that
+matches nothing, so `tests` is added by Task 3 and `apps/web` by Task 11, each when
+it creates that directory.
 
 `.gitignore`:
 
@@ -564,6 +568,12 @@ alter default privileges in schema ceedo_collections
 ```
 
 - [ ] **Step 3: Create the test workspace and Supabase helpers**
+
+First add `tests` to `vitest.workspace.ts`, which Task 1 left scoped to `packages/*`:
+
+```ts
+export default ["packages/*", "tests"];
+```
 
 `tests/package.json`:
 
