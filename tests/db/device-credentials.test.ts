@@ -38,6 +38,16 @@ async function newDevice(): Promise<string> {
   return rows[0].id as string;
 }
 
+/** Audit rows about ONE device, so a concurrently-running fixture cannot move the number. */
+async function auditRowCount(deviceId: string): Promise<number> {
+  const { rows } = await db.query(
+    `select count(*)::int as n from ceedo_collections.audit_log
+      where entity = 'devices' and entity_id = $1`,
+    [deviceId],
+  );
+  return rows[0].n as number;
+}
+
 async function issue(deviceId: string): Promise<{ credential_id: string; secret: string }> {
   const { data, error } = await adminClient.rpc("issue_device_credential", {
     p_device_id: deviceId,
@@ -137,6 +147,32 @@ describe("device credentials", () => {
       [deviceId],
     );
     expect(after.rows[0].last_seen_at).not.toBeNull();
+  });
+
+  it("writes no audit row for the last_seen_at heartbeat", async () => {
+    // `devices` carries the blanket AFTER INSERT OR UPDATE OR DELETE audit trigger that
+    // migration 0010 puts on every master-data table, and authenticate_device() touches
+    // last_seen_at on EVERY success. Each Edge Function authenticates separately, so a
+    // device that pulls, pushes and closes out wrote three full before/after row images
+    // recording no decision at all — tens of thousands a day across a real deployment, in
+    // the one table that exists so a person can answer "who changed this". Migration 0041
+    // scopes the UPDATE side of the trigger to the columns that carry a decision.
+    const deviceId = await newDevice();
+    const { credential_id, secret } = await issue(deviceId);
+
+    const before = await auditRowCount(deviceId);
+    await authenticate(credential_id, secret);
+    await authenticate(credential_id, secret);
+    await authenticate(credential_id, secret);
+
+    expect(await auditRowCount(deviceId)).toBe(before);
+
+    // ...and the trail is still a trail. Deactivating a stolen tablet (§4.1) is exactly
+    // what it exists to record, so scoping must not have turned auditing off wholesale.
+    await db.query(`update ceedo_collections.devices set active = false where id = $1`, [
+      deviceId,
+    ]);
+    expect(await auditRowCount(deviceId)).toBe(before + 1);
   });
 
   it("does not record last_seen_at on a failed authentication", async () => {
