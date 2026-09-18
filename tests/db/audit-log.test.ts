@@ -189,17 +189,18 @@ describe("audit log", () => {
     let leaseEntityId: string;
 
     beforeAll(async () => {
-      // A pin_hash only ever exists on app_users, and only service role can write it
-      // (the authenticated grant on app_users deliberately omits the column — see
-      // migration 0002). app_users.id references auth.users(id), so the row has to come
-      // from a real signed-up user (createAppUser); setting pin_hash on it afterward, via
-      // service role, reproduces the exact write the reviewer's probe depends on.
+      // A pin_hash only ever exists on app_users, and as of migration 0027 the only writer
+      // is set_collector_pin() — service_role's own column grant on pin_hash was revoked
+      // there, once the RPC gave it no remaining reason to hold one (see that migration's
+      // comment). app_users.id references auth.users(id), so the row has to come from a
+      // real signed-up user (createAppUser); setting pin_hash on it afterward, through the
+      // RPC as an admin, reproduces the exact write the reviewer's probe depends on.
       const created = await createAppUser({ email: "audit-pin@example.com", role: "collector" });
       pinUserId = created.userId;
-      await service
-        .from("app_users")
-        .update({ pin_hash: "sha256:not-a-real-hash" })
-        .eq("id", pinUserId);
+      await adminClient.rpc("set_collector_pin", {
+        p_collector_id: pinUserId,
+        p_pin: "123456",
+      });
 
       supervisorClient = (await createAppUser({ email: "audit-sup@example.com", role: "supervisor" }))
         .client;
