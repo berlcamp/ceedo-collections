@@ -149,4 +149,23 @@ describe("pin_hash exposure", () => {
       .eq("id", collectorId);
     expect(error).not.toBeNull();
   });
+
+  // SELECT and UPDATE have live callers to probe through PostgREST above; INSERT does not
+  // (nothing in this codebase inserts a row naming pin_hash), so there is no request that
+  // would exercise a widened grant here. Assert the grant itself instead: checked the
+  // actual grantee set for this column first (`information_schema.column_privileges`) --
+  // only the table owner (`postgres`) holds any privilege on pin_hash at all, which is
+  // exactly the invariant migration 0027's narrowed INSERT grant is supposed to produce.
+  it("grants no role INSERT on pin_hash", async () => {
+    const { rows } = await db.query(
+      `select grantee
+         from information_schema.column_privileges
+        where table_schema = 'ceedo_collections'
+          and table_name = 'app_users'
+          and column_name = 'pin_hash'
+          and privilege_type = 'INSERT'
+          and grantee <> 'postgres'`,
+    );
+    expect(rows).toEqual([]);
+  });
 });

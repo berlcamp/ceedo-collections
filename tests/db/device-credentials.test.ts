@@ -4,15 +4,26 @@ import { Client } from "pg";
 import {
   POSTGRES_URL,
   anonClient,
+  createAppUser,
   serviceClient,
   uniqueCode,
 } from "../helpers/supabase";
 
 let db: Client;
+let adminClient: Awaited<ReturnType<typeof createAppUser>>["client"];
 
 beforeAll(async () => {
   db = new Client({ connectionString: POSTGRES_URL });
   await db.connect();
+  // issue_device_credential/revoke_device_credential require a real admin caller
+  // (migration 0028's NULL-safety fix means a bare postgres connection with no
+  // auth.uid() -- what issue()/revoke() used to call these through -- is now correctly
+  // refused, not silently let through). authenticate_device has no such guard (it's the
+  // device's own auth path, granted to ceedo_app, not authenticated) so it keeps using
+  // the raw `db` connection below.
+  adminClient = (
+    await createAppUser({ email: "device-admin@example.com", role: "admin" })
+  ).client;
 });
 
 afterAll(async () => {
@@ -28,11 +39,18 @@ async function newDevice(): Promise<string> {
 }
 
 async function issue(deviceId: string): Promise<{ credential_id: string; secret: string }> {
-  const { rows } = await db.query(
-    `select ceedo_collections.issue_device_credential($1::uuid) as result`,
-    [deviceId],
-  );
-  return rows[0].result;
+  const { data, error } = await adminClient.rpc("issue_device_credential", {
+    p_device_id: deviceId,
+  });
+  if (error) throw new Error(error.message);
+  return data as { credential_id: string; secret: string };
+}
+
+async function revoke(deviceId: string): Promise<void> {
+  const { error } = await adminClient.rpc("revoke_device_credential", {
+    p_device_id: deviceId,
+  });
+  if (error) throw new Error(error.message);
 }
 
 async function authenticate(credentialId: string, secret: string): Promise<string | null> {
@@ -78,7 +96,7 @@ describe("device credentials", () => {
   it("refuses a revoked credential", async () => {
     const deviceId = await newDevice();
     const { credential_id, secret } = await issue(deviceId);
-    await db.query(`select ceedo_collections.revoke_device_credential($1::uuid)`, [deviceId]);
+    await revoke(deviceId);
 
     expect(await authenticate(credential_id, secret)).toBeNull();
   });
