@@ -58,6 +58,38 @@ begin
   -- Net of cancellations. charge_balances already excludes cancelled collections from the
   -- ledger; the same exclusion applies here or a cancelled receipt inflates the figure the
   -- collector is asked to match and an honest closeout is refused.
+  --
+  -- SCOPE: collector_id + business_date, not device_id and not the shift's time window.
+  -- That is §6.5 step 3 taken literally -- "the device's count/total for the day" reads as
+  -- the collector's, because the spec's model is one collector, one device, one shift per
+  -- business date. Two cases break that assumption:
+  --
+  --   1. The same collector posts on a second tablet the same day (device_id would fix
+  --      this, but is a trap on its own -- see case 2).
+  --   2. The same collector opens a SECOND shift on the SAME device later the same day.
+  --      shifts_one_open_per_device (see the shifts migration) only forbids two
+  --      *simultaneously* open shifts on one device; it deliberately permits this
+  --      sequence. Scoping by device_id alone would look fixed while leaving this, the
+  --      more likely case, completely unaddressed.
+  --
+  -- Both fail SAFE, not silent. The server's figures for (collector_id, business_date) are
+  -- a SUPERSET of what the closing device/shift actually knows, so the device's
+  -- count/total falls short of this sum, the mismatch branch below returns before any
+  -- write, and the shift stays open. There is no path where another shift's money is
+  -- silently absorbed into this one's variance -- this is an availability bug (an honest
+  -- closeout refused, needing a supervisor to sort out), never a correctness bug.
+  --
+  -- Scoping by the shift's opened_at/closed_at window was considered and rejected too: a
+  -- collection queued on the device before its shift_open push is acked can carry
+  -- collected_at < opened_at, and a time-window filter would drop it from this sum
+  -- invisibly -- trading a safe over-block for an under-count that closes cleanly. Strictly
+  -- the worse direction.
+  --
+  -- The real fix is shift_id on collections, set at post_collection time, so this query
+  -- can scope to the one shift being closed instead of inferring it from collector and
+  -- date. That needs a schema change and a post_collection payload change, so it belongs
+  -- to Phase 3b, where the device-side closeout and the offline sync sequencing it depends
+  -- on actually get built.
   select count(*), coalesce(sum(c.gross_amount), 0)
     into v_system_count, v_system_total
     from ceedo_collections.collections c
