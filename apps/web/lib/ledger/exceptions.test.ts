@@ -51,9 +51,14 @@ describe("summarisePayload", () => {
     expect(summarisePayload({ or_no: 1 }).periods).toBe(0);
   });
 
-  it("survives a payload missing every field", () => {
+  it("survives a payload that is not an object at all", () => {
     // The payload is whatever the device sent. A malformed one must render, not throw --
-    // this screen is how a malformed push gets noticed at all.
+    // this screen is how a malformed push gets noticed at all. Property access on an empty
+    // object never throws regardless of implementation, so the case that actually pins the
+    // defensive guard is a payload that isn't an object in the first place.
+    expect(() => summarisePayload(null as never)).not.toThrow();
+    expect(() => summarisePayload("garbage" as never)).not.toThrow();
+    expect(() => summarisePayload(42 as never)).not.toThrow();
     expect(() => summarisePayload({})).not.toThrow();
   });
 });
