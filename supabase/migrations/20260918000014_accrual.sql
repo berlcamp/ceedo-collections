@@ -187,8 +187,14 @@ begin
       -- visible. The raise warning puts it in the Postgres log as well, for whoever is
       -- tailing it. Task 14's monitoring query treats both a 'failed' row and a MISSING
       -- row for a business date as an alert, which is what makes this safe.
+      --
+      -- charges_raised = 0, not v_raised. The `begin ... exception` block is a
+      -- subtransaction, so entering this handler has already rolled back every insert the
+      -- loop made; v_raised is a plpgsql variable and survives that rollback, but the rows
+      -- it counted do not. Writing it here would produce a 'failed' row claiming charges
+      -- that no longer exist.
       update ceedo_collections.accrual_runs
-         set finished_at = now(), status = 'failed', error = sqlerrm, charges_raised = v_raised
+         set finished_at = now(), status = 'failed', error = sqlerrm, charges_raised = 0
        where id = v_run_id;
       raise warning 'run_accrual failed for %: %', v_date, sqlerrm;
       return v_run_id;

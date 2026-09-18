@@ -223,6 +223,64 @@ describe("run_accrual", () => {
       await restoreCutover();
     }
   });
+
+  /**
+   * charges_raised on a FAILED run must be 0, not the count the loop had reached.
+   *
+   * The two failure tests above cannot see this: both make cutover_date() raise on the
+   * first statement inside the block, so v_raised is 0 when the handler runs and writing
+   * either value produces the same row. The bug only shows when the accrual fails PART
+   * WAY THROUGH -- `begin ... exception` is a subtransaction, so entering the handler has
+   * already rolled back every insert the loop made, while v_raised (a plpgsql variable)
+   * survives. The row would then claim charges that do not exist, and accrual_health
+   * prints that number to whoever is deciding whether the night needs re-running.
+   *
+   * Forced with a temporary trigger rather than by replacing run_accrual or
+   * lease_periods: the failure has to happen at the INSERT, after earlier inserts in the
+   * same loop have succeeded, which is the only arrangement that separates v_raised from
+   * the truth. It is scoped to this one lease's third charge, so nothing else in the
+   * database can trip it, and it is dropped in a `finally`.
+   *
+   * The lease is fresh, and run_accrual walks a lease's periods in date order, so
+   * 2026-10-01 and 2026-10-02 are both inserted (v_raised reaches 2) before 2026-10-03
+   * raises.
+   */
+  it("reports zero charges raised on a failed run, because the rollback discarded them", async () => {
+    const { leaseId } = await createLeaseFixture(db, {
+      accrualPeriod: "daily", startDate: "2026-10-01", rateAmount: "50.00",
+    });
+    await db.query(
+      `create function pg_temp.fail_third_charge() returns trigger
+       language plpgsql as $fn$
+       begin
+         if new.lease_id = '${leaseId}'::uuid and new.due_date = '2026-10-03'::date then
+           raise exception 'forced accrual failure on the third charge';
+         end if;
+         return new;
+       end;
+       $fn$`,
+    );
+    await db.query(
+      `create trigger zz_fail_third_charge before insert on ceedo_collections.charges
+       for each row execute function pg_temp.fail_third_charge()`,
+    );
+    try {
+      const { rows } = await db.query(
+        "select ceedo_collections.run_accrual('2026-10-03') as id",
+      );
+      const { rows: run } = await db.query(
+        "select * from ceedo_collections.accrual_runs where id = $1", [rows[0].id],
+      );
+      expect(run[0].status).toBe("failed");
+      expect(run[0].error).toMatch(/forced accrual failure/);
+      // The number on the row and the number of charges that exist are the same number.
+      // Before the fix this read 2 against a lease holding none.
+      expect(run[0].charges_raised).toBe(0);
+      expect(await countCharges(leaseId)).toBe(0);
+    } finally {
+      await db.query("drop trigger if exists zz_fail_third_charge on ceedo_collections.charges");
+    }
+  });
 });
 
 describe("lease_periods (Ruling 11: greatest(lease_start, cutover))", () => {
