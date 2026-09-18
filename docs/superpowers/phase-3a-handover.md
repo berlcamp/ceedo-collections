@@ -1,6 +1,6 @@
 # CEEDO Collections — Phase 3a Handover
 
-**Branch:** `phase-3a-sync` · 45 commits · 670 tests / 58 files · 13 migrations (`0026`–`0038`)
+**Branch:** `phase-3a-sync` · 670 tests / 58 files · 13 migrations (`0026`–`0038`)
 **Spec:** `docs/superpowers/specs/2026-09-18-phase-3a-sync-design.md`
 **Plan:** `docs/superpowers/plans/2026-09-18-phase-3a-sync.md`
 **Predecessor:** `docs/superpowers/phase-2-handover.md`
@@ -88,13 +88,17 @@ test, PASS, 602ms** against a freshly reset database with `sync-pull` confirmed 
    at the role switch, not at any check this repo's test suite can see (see the next
    section for exactly why).
 
-## Two production-blocking bugs a green 669-test suite could not see
+## Two production-blocking bugs a large, fully green test suite could not see
 
-Both share one root cause: `tests/helpers/supabase.ts` connects every SQL test as the
-`postgres` superuser (`POSTGRES_URL`). Every real caller — every Edge Function, every
-device — arrives as `ceedo_app`, reached by `authenticator` doing `SET ROLE ceedo_app` per
-request. Postgres exempts superusers from restrictions that bind every other role, so a
-superuser connection can silently pass through a path a real caller cannot.
+Both were found with the suite fully green — 641 tests for the first, 652 for the second,
+not the eventual 670 — which is beside the point and stated only so the figures below are
+honest about what was true at discovery. The actual cause is structural, not a matter of
+scale: `tests/helpers/supabase.ts` connects every SQL test as the `postgres` superuser
+(`POSTGRES_URL`). Every real caller — every Edge Function, every device — arrives as
+`ceedo_app`, reached by `authenticator` doing `SET ROLE ceedo_app` per request. Postgres
+exempts superusers from restrictions that bind every other role, so a superuser connection
+can silently pass through a path a real caller cannot, no matter how large or how green the
+suite around it grows.
 
 1. **`sync_pull`'s scope-table clear.** Migration `20260918000033` wrote
    `delete from _scope_leases;` — no `WHERE` clause. This local Postgres image enforces a
@@ -132,8 +136,8 @@ that commit; anyone scanning that log for schema history alone will miss it.
 **The class of gap remains open.** Exactly one test in this repo runs as the role production
 actually uses: `tests/db/sync-pull.test.ts`'s `"succeeds over the real ceedo_app role-switch
 path, not just as the postgres superuser \`db\` uses"`, added alongside the fix for bug 1,
-which does `conn.query("set role ceedo_app")` on its own connection. Every other one of the
-669 tests — including every other assertion in that same file — still connects as
+which does `conn.query("set role ceedo_app")` on its own connection. Every test in this
+repo but that one — including every other assertion in that same file — still connects as
 `postgres`. Two bugs of this exact class were found this phase, both only by accident of a
 task that happened to route through HTTP. **Nothing proves there is not a third.** The
 generalizable fix — running the whole suite, or at minimum every write path, under a
@@ -168,7 +172,7 @@ piece of test-infrastructure work available to Phase 3b.
 
 | | Fresh reset | Second run, no reset | Delta |
 | --- | --- | --- | --- |
-| Full suite (57 files / 669 tests) | 41.30s (Vitest) / 41.855s wall | 54.89s (Vitest) / 55.441s wall | +32.9% / +32.5% |
+| Full suite as measured in Task 17 (57 files / 669 tests) | 41.30s (Vitest) / 41.855s wall | 54.89s (Vitest) / 55.441s wall | +32.9% / +32.5% |
 | `db/accrual-schedule.test.ts` (4 `run_nightly` tests) | 159ms | 4962ms | ~31x |
 | Worst individual `run_nightly` test | — | 1668ms | under Vitest's 5s default `testTimeout` |
 | `ceedo_collections.charges` row count | 0 (fresh) | **178,167** | — |
