@@ -7,8 +7,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # No `version:` here on purpose. pnpm/action-setup refuses to run when the version
+      # is given both in the workflow and as `packageManager` in package.json, and it
+      # fails at this step -- before `pnpm install` -- so nothing after it ever executed.
+      # package.json's `packageManager: pnpm@10.0.0` is the single source of truth.
       - uses: pnpm/action-setup@v4
-        with: { version: 10 }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
