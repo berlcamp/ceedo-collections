@@ -672,3 +672,70 @@ export async function postCollectionAsOwner(
   }
   return result.collection_id as string;
 }
+
+/**
+ * Issues a device credential as the owner connection, bypassing the is_admin() check that
+ * the web path goes through. Task 15's web tests cover the authorization; here the
+ * credential is a fixture, not the thing under test.
+ */
+export async function issueCredential(
+  db: PgClient,
+  deviceId: string,
+): Promise<{ credentialId: string; secret: string }> {
+  const secret = randomUUID() + randomUUID();
+  const credentialId = `cred-${randomUUID()}`;
+  await db.query(
+    `insert into ceedo_collections.device_credentials (device_id, secret_hash)
+     values ($1, extensions.digest($2, 'sha256'))`,
+    [deviceId, secret],
+  );
+  await db.query(`update ceedo_collections.devices set credential_id = $2 where id = $1`, [
+    deviceId,
+    credentialId,
+  ]);
+  return { credentialId, secret };
+}
+
+/**
+ * createCollectionFixture() plus the two assignment rows and the credential that sync
+ * needs.
+ *
+ * This exists because createCollectionFixture() creates a device with NO
+ * device_assignments row and a collector with NO collector_assignments row --
+ * post_collection() never looks at either, so Phase 2 had no reason to. Every sync path
+ * checks can_collector_use_device(), which joins both, so a Phase 2 fixture used here
+ * would be refused for a reason that has nothing to do with the test.
+ */
+export async function createSyncFixture(
+  db: PgClient,
+  opts: Parameters<typeof createCollectionFixture>[1] = {},
+): Promise<
+  CollectionFixture & { credentialId: string; secret: string; facilityId: string }
+> {
+  const fx = await createCollectionFixture(db, opts);
+
+  // stalls -> sections -> facilities. `stalls` carries section_id only; the facility is
+  // one join further out.
+  const { rows } = await db.query(
+    `select sec.facility_id
+       from ceedo_collections.stalls s
+       join ceedo_collections.sections sec on sec.id = s.section_id
+      where s.id = $1`,
+    [fx.stallId],
+  );
+  const facilityId = rows[0].facility_id as string;
+
+  await db.query(
+    `insert into ceedo_collections.device_assignments (device_id, facility_id, active)
+     values ($1, $2, true)`,
+    [fx.deviceId, facilityId],
+  );
+  await db.query(
+    `insert into ceedo_collections.collector_assignments (collector_id, facility_id, active)
+     values ($1, $2, true)`,
+    [fx.collectorId, facilityId],
+  );
+
+  const { credentialId, secret } = await issueCredential(db, fx.deviceId);
+  return { ...fx, credentialId, secret, facilityId };
+}
