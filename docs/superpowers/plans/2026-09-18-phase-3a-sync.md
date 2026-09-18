@@ -888,7 +888,16 @@ Create `tests/db/shifts.test.ts`:
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
-import { POSTGRES_URL, createSyncFixture, serviceClient } from "../helpers/supabase";
+import {
+  POSTGRES_URL,
+  anonClient,
+  createAppUser,
+  createSyncFixture,
+  serviceClient,
+} from "../helpers/supabase";
+
+// A well-formed UUID that matches nothing. See the DELETE probes for why this matters.
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
 let db: Client;
 let fx: Awaited<ReturnType<typeof createSyncFixture>>;
@@ -1001,16 +1010,48 @@ describe("shifts privileges", () => {
     expect(error).not.toBeNull();
   });
 
-  it("denies DELETE to every role", async () => {
+  // STRUCTURAL: real ACL grants only. `information_schema.table_privileges` lists actual
+  // grant rows, so it does NOT report Postgres's predefined `pg_write_all_data` role, whose
+  // DELETE is a hardcoded ACL bypass in the C code that no REVOKE can affect. An earlier
+  // draft of this test introspected `has_table_privilege` over `pg_roles` and could never
+  // pass for that reason. Do not reintroduce an exclusion list: the list is the trap, and
+  // the next predefined role with the same property silently reopens it.
+  it("grants DELETE to no role but the table owner", async () => {
     const { rows } = await db.query(
-      `select r.rolname
-         from pg_roles r
-        where has_table_privilege(r.rolname, 'ceedo_collections.shifts', 'DELETE')
-          and r.rolname not in ('postgres', 'supabase_admin')
-          and not r.rolsuper`,
+      `select grantee
+         from information_schema.table_privileges
+        where table_schema = 'ceedo_collections'
+          and table_name = 'shifts'
+          and privilege_type = 'DELETE'
+          and grantee <> 'postgres'`,
     );
     expect(rows).toEqual([]);
   });
+
+  // BEHAVIOURAL: the same property through the door a client actually uses, matching
+  // `tests/db/ledger-privileges.test.ts`'s idiom. Phase 2's handover (item P5) concluded that
+  // a structural and a behavioural check belong side by side: it had a flag whose removal
+  // failed zero behavioural tests. The structural test above catches a stray grant to a role
+  // PostgREST never routes; these catch the path an attacker actually has.
+  //
+  // The nil-UUID filter is load-bearing: `.neq("id", "")` fails to cast to uuid (22P02)
+  // BEFORE the permission check runs, which would assert the wrong thing entirely.
+  it.each(["anon", "authenticated", "service_role"])(
+    "denies DELETE to %s over PostgREST",
+    async (role) => {
+      const client =
+        role === "anon"
+          ? anonClient()
+          : role === "service_role"
+            ? serviceClient()
+            : (await createAppUser({ email: "shifts-delete-probe@example.com", role: "supervisor" }))
+                .client;
+
+      const { error } = await client.from("shifts").delete().neq("id", NIL_UUID);
+      expect(error).not.toBeNull();
+      expect(error!.code).toBe("42501");
+    },
+  );
 });
 ```
 
@@ -1126,7 +1167,16 @@ Create `tests/db/sync-exceptions.test.ts`:
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
-import { POSTGRES_URL, createSyncFixture, serviceClient } from "../helpers/supabase";
+import {
+  POSTGRES_URL,
+  anonClient,
+  createAppUser,
+  createSyncFixture,
+  serviceClient,
+} from "../helpers/supabase";
+
+// A well-formed UUID that matches nothing. See the DELETE probes for why this matters.
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
 let db: Client;
 let fx: Awaited<ReturnType<typeof createSyncFixture>>;
@@ -1277,16 +1327,48 @@ describe("sync_exceptions privileges", () => {
     expect(error).not.toBeNull();
   });
 
-  it("denies DELETE to every role", async () => {
+  // STRUCTURAL: real ACL grants only. `information_schema.table_privileges` lists actual
+  // grant rows, so it does NOT report Postgres's predefined `pg_write_all_data` role, whose
+  // DELETE is a hardcoded ACL bypass in the C code that no REVOKE can affect. An earlier
+  // draft of this test introspected `has_table_privilege` over `pg_roles` and could never
+  // pass for that reason. Do not reintroduce an exclusion list: the list is the trap, and
+  // the next predefined role with the same property silently reopens it.
+  it("grants DELETE to no role but the table owner", async () => {
     const { rows } = await db.query(
-      `select r.rolname
-         from pg_roles r
-        where has_table_privilege(r.rolname, 'ceedo_collections.sync_exceptions', 'DELETE')
-          and r.rolname not in ('postgres', 'supabase_admin')
-          and not r.rolsuper`,
+      `select grantee
+         from information_schema.table_privileges
+        where table_schema = 'ceedo_collections'
+          and table_name = 'sync_exceptions'
+          and privilege_type = 'DELETE'
+          and grantee <> 'postgres'`,
     );
     expect(rows).toEqual([]);
   });
+
+  // BEHAVIOURAL: the same property through the door a client actually uses, matching
+  // `tests/db/ledger-privileges.test.ts`'s idiom. Phase 2's handover (item P5) concluded that
+  // a structural and a behavioural check belong side by side: it had a flag whose removal
+  // failed zero behavioural tests. The structural test above catches a stray grant to a role
+  // PostgREST never routes; these catch the path an attacker actually has.
+  //
+  // The nil-UUID filter is load-bearing: `.neq("id", "")` fails to cast to uuid (22P02)
+  // BEFORE the permission check runs, which would assert the wrong thing entirely.
+  it.each(["anon", "authenticated", "service_role"])(
+    "denies DELETE to %s over PostgREST",
+    async (role) => {
+      const client =
+        role === "anon"
+          ? anonClient()
+          : role === "service_role"
+            ? serviceClient()
+            : (await createAppUser({ email: "sync-exceptions-delete-probe@example.com", role: "supervisor" }))
+                .client;
+
+      const { error } = await client.from("sync_exceptions").delete().neq("id", NIL_UUID);
+      expect(error).not.toBeNull();
+      expect(error!.code).toBe("42501");
+    },
+  );
 });
 ```
 
