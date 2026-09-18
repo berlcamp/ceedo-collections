@@ -3,13 +3,16 @@ import { Client } from "pg";
 import {
   POSTGRES_URL,
   createAppUser,
+  createCollectionFixture,
   createLeaseFixture,
+  postCollectionAsOwner,
   resetCutover,
   type TestClient,
 } from "../helpers/supabase.js";
 
 let db: Client;
 let admin: TestClient;
+let adminUserId: string;
 
 async function chargeFor(leaseId: string): Promise<string> {
   const { rows } = await db.query(
@@ -32,7 +35,10 @@ beforeAll(async () => {
   await db.connect();
   // Ruling 2: createAppUser returns an already-signed-in { client, userId }; there is no
   // separate signIn(email) => client helper taking a bare role string.
-  ({ client: admin } = await createAppUser({ email: "condonation-admin", role: "admin" }));
+  ({ client: admin, userId: adminUserId } = await createAppUser({
+    email: "condonation-admin",
+    role: "admin",
+  }));
 });
 
 beforeEach(async () => {
@@ -197,5 +203,152 @@ describe("condone_charge", () => {
       [rows[0].actor_id],
     );
     expect(actorRoleRows[0].role).toBe("admin");
+  });
+});
+
+/**
+ * Demonstrations, not assertions about the design -- the same shape post-collection.test.ts
+ * uses: two real connections, two overlapping transactions, a proof that the second is
+ * still blocked while the first holds its locks, and then a read of what the second
+ * actually did once it woke up.
+ *
+ * What is being demonstrated is that condone_charge now takes `for update` on the charge
+ * row before it reads charge_balances. Before that lock it read and inserted while holding
+ * nothing, so it neither blocked nor was blocked by post_collection's own `for update`
+ * (migration 20260918000022, STEP 4b), and this interleaving went through:
+ *
+ *   charge C, amount 50.00, outstanding 50.00
+ *   T1 condone_charge reads outstanding = 50.00
+ *   T2 post_collection locks C, re-reads 50.00, allocates 50.00, COMMITS
+ *   T1 passes `p_amount > v_outstanding` on its stale read and inserts a 50.00 condonation
+ *
+ * leaving allocated 50 + condoned 50 against amount 50: outstanding -50.00, is_settled
+ * true. lease_balances and aging_of_receivables both filter `where not is_settled`, so
+ * that -50.00 shows up on no report at all -- 50 pesos of cash attributed to nothing. The
+ * final reads in each test below are what would catch that: they check the sign of
+ * `outstanding` on the real view, not merely that an error came back.
+ *
+ * condone_charge is called over a raw Postgres connection rather than supabase-js, because
+ * PostgREST cannot hold a transaction open across two statements. `request.jwt.claims` is
+ * set on the connection so `auth.uid()` -- and therefore is_admin() and the `condoned_by`
+ * stamp -- resolves to a genuine administrator, exactly as it does through PostgREST.
+ */
+describe("condone_charge — concurrency", () => {
+  const OPEN_TX_WAIT_MS = 400;
+
+  /** Resolves to true if `promise` is still pending after `ms`. */
+  async function stillPending(promise: Promise<unknown>, ms: number): Promise<boolean> {
+    let pending = true;
+    void promise.then(
+      () => {
+        pending = false;
+      },
+      () => {
+        pending = false;
+      },
+    );
+    await new Promise((resolve) => setTimeout(resolve, ms));
+    return pending;
+  }
+
+  /** Opens a connection that condone_charge will see as the fixture administrator. */
+  async function adminConnection(): Promise<Client> {
+    const conn = new Client({ connectionString: POSTGRES_URL });
+    await conn.connect();
+    await conn.query("select set_config('request.jwt.claims', $1, false)", [
+      JSON.stringify({ sub: adminUserId, role: "authenticated" }),
+    ]);
+    return conn;
+  }
+
+  function condoneOn(conn: Client, chargeId: string, amount: number, reason: string) {
+    return conn.query(
+      "select ceedo_collections.condone_charge($1::uuid, $2::numeric, $3, $4) as id",
+      [chargeId, amount, "Ordinance 2026-114", reason],
+    );
+  }
+
+  async function outstandingOf(chargeId: string) {
+    const { rows } = await db.query(
+      `select outstanding, is_settled,
+              (select count(*)::int from ceedo_collections.charge_condonations
+                where charge_id = $1) as condonations
+         from ceedo_collections.charge_balances where id = $1`,
+      [chargeId],
+    );
+    return rows[0];
+  }
+
+  it("waits behind an in-flight payment against the charge, then refuses to over-condone", async () => {
+    const fx = await createCollectionFixture(db, {
+      accrualPeriod: "daily", startDate: "2026-10-01", rateAmount: "50.00",
+    });
+    await db.query("select ceedo_collections.run_accrual('2026-10-01')");
+    const chargeId = await chargeFor(fx.leaseId);
+
+    const payer = new Client({ connectionString: POSTGRES_URL });
+    await payer.connect();
+    const condoner = await adminConnection();
+
+    try {
+      await payer.query("begin");
+      await condoner.query("begin");
+
+      // The payment settles the charge in full and holds the row lock, uncommitted.
+      await postCollectionAsOwner(payer, fx, { groupRanks: [1] });
+
+      // 50.00 was outstanding a moment ago and this admin has every reason to believe it
+      // still is. The lock is what stops that belief becoming a fact.
+      const condonation = condoneOn(condoner, chargeId, 50.0, "Typhoon amnesty");
+      expect(await stillPending(condonation, OPEN_TX_WAIT_MS)).toBe(true);
+
+      await payer.query("commit");
+
+      // Awake, re-read, and refused on the post-wait truth: nothing is outstanding now.
+      await expect(condonation).rejects.toThrow(/Cannot condone/);
+    } finally {
+      await payer.query("rollback").catch(() => undefined);
+      await condoner.query("rollback").catch(() => undefined);
+      await payer.end();
+      await condoner.end();
+    }
+
+    const after = await outstandingOf(chargeId);
+    expect(after.condonations).toBe(0);
+    expect(Number(after.outstanding)).toBe(0);
+    expect(after.is_settled).toBe(true);
+  });
+
+  it("serialises two condonations of one charge, so the pair cannot overshoot together", async () => {
+    // The sibling race the handover already documented: two administrators applying the
+    // same ordinance at the same moment. 60 + 60 against a 100.00 charge is individually
+    // valid twice over and only overshoots in aggregate.
+    const { chargeId } = await accruedLease();
+
+    const first = await adminConnection();
+    const second = await adminConnection();
+
+    try {
+      await first.query("begin");
+      await second.query("begin");
+
+      await condoneOn(first, chargeId, 60.0, "first");
+
+      const racing = condoneOn(second, chargeId, 60.0, "second");
+      expect(await stillPending(racing, OPEN_TX_WAIT_MS)).toBe(true);
+
+      await first.query("commit");
+
+      await expect(racing).rejects.toThrow(/Cannot condone/);
+    } finally {
+      await first.query("rollback").catch(() => undefined);
+      await second.query("rollback").catch(() => undefined);
+      await first.end();
+      await second.end();
+    }
+
+    const after = await outstandingOf(chargeId);
+    expect(after.condonations).toBe(1);
+    expect(Number(after.outstanding)).toBe(40);
   });
 });

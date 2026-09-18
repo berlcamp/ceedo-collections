@@ -27,6 +27,29 @@ begin
     raise exception 'Condoned amount must be positive';
   end if;
 
+  -- LOCK the charge row before reading what is outstanding on it.
+  --
+  -- The over-condonation check spans rows, so it is only as good as the snapshot it reads.
+  -- Without this lock, condone_charge neither blocks nor is blocked by post_collection,
+  -- which takes `for update` on exactly these rows (migration 20260918000022, STEP 4b):
+  --
+  --   charge C, amount 1000, outstanding 1000
+  --   T1 condone_charge reads outstanding = 1000
+  --   T2 post_collection locks C, re-reads 1000, allocates 1000, COMMITS
+  --   T1 passes `p_amount > v_outstanding` on its stale 1000 and inserts a 1000 condonation
+  --
+  -- allocated 1000 + condoned 1000 against amount 1000 is outstanding = -1000 and
+  -- is_settled = true -- and because lease_balances and aging_of_receivables both filter
+  -- `where not is_settled`, that -1000 appears on no report at all. The city would hold
+  -- 1000 pesos of cash attributed to nothing.
+  --
+  -- Taking the lock on `charges` (the same row post_collection locks) orders this function
+  -- behind any in-flight payment against the charge. Under READ COMMITTED the read below
+  -- is a new statement issued after the wait, so it sees the blocking transaction's
+  -- committed effects -- the post-wait truth, not the figure read before the wait. The
+  -- same lock serialises two concurrent condonations of one charge against each other.
+  perform 1 from ceedo_collections.charges where id = p_charge_id for update;
+
   -- SECURITY DEFINER means charge_balances is read as this function's owner, bypassing
   -- the view's security_invoker RLS. That is intended here: the admin check above is the
   -- gate, and the function must see the true outstanding figure to validate against it.
