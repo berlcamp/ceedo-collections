@@ -19,8 +19,7 @@ beforeAll(async () => {
   // is the only file allowed to mutate this row, but it always restores this exact date
   // afterward, so re-asserting it here is belt-and-braces against run order rather than a
   // real dependency on that file.
-  await db.query("delete from ceedo_collections.settings");
-  await db.query("insert into ceedo_collections.settings (cutover_date) values ('2026-10-01')");
+  await resetCutover(db);
   ({ leaseId } = await createLeaseFixture(db));
   ({ client: adminClient } = await createAppUser({ email: "opening-balance-admin", role: "admin" }));
 });

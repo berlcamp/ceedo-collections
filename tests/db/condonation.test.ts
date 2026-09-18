@@ -38,8 +38,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   // Every fixture in this file is built around the seeded 2026-10-01 cutover; re-assert it
   // in case another file (settings.test.ts) left it mutated, mirroring opening-balance.test.ts.
-  await db.query("delete from ceedo_collections.settings");
-  await db.query("insert into ceedo_collections.settings (cutover_date) values ('2026-10-01')");
+  await resetCutover(db);
 });
 
 afterAll(async () => {

@@ -81,8 +81,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   orNo = FIXTURE_BOOKLET_START_NO;
-  await db.query("delete from ceedo_collections.settings");
-  await db.query("insert into ceedo_collections.settings (cutover_date) values ('2026-10-01')");
+  await resetCutover(db);
   fx = await createCollectionFixture(db, {
     accrualPeriod: "daily",
     startDate: "2026-10-01",

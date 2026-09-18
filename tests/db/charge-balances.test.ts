@@ -43,8 +43,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await db.query("delete from ceedo_collections.settings");
-  await db.query("insert into ceedo_collections.settings (cutover_date) values ('2026-10-01')");
+  await resetCutover(db);
 });
 
 afterAll(async () => {

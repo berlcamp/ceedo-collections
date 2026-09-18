@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
-import { POSTGRES_URL, createAppUser } from "../helpers/supabase.js";
+import { POSTGRES_URL, createAppUser, resetCutover } from "../helpers/supabase.js";
 
 let db: Client;
 
@@ -13,10 +13,7 @@ afterAll(async () => {
   // This is the one file permitted to delete/mutate the singleton settings row (it owns
   // testing that behaviour). Every other file, and local development, expects the fixed
   // seeded cutover date, so restore it here regardless of what the tests above left behind.
-  await db.query("delete from ceedo_collections.settings");
-  await db.query(
-    "insert into ceedo_collections.settings (cutover_date) values ('2026-10-01')",
-  );
+  await resetCutover(db);
   await db.end();
 });
 
