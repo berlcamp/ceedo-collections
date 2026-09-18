@@ -38,7 +38,32 @@ begin
     select 1 from ceedo_collections.accrual_runs
     where id = v_run_id and status = 'succeeded'
   ) then
-    perform ceedo_collections.run_surcharge(v_date, v_run_id);
+    -- CATCH, LOG, RETURN -- for exactly the reason run_accrual's own handler does.
+    --
+    -- cron invokes run_nightly() as one statement, so the whole night is one transaction.
+    -- An unguarded `perform run_surcharge` propagating an exception rolls back not only
+    -- the surcharges but the charges run_accrual just raised AND the accrual_runs row
+    -- recording them -- leaving no row at all for the business date, which accrual_health
+    -- reports as 'missing', indistinguishable from cron never having fired. That is
+    -- precisely the failure run_accrual's handler exists to prevent, reintroduced one
+    -- level up.
+    --
+    -- This subtransaction rolls back the surcharge attempt only. The accrual's charges are
+    -- already committed work inside this transaction and survive, so the run is recorded
+    -- as 'failed' with the real sqlerrm while the night's rentals stand. charges_raised is
+    -- left alone rather than zeroed: unlike run_accrual's own handler, whose rollback DOES
+    -- discard the charges it counted, this one discards only the surcharge attempt, so the
+    -- count already on the row is still true.
+    begin
+      perform ceedo_collections.run_surcharge(v_date, v_run_id);
+    exception
+      when others then
+        update ceedo_collections.accrual_runs
+           set finished_at = now(), status = 'failed', error = sqlerrm
+         where id = v_run_id;
+        raise warning 'run_surcharge failed for %: %', v_date, sqlerrm;
+        return v_run_id;
+    end;
   end if;
 
   return v_run_id;

@@ -40,6 +40,22 @@ begin
   join ceedo_collections.fee_types f on f.id = b.fee_type_id
   where b.charge_type = 'rental'
     and f.surcharge_bps > 0
+    -- Skip a parent whose surcharge rounds to nothing.
+    --
+    -- The expression in the SELECT list is integer basis points on centavos, half-up, then
+    -- back to pesos. It yields 0.00 for any parent small enough that the numerator falls
+    -- short of one centavo -- at 3% that is everything at or below 0.16. `charges` carries
+    -- `check (amount > 0)`, and a CHECK violation is NOT swallowed by `on conflict do
+    -- nothing`, so without this predicate a single lease keyed in at 0.10 raises an
+    -- exception out of run_surcharge from the day its charge passes a month overdue, and
+    -- does so every night thereafter, permanently. (run_accrual's own filter is only
+    -- `rate_amount > 0`, so such a lease does accrue.) run_nightly's new handler makes that
+    -- a durable 'failed' row rather than a vanished night; this makes it not happen at all.
+    --
+    -- Stated as integer arithmetic on the same operands as the SELECT list rather than as
+    -- `<computed> > 0`, so the two cannot drift: >= 10000 in the numerator is exactly the
+    -- condition under which floor(.../10000) reaches 1.
+    and (round(b.amount * 100) * f.surcharge_bps + 5000) >= 10000
     -- Calendar-month arithmetic, not 30 days: a 31 January charge becomes delinquent on
     -- 28 February, which is what the parent spec §8.2 requires and what the office
     -- reckons. Strictly greater than, so the anniversary day itself is not yet late.
