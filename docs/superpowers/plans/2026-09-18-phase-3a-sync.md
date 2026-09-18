@@ -5065,13 +5065,33 @@ const BASE =
   process.env.FUNCTIONS_URL ??
   `${process.env.SUPABASE_URL ?? process.env.API_URL ?? "http://127.0.0.1:54321"}/functions/v1`;
 
+/**
+ * The apikey/Authorization pair is the API GATEWAY's credential and is NOT optional.
+ *
+ * Without it Kong rejects the request before the Function ever runs — and it answers with
+ * its own 401. Both Kong and our handler return 401, so a test that asserts only on the
+ * status code passes identically whether the Function works, is broken, or was never
+ * deployed. Verified directly:
+ *
+ *   no apikey   -> 401 {"code":"UNAUTHORIZED_NO_AUTH_HEADER", ...}   <- Kong
+ *   with apikey -> 401 {"error":"unauthorized"}                      <- our handler
+ *
+ * Every assertion on a 401 in this suite must therefore check the BODY, not the status.
+ */
+const ANON =
+  process.env.SUPABASE_ANON_KEY ?? process.env.ANON_KEY ?? "";
+
 export async function callFunction(
   name: string,
   body: unknown,
 ): Promise<{ status: number; body: any }> {
   const res = await fetch(`${BASE}/${name}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      apikey: ANON,
+      Authorization: `Bearer ${ANON}`,
+    },
     body: JSON.stringify(body),
   });
   const text = await res.text();
@@ -5125,6 +5145,9 @@ describe("authentication over HTTP", () => {
   it("refuses an absent credential with 401", async () => {
     const res = await callFunction("sync-pull", { cursor: 0 });
     expect(res.status).toBe(401);
+    // The body, not just the status: Kong also answers 401, so a status-only assertion
+    // passes even when the Function is broken or absent.
+    expect(res.body).toEqual({ error: "unauthorized" });
   });
 
   it("refuses a GET with 405", async () => {
@@ -5299,11 +5322,16 @@ Modify `.github/workflows/ci.yml`, after `supabase db reset` and before `pnpm te
           echo "CEEDO_JWT_SECRET=$JWT_SECRET" > supabase/functions/.env
           supabase functions serve --env-file supabase/functions/.env &
           for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' \
-                     -X POST http://127.0.0.1:54321/functions/v1/sync-pull \
+            # Must send the gateway credential AND match our own body. Kong answers 401 for a
+            # missing apikey, so polling on the status code alone goes green as soon as the
+            # gateway is up -- while the Function may be broken or not serving at all.
+            body=$(curl -s -X POST http://127.0.0.1:54321/functions/v1/sync-pull \
+                     -H "apikey: $ANON_KEY" \
+                     -H "Authorization: Bearer $ANON_KEY" \
                      -H 'content-type: application/json' -d '{}' || true)
-            # 401 means the function is up and refusing us, which is the goal.
-            [ "$code" = "401" ] && exit 0
+            case "$body" in
+              *'"error":"unauthorized"'*) exit 0 ;;
+            esac
             sleep 2
           done
           echo "Edge Functions did not become ready" >&2
