@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { canResolveExceptions } from "@ceedo/shared";
 import { RESOURCES } from "@/lib/admin/resource";
 import { requireStaff } from "@/lib/supabase/session";
 import "@/lib/admin/registry";
@@ -76,6 +77,20 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               Opening balances
             </Link>
           </li>
+          {/* Gated on canResolveExceptions, not merely canUseWeb: RLS admits accounting to
+              read sync_exceptions too (migration 20260918000030), but only a supervisor or
+              admin can act on one (assert_can_resolve_exceptions), and this nav entry is
+              for the screen where acting is the point. */}
+          {canResolveExceptions(staff.role) ? (
+            <li>
+              <Link
+                href="/ledger/exceptions"
+                className="block rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
+              >
+                Exceptions
+              </Link>
+            </li>
+          ) : null}
         </ul>
         <p className="mt-8 text-xs text-neutral-500">
           {staff.fullName}
