@@ -127,7 +127,7 @@ export const PushResult = z
     system_total: money.optional(),
     variance: money.optional(),
   })
-  .passthrough();
+  .strict();
 
 export const PushRequest = z.object({
   credential_id: z.string().min(1),

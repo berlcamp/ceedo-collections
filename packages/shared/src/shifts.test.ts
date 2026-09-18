@@ -67,16 +67,4 @@ describe("reconciles", () => {
       }),
     ).toBe(false);
   });
-
-  it("does not consider the cash declaration at all", () => {
-    // §6.5 step 5: variance is recorded, not blocking. A short drawer still reconciles.
-    expect(
-      reconciles({
-        deviceCount: 3,
-        deviceTotal: fromCentavos(300_00),
-        systemCount: 3,
-        systemTotal: fromCentavos(300_00),
-      }),
-    ).toBe(true);
-  });
 });

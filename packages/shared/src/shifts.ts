@@ -20,6 +20,12 @@ export function shiftVariance(input: {
   return (input.declared - input.system) as Centavos;
 }
 
+/**
+ * Deliberately takes no declared-cash parameter. §6.5 step 5's cash-vs-system variance is
+ * recorded and never blocks closeout; only the device-vs-server comparison does. That is
+ * enforced here by omission, not by a runtime check: there is nothing this signature lets a
+ * caller pass that could make a short drawer fail to reconcile.
+ */
 export function reconciles(input: {
   deviceCount: number;
   deviceTotal: Centavos;
