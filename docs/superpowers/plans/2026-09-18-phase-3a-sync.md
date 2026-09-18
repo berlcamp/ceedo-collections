@@ -5491,9 +5491,16 @@ describe("summarisePayload", () => {
     expect(summarisePayload({ or_no: 1 }).periods).toBe(0);
   });
 
-  it("survives a payload missing every field", () => {
+  it("survives a payload that is not an object at all", () => {
     // The payload is whatever the device sent. A malformed one must render, not throw --
     // this screen is how a malformed push gets noticed at all.
+    //
+    // `{}` alone does NOT test this: property access on an empty object never throws, so an
+    // unguarded implementation passes it too. The discriminating cases are the ones a
+    // malformed device push actually produces.
+    expect(() => summarisePayload(null as never)).not.toThrow();
+    expect(() => summarisePayload("garbage" as never)).not.toThrow();
+    expect(() => summarisePayload(42 as never)).not.toThrow();
     expect(() => summarisePayload({})).not.toThrow();
   });
 });
@@ -5891,10 +5898,18 @@ export async function getShifts(): Promise<ShiftRow[]> {
 
 - [ ] **Step 4: Write the shifts page and its nav entry**
 
-Add `/ledger/shifts` to `apps/web/app/(admin)/layout.tsx`, gated on
-`canResolveExceptions(role) || canViewReports(role)` — spec §6.2 scopes the audience as
-supervisor, admin and accounting, which is what those two existing helpers express between
-them. A page with no nav entry is a page nobody opens.
+Add `/ledger/shifts` to `apps/web/app/(admin)/layout.tsx` **unconditionally**, like every
+other link in that file's Ledger section.
+
+An earlier ruling of mine said to gate it on `canResolveExceptions(role) || canViewReports(role)`.
+**That was wrong**, and Task 14's review caught the same mistake there. `layout.tsx` states its
+own convention in a comment above that section: *"No per-role filter is needed here the way
+`visible` filters resources above: every role that reaches this layout at all already cleared
+`canUseWeb()` in `requireStaff()`, and that is exactly the role set the views' own RLS policy
+admits."* This is navigation, not access control — the policies are what deny.
+
+Role belongs in the page's **action** gating, not the nav, which is how
+`ledger/collections/page.tsx` already handles a screen accounting may read but not act on.
 
 Create `apps/web/app/(admin)/ledger/shifts/page.tsx`. Read-only. Sort so `stale_open` and
 `unsynced` rows appear first regardless of date — a supervisor opening this screen should
