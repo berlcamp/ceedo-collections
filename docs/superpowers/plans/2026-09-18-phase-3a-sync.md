@@ -4756,13 +4756,20 @@ Pin the envelope, leave the rows loose:
  * rows against its own SQLite schema, so a renamed column breaks nothing this would catch —
  * whereas a malformed `cursor` or `epoch` breaks the sync loop itself.
  *
- * `epoch` is nullable: a device with no active assignment has none. Confirmed against
- * `sync_pull.sql`, not assumed.
+ * `epoch` is NOT nullable, despite the `left join` in sync_pull's opening select. `v_epoch`
+ * binds to `d.assignment_epoch` — from the non-joined `devices` table, `integer not null
+ * default 0` — while the left join only nulls `da.facility_id` and `da.section_id`. Verified
+ * against the SQL, `information_schema`, and a live response. An earlier review asserted the
+ * opposite, confidently and wrongly; check the column's actual source table before trusting
+ * a claim about a joined query's nullability.
+ *
+ * `cursor` crosses as a bare JSON number, not a string, despite `row_version_seq` being a
+ * bigint — confirmed with `jsonb_typeof`, not assumed.
  */
 export const PullResponse = z
   .object({
     cursor: z.number().int().nonnegative(),
-    epoch: z.number().int().nonnegative().nullable(),
+    epoch: z.number().int().nonnegative(),
   })
   .passthrough();
 
@@ -5012,12 +5019,17 @@ Add `supabase/functions/.env` to `.gitignore` before committing anything.
 With the server running, in another shell:
 
 ```bash
+# The apikey/Authorization pair is the GATEWAY's credential and is not optional: without it
+# Kong rejects the request itself and you get {"code":"UNAUTHORIZED_NO_AUTH_HEADER"} — which
+# looks like a 401 from our code and is not. Every real caller sends it.
 curl -s -X POST http://127.0.0.1:54321/functions/v1/sync-pull \
+  -H "apikey: $ANON_KEY" \
+  -H "Authorization: Bearer $ANON_KEY" \
   -H 'content-type: application/json' \
   -d '{"credential_id":"nope","secret":"nope","cursor":0}'
 ```
 
-Expected: `{"error":"unauthorized"}` with status 401. If it returns 500, the `ceedo_app` JWT
+Expected: `{"error":"unauthorized"}` with status 401 — **our** body, not Kong's. If it returns 500, the `ceedo_app` JWT
 is not being accepted — check `grant ceedo_app to authenticator` ran (Task 1) and that
 `CEEDO_JWT_SECRET` matches the stack's.
 
