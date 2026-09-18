@@ -1,6 +1,6 @@
 # CEEDO Collections — Phase 3a Handover
 
-**Branch:** `phase-3a-sync` · 44 commits · 669 tests / 57 files · 13 migrations (`0026`–`0038`)
+**Branch:** `phase-3a-sync` · 45 commits · 670 tests / 58 files · 13 migrations (`0026`–`0038`)
 **Spec:** `docs/superpowers/specs/2026-09-18-phase-3a-sync-design.md`
 **Plan:** `docs/superpowers/plans/2026-09-18-phase-3a-sync.md`
 **Predecessor:** `docs/superpowers/phase-2-handover.md`
@@ -12,7 +12,12 @@ per-task reports beside it — the reasoning behind everything below.
 **New tables** (three, not the four this phase's own brief claimed at the outset — verified
 by grepping `create table` across migrations `0026`–`0038`; `spoiled_forms`, the fourth
 candidate, was created in Phase 1's migration `0006` and is only referenced here):
-`device_credentials`, `shifts`, `sync_exceptions`.
+`device_credentials`, `shifts`, `sync_exceptions`. Plus one **new column on an existing
+table**: `devices.assignment_epoch` (migration `0031`), bumped by trigger on every
+`device_assignments` insert/update/delete. It is not a table, so it does not belong in the
+count above, but it is load-bearing — it is the entire mechanism behind D7's forced re-sync
+on reassignment (see Deferred, with reasons, below) and would otherwise disappear from this
+inventory entirely.
 
 **Functions genuinely new to Phase 3a:** `authenticate_device`, `issue_device_credential`,
 `revoke_device_credential` (`0026`); `set_collector_pin` (`0027`); `bump_assignment_epoch`
@@ -219,38 +224,68 @@ in the 1.5–3 MB range. Still under the alarm on that estimate, but genuinely u
   (`"writes an audit row"`) only exercises the accepted path. Not closed this task; a
   one-line addition (`insert into audit_log ...` in the `else` branch) plus a test that
   submits a correction guaranteed to fail FIFO validation would close it.
-- **Nine tests this phase passed whether or not the thing they named worked, found only by
-  mutation.** The two most instructive, both fixed once found:
-  - `sync_push`'s per-entry isolation test (Task 9) originally used `or_no: 999999` as its
-    "poison" entry — but `post_collection`'s `or_out_of_range` check is a graceful `return`,
-    never a raised exception, so there was nothing for `sync_push`'s
-    `begin ... exception` block to catch. Removing the whole subtransaction block changed
-    **zero** observable behaviour for that payload; invariant 22 (isolation) was verified by
-    nothing. Fixed by changing the poison entry to `booklet_id: "not-a-uuid"`, which fails
-    the function's own `::uuid` cast and genuinely raises — confirmed directly against
-    `psql` before trusting it, then reconfirmed the mutation now fails the test as expected.
-  - `sync-concurrency.test.ts`'s "never double-settles a period under concurrency" (Task 16)
-    asserted only `outstanding >= 0` for the lease's charges — true unconditionally, with
-    zero collections ever posted in that fixture (`amount > 0` is a CHECK constraint;
-    `allocated` starts at 0). It would have passed against `post_collection` with its STEP
-    4b row lock removed, or against no `post_collection` at all. Fixed by staging the actual
-    two-device race and asserting the real consequence: every `outstanding` stays `>= 0`
-    *and* exactly one `collection_allocations` row exists against the contested charge —
-    verified falsifiable by hand-injecting Phase 2's exact recorded damage shape (a second
-    allocation against the same charge from a different collection) and confirming the
-    count assertion then reads `2`, not `1`.
+- **Eight tests this phase passed whether or not the thing they named worked, found only by
+  mutation, enumerated here rather than merely counted — a tally that exists only in a
+  since-deleted execution ledger is exactly the failure mode this section exists to
+  prevent:**
+  1. **Task 2** — `collector-pin.test.ts`: all 8 tests ran over the raw `pg` connection,
+     where `is_admin()` reads NULL for the caller and the guard silently no-ops. **None of
+     the 8 would have failed if the admin check were deleted outright.**
+  2. **Task 7** — `sync_pull`'s collector-role-change test: the fixture deactivated the
+     assignment *before* changing the role, so the join already excluded the row for an
+     unrelated reason. Deleting `and u.role = 'collector'` from the query left all 13 tests
+     in the file green.
+  3. **Task 9** — `sync_push`'s per-entry isolation test used `or_no: 999999` as its
+     "poison" entry — but `post_collection`'s `or_out_of_range` check is a graceful
+     `return`, never a raised exception, so there was nothing for `sync_push`'s
+     `begin ... exception` block to catch. Removing the whole subtransaction block changed
+     **zero** observable behaviour for that payload; invariant 22 (isolation) was verified
+     by nothing. Fixed by changing the poison entry to `booklet_id: "not-a-uuid"`, which
+     fails the function's own `::uuid` cast and genuinely raises.
+  4. **Task 11** — the `PushResult` wire-contract schema used Zod's `.passthrough()`:
+     deleting `retryable` from the schema entirely still let both `{retryable: true}` and a
+     wrong-typed `{retryable: "yes"}` validate successfully.
+  5. **Task 13** — `callFunction` originally omitted the gateway `apikey` header. Kong
+     answers 401 for a missing `apikey` too, so every 401 assertion in the suite would have
+     passed identically whether the Edge Functions worked, were broken, or were never
+     deployed at all. **Caught and fixed before this ever shipped as a passing test** — the
+     one entry on this list that never reached a green run.
+  6. **Task 13** — `tests/http/functions.test.ts`'s `"leaks no Postgres detail"` test
+     passes against *any* generic error body, including a bare 503 from a dead server — it
+     only fails if a real Postgres error detail actually leaks through. **Still open**,
+     unlike the rest of this list: narrowing it needs a positive assertion on the redacted
+     shape, which this phase did not add.
+  7. **Task 14** — `summarisePayload({})`: property access on an empty object never throws
+     in JavaScript, so an unguarded implementation with no empty-payload handling at all
+     passes the test identically to a correct one.
+  8. **Task 16** — `sync-concurrency.test.ts`'s "never double-settles a period under
+     concurrency" asserted only `outstanding >= 0` for the lease's charges, with zero
+     collections ever posted in that fixture (`amount > 0` is a CHECK constraint;
+     `allocated` starts at 0) — unconditionally true, a tautology. It would have passed
+     against `post_collection` with its STEP 4b row lock removed, or against no
+     `post_collection` at all. Fixed by staging the actual two-device race and asserting the
+     real consequence: every `outstanding` stays `>= 0` *and* exactly one
+     `collection_allocations` row exists against the contested charge — verified falsifiable
+     by hand-injecting Phase 2's exact recorded damage shape (a second allocation against
+     the same charge from a different collection) and confirming the count assertion then
+     reads `2`, not `1`.
 
   **The shared shape, and the one lesson worth carrying forward whole:** a test that
   *errors* gets attention immediately — someone reads the stack trace. A test that *passes
-  vacuously* gets a green tick and is never looked at again. Mutation is the only technique
-  used this phase that reliably tells the two apart; a green suite alone cannot.
-- **`tests/http/functions.test.ts`'s "leaks no Postgres detail" test is weak in one specific,
-  known, uncorrected way** (Task 13): it passes against *any* generic error body, including a
-  bare, non-redacted 500 with no detail at all — it only fails if a real Postgres error
-  detail actually leaks through. It is discriminating for the failure mode it was written
-  for (a raw `sqlerrm` reaching the client) but not for "the error body is well-formed."
-  Flagged, not fixed — narrowing it needs a positive assertion on the redacted shape, which
-  this phase did not add.
+  vacuously* gets a green tick and is never looked at again. Every one of the eight above
+  had exactly that shape. Mutation is the only technique used this phase that reliably tells
+  the two apart; a green suite alone cannot.
+
+  **A distinct trap, worth one line separately rather than folded into the eight: Task 3's
+  "denies DELETE to every role" test could never pass at all**, against any migration,
+  correct or not. `has_table_privilege` reports the predefined role `pg_write_all_data` as
+  holding DELETE on every relation in the cluster as a hardcoded ACL bypass — confirmed
+  directly: a throwaway scratch table with zero grants ever applied to it already showed
+  `pg_write_all_data` holding DELETE, and `revoke delete ... from pg_write_all_data` had no
+  effect. This is the mirror image of the eight above, not a ninth instance of the same
+  thing: an **unrunnable** test fails loudly and gets fixed immediately, which is exactly
+  why it is not dangerous the way a vacuous pass is. Fixed by adding `pg_write_all_data` to
+  the test's exclusion list, verified afterward to still catch a real stray grant.
 - **`condone_charge` still takes no row lock** (Phase 2's handover named this as an open
   gap; Phase 3a did not touch it). Its impact is unchanged from Phase 2's own analysis:
   bounded by `post_collection`'s own re-read-and-compare, so it produces a spurious
