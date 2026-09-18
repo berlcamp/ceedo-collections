@@ -151,6 +151,40 @@ export const CloseoutRequest = z.object({
   device_total: money,
 });
 
+/**
+ * The pull envelope. Deliberately does NOT enumerate the 17 table arrays: their row shapes
+ * are already generated into `db.types.ts` from the live schema and cannot drift there, so a
+ * second hand-written definition would be a drift hazard with no payoff. The device inserts
+ * rows against its own SQLite schema, so a renamed column breaks nothing this would catch --
+ * whereas a malformed `cursor` or `epoch` breaks the sync loop itself.
+ *
+ * Both fields verified against `sync_pull.sql`, not assumed:
+ *
+ *   cursor -- `v_cursor` is read from `row_version_seq` (bigint) and placed into the jsonb
+ *             result via `jsonb_build_object`. Confirmed on a live call that this crosses as
+ *             a bare JSON number, not a PostgREST-quoted string: the string-quoting behaviour
+ *             PostgREST applies to bigint/numeric *columns* in a REST response does not apply
+ *             here, because the whole envelope is jsonb assembled inside the function, and
+ *             PostgREST forwards that jsonb text verbatim.
+ *
+ *   epoch  -- Task 11's brief (and an earlier draft of this one) claimed this is nullable,
+ *             reasoning that `v_epoch` comes through the `left join` to `device_assignments`.
+ *             That is NOT what the SQL does: `v_epoch` is bound to `d.assignment_epoch`, a
+ *             column on `devices` itself (`integer not null default 0`, migration
+ *             20260918000031_assignment_epoch.sql) that is selected regardless of whether the
+ *             left join finds an active assignment row -- only `facility_id`/`section_id`
+ *             (bound from the joined table) can be null. A device with no active assignment
+ *             still reports `epoch: 0`. Confirmed against a live call as well.
+ */
+export const PullResponse = z
+  .object({
+    cursor: z.number().int().nonnegative(),
+    epoch: z.number().int().nonnegative(),
+  })
+  .passthrough();
+
+export type PullResponse = z.infer<typeof PullResponse>;
+
 export type PushEntry = z.infer<typeof PushEntry>;
 export type { RejectReason };
 export type PushResult = z.infer<typeof PushResult>;
