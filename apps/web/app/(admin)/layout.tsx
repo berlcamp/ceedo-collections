@@ -76,6 +76,32 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               Opening balances
             </Link>
           </li>
+          {/* Unconditional, same as every other link in this section (see the comment
+              above): migration 20260918000030 admits accounting to read sync_exceptions
+              too, and exceptions are unresolved cash discrepancies with a §11.3 three-day
+              Treasurer concern -- read-only oversight for accounting is desirable here, not
+              merely tolerated. The page itself still gates the three resolution dialogs on
+              canResolveExceptions, exactly as collections/page.tsx gates CancelDialog. */}
+          <li>
+            <Link
+              href="/ledger/exceptions"
+              className="block rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
+            >
+              Exceptions
+            </Link>
+          </li>
+          {/* Unconditional, same reasoning as Exceptions above: migration 20260918000029
+              admits the same supervisor/accounting/admin set to read shifts, and this is
+              navigation, not access control. The page itself has no action to gate --
+              verification and remittance are Phase 6. */}
+          <li>
+            <Link
+              href="/ledger/shifts"
+              className="block rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
+            >
+              Shifts
+            </Link>
+          </li>
         </ul>
         <p className="mt-8 text-xs text-neutral-500">
           {staff.fullName}

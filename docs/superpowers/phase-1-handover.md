@@ -39,8 +39,10 @@
   Do not grant `UPDATE`/`DELETE` on them to any role, including `service_role`.
 - `apply_master_data_policies()` grants `UPDATE`/`DELETE` to `service_role`. **Do not use it
   for ledger tables.**
-- Surcharge is **integer basis points** (3% = `300`), never a float. `0.03 * 8350` is
-  `250.49999999999997` in IEEE 754 and rounds the wrong way.
+- Surcharge is **integer basis points** (3% = `300`), never a float. The reason is rounding
+  **direction**, not representation: `0.03 * 8350` is exactly `250.5` in IEEE 754, and
+  `Math.floor(250.5)` is `250` where half-up gives `251` — a float pipeline that floors
+  loses the centavo on every exact half.
 - `charges.due_date` is explicit; the surcharge clock starts from it.
 - `booklets.status` is **not authoritative** — nothing transitions it. Derive booklet state
   from `booklet_assignments` and `spoiled_forms`, or add the transition logic first.

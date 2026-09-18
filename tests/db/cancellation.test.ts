@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import {
-  POSTGRES_URL, createAppUser, createCollectionFixture, postCollectionAsOwner, resetCutover,
-  signIn,
+  POSTGRES_URL, createAppUser, createCollectionFixture, createOutsiderClient,
+  postCollectionAsOwner, resetCutover, signIn,
 } from "../helpers/supabase";
 
 let db: Client;
@@ -129,6 +129,28 @@ describe("cancel_collection", () => {
     });
     // Ruling 9: an RPC explicitly raises, unlike a bare RLS read/update refusal, so an
     // error IS expected here -- assert the message actually observed.
+    expect(error).not.toBeNull();
+    expect(error!.message).toMatch(/supervisor or administrator/);
+
+    const { rows } = await db.query(
+      "select count(*)::int as n from ceedo_collections.collection_cancellations where collection_id = $1",
+      [collectionId],
+    );
+    expect(rows[0].n).toBe(0);
+  });
+
+  it("refuses an outsider with no app_users row", async () => {
+    // The population migration 0002's "THE GATE" comment says to expect on this shared
+    // project: signed in, but with no app_users row at all. active_role() is NULL for this
+    // caller; before migration 0028 that NULL propagated through has_role() uncoalesced,
+    // so `if not has_role(...) then raise` silently no-op'd instead of refusing them.
+    // cancel_collection is the only guarded RPC in this phase gated by has_role() rather
+    // than is_admin(), so this is the only place that half of the coalesce fix is tested.
+    const collectionId = await postCollectionAsOwner(db, fx, { groupRanks: [1] });
+    const outsider = await createOutsiderClient();
+    const { error } = await outsider.rpc("cancel_collection", {
+      p_collection_id: collectionId, p_reason: "not allowed",
+    });
     expect(error).not.toBeNull();
     expect(error!.message).toMatch(/supervisor or administrator/);
 

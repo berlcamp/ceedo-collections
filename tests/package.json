@@ -3,7 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "scripts": { "typecheck": "tsc --noEmit", "test": "vitest run" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:http": "vitest run http/functions.test.ts"
+  },
   "devDependencies": {
     "@supabase/supabase-js": "^2.48.0",
     "@types/pg": "^8.11.0",

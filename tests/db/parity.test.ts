@@ -6,6 +6,7 @@ import {
   fromCentavos,
   generatePeriods,
   isContiguousPrefix,
+  REJECT_REASONS,
   type PeriodGroup,
 } from "@ceedo/shared";
 import {
@@ -390,4 +391,40 @@ describe("FIFO prefix selection agrees between TypeScript and SQL", () => {
       }
     });
   }
+});
+
+/**
+ * Every `reason` string post_collection() can hand back is a member of the TypeScript
+ * `REJECT_REASONS` vocabulary.
+ *
+ * This is the direction that actually bites a collector: the SQL is the source of truth
+ * for what gets returned, and a reason code it can produce but TypeScript does not know
+ * about renders as `undefined` on the device standing at a stall, not a helpful message.
+ * (The reverse -- a TypeScript reason the SQL never produces -- is a looser vocabulary,
+ * not a rendering bug, and is not what this check is for.)
+ *
+ * Reads post_collection()'s own source via pg_get_functiondef() rather than hardcoding a
+ * second copy of the list: a reason string added to the function without a matching
+ * update here would otherwise pass silently.
+ */
+describe("post_collection()'s reason vocabulary agrees with REJECT_REASONS", () => {
+  it("every reason literal in the function body is in REJECT_REASONS", async () => {
+    const { rows } = await db.query(
+      `select pg_get_functiondef('ceedo_collections.post_collection(jsonb)'::regprocedure) as def`,
+    );
+    const def = rows[0].def as string;
+
+    const found = new Set<string>();
+    for (const m of def.matchAll(/'reason',\s*'([a-z_]+)'/g)) {
+      if (m[1]) found.add(m[1]);
+    }
+
+    // Sanity check on the extraction itself: a regex that matched nothing would make every
+    // assertion below vacuously true.
+    expect(found.size).toBeGreaterThan(0);
+
+    for (const reason of found) {
+      expect(REJECT_REASONS).toContain(reason);
+    }
+  });
 });

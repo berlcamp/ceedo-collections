@@ -4,6 +4,7 @@ import {
   POSTGRES_URL,
   createAppUser,
   createLeaseFixture,
+  createOutsiderClient,
   resetCutover,
   type TestClient,
 } from "../helpers/supabase.js";
@@ -117,6 +118,29 @@ describe("record_opening_balance", () => {
 
     // Belt-and-braces on Ruling 9: also assert the state did not change, in case the
     // message assertion above were ever loosened.
+    const { rows } = await db.query(
+      "select count(*)::int as n from ceedo_collections.charges where lease_id = $1",
+      [other],
+    );
+    expect(rows[0].n).toBe(0);
+  });
+
+  it("refuses an outsider with no app_users row", async () => {
+    // The population migration 0002's "THE GATE" comment says to expect on this shared
+    // project: signed in, but with no app_users row at all. active_role() is NULL for this
+    // caller; before migration 0028 that NULL propagated through is_admin() uncoalesced,
+    // so `if not is_admin() then raise` silently no-op'd instead of refusing them.
+    const { leaseId: other } = await createLeaseFixture(db);
+    const outsider = await createOutsiderClient();
+    const { error } = await outsider.rpc("record_opening_balance", {
+      p_lease_id: other,
+      p_amount: 500.0,
+      p_oldest_unpaid_date: "2024-01-01",
+      p_authority_ref: "not allowed",
+    });
+    expect(error).not.toBeNull();
+    expect(error!.message).toMatch(/administrator/);
+
     const { rows } = await db.query(
       "select count(*)::int as n from ceedo_collections.charges where lease_id = $1",
       [other],

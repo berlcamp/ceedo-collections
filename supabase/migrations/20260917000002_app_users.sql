@@ -117,8 +117,8 @@ create policy app_users_admin_write on ceedo_collections.app_users
   using (ceedo_collections.is_admin())
   with check (ceedo_collections.is_admin());
 
--- pin_hash is deliberately absent. PIN verification happens server-side in a Phase 3
--- Edge Function; no web client, at any role, has a reason to read the hash itself.
+-- pin_hash is deliberately absent. PIN verification happens on-device, offline, against
+-- the hash synced down; no web client, at any role, has a reason to read the hash itself.
 --
 -- The revoke below is defensive, not decorative: with migration 0001 no longer granting
 -- a default table-level SELECT, this table starts with none anyway, but making the
@@ -129,15 +129,18 @@ grant select (id, employee_no, full_name, role, status, created_at, updated_at, 
 -- Only the two columns the admin edit form writes. A table-level grant would also make
 -- pin_hash writable by any admin JWT, and DELETE reachable — see the note below, which
 -- previously described only service_role while reading as a statement about the system.
--- Phase 3 writes pin_hash through an Edge Function, not as `authenticated`.
+-- Phase 3a writes pin_hash through set_collector_pin() (migration 0027), a SECURITY
+-- DEFINER RPC checking is_admin() internally -- not as `authenticated`, and not through an
+-- Edge Function as this comment originally predicted. See that migration for why.
 revoke insert, update, delete on ceedo_collections.app_users from authenticated;
 grant update (role, status) on ceedo_collections.app_users to authenticated;
 
 -- Migration 0001's default privileges give service_role SELECT and INSERT only. This table
 -- does not go through apply_master_data_policies(), so it states its own case:
---   UPDATE  — yes. A role correction, a suspension, and the Phase 3 Edge Function writing
---             pin_hash are all updates to an existing row, and app_users.id references
---             auth.users so the row cannot simply be replaced.
+--   UPDATE  — yes. A role correction and a suspension are both updates to an existing row,
+--             and app_users.id references auth.users so the row cannot simply be replaced.
+--             The table-level grant below is narrowed to exclude pin_hash by migration
+--             0027, once set_collector_pin() gives service_role a reason not to hold it.
 --   DELETE  — no, deliberately withheld from EVERY role, service_role and authenticated
 --             alike. An app_users row is referenced by booklet_assignments,
 --             collector_assignments and audit_log.actor_id; removing a staff member is

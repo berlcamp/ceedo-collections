@@ -38,4 +38,25 @@ jobs:
       - run: supabase status -o env | sed 's/="/=/; s/"$//' >> "$GITHUB_ENV"
       - run: supabase db reset
       - run: ./scripts/check-types-current.sh
+      # The Edge Functions are the deployed artifact; typecheck and the SQL suite between
+      # them never execute one. Backgrounded because `functions serve` does not return.
+      - name: Serve Edge Functions
+        run: |
+          echo "CEEDO_JWT_SECRET=$JWT_SECRET" > supabase/functions/.env
+          supabase functions serve --env-file supabase/functions/.env &
+          for i in $(seq 1 30); do
+            # Must send the gateway credential AND match our own body. Kong answers 401 for a
+            # missing apikey, so polling on the status code alone goes green as soon as the
+            # gateway is up -- while the Function may be broken or not serving at all.
+            body=$(curl -s -X POST http://127.0.0.1:54321/functions/v1/sync-pull \
+                     -H "apikey: $ANON_KEY" \
+                     -H "Authorization: Bearer $ANON_KEY" \
+                     -H 'content-type: application/json' -d '{}' || true)
+            case "$body" in
+              *'"error":"unauthorized"'*) exit 0 ;;
+            esac
+            sleep 2
+          done
+          echo "Edge Functions did not become ready" >&2
+          exit 1
       - run: pnpm test

@@ -115,9 +115,10 @@ All money is `numeric(14,2)` in Postgres and **integer centavos** in TypeScript.
 Rounding is **half-up to the centavo**, explicitly, and tested. Floats never touch a peso.
 
 **Percentage rates are stored as integer basis points**, never floats — 3% is `300`.
-A float rate misrounds exact half-centavo results: `0.03 * 8350` is `250.49999999999997`
-in IEEE 754 and floors to 250 where the correct half-up answer is 251. Integer
-arithmetic — `floor((amount * bps + 5000) / 10000)` — gives the right answer always.
+A float rate misrounds exact half-centavo results — not through representation error but
+through rounding **direction**: `0.03 * 8350` is exactly `250.5` in IEEE 754, and
+`Math.floor(250.5)` is `250` where half-up gives the correct `251`. The integer form,
+`floor((amount * bps + 5000) / 10000)`, carries half-up in the `+5000` and cannot drift.
 
 ### 5.1 Reference data
 

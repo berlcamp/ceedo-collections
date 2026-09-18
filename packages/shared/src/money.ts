@@ -41,9 +41,12 @@ export function multiply(amount: Centavos, quantity: number): Centavos {
 /**
  * Applies a rate expressed in integer basis points (3% is 300).
  *
- * Integer arithmetic throughout: `(amount * bps + 5000) / 10000` floored. Using a
- * float rate would misround exact half-centavo results, because 0.03 * 8350 is
- * 250.49999999999997 in IEEE 754 and floors to 250 rather than the correct 251.
+ * Integer basis points, never a float. The reason is rounding direction, not
+ * representation: 0.03 * 8350 is exactly 250.5 in IEEE 754, and Math.floor(250.5) is
+ * 250 where half-up gives 251 -- a float pipeline that floors loses the centavo on every
+ * exact half. The integer form, floor((amount * bps + 5000) / 10000), carries half-up in
+ * the +5000 and cannot drift. (Genuine representation error does exist and this file
+ * cites a real instance: 1.005 * 100 is 100.49999999999999.)
  */
 export function applyBasisPoints(amount: Centavos, bps: number): Centavos {
   if (!Number.isInteger(bps)) throw new Error("Basis points must be an integer");

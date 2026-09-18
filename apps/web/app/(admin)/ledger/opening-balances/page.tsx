@@ -1,3 +1,4 @@
+import { isAdmin } from "@ceedo/shared";
 import { Money } from "@/components/ledger/money";
 import { LedgerTable, type LedgerColumn } from "@/components/ledger/ledger-table";
 import { OpeningBalanceForm } from "@/components/ledger/opening-balance-form";
@@ -48,7 +49,7 @@ export default async function OpeningBalancesPage() {
         on it. record_opening_balance() itself is admin-only (migration 20260918000013),
         which is why the form is hidden rather than merely disabled for anyone else.
       */}
-      {staff.role === "admin" ? (
+      {isAdmin(staff.role) ? (
         <OpeningBalanceForm leases={pending} cutoverDate={cutoverDate} />
       ) : null}
 

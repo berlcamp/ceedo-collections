@@ -5,4 +5,6 @@ export * from "./money";
 export * from "./rates";
 export * from "./reason-codes";
 export * from "./roles";
+export * from "./shifts";
+export * from "./sync-contract";
 export type { Database } from "./db.types";

@@ -672,3 +672,110 @@ export async function postCollectionAsOwner(
   }
   return result.collection_id as string;
 }
+
+/**
+ * Issues a device credential as the owner connection, bypassing the is_admin() check that
+ * the web path goes through. Task 15's web tests cover the authorization; here the
+ * credential is a fixture, not the thing under test.
+ */
+export async function issueCredential(
+  db: PgClient,
+  deviceId: string,
+): Promise<{ credentialId: string; secret: string }> {
+  const secret = randomUUID() + randomUUID();
+  const credentialId = `cred-${randomUUID()}`;
+  await db.query(
+    `insert into ceedo_collections.device_credentials (device_id, secret_hash)
+     values ($1, extensions.digest($2, 'sha256'))`,
+    [deviceId, secret],
+  );
+  await db.query(`update ceedo_collections.devices set credential_id = $2 where id = $1`, [
+    deviceId,
+    credentialId,
+  ]);
+  return { credentialId, secret };
+}
+
+/**
+ * createCollectionFixture() plus the two assignment rows and the credential that sync
+ * needs.
+ *
+ * This exists because createCollectionFixture() creates a device with NO
+ * device_assignments row and a collector with NO collector_assignments row --
+ * post_collection() never looks at either, so Phase 2 had no reason to. Every sync path
+ * checks can_collector_use_device(), which joins both, so a Phase 2 fixture used here
+ * would be refused for a reason that has nothing to do with the test.
+ */
+export async function createSyncFixture(
+  db: PgClient,
+  opts: Parameters<typeof createCollectionFixture>[1] = {},
+): Promise<
+  CollectionFixture & { credentialId: string; secret: string; facilityId: string }
+> {
+  const fx = await createCollectionFixture(db, opts);
+
+  // stalls -> sections -> facilities. `stalls` carries section_id only; the facility is
+  // one join further out.
+  const { rows } = await db.query(
+    `select sec.facility_id
+       from ceedo_collections.stalls s
+       join ceedo_collections.sections sec on sec.id = s.section_id
+      where s.id = $1`,
+    [fx.stallId],
+  );
+  const facilityId = rows[0].facility_id as string;
+
+  await db.query(
+    `insert into ceedo_collections.device_assignments (device_id, facility_id, active)
+     values ($1, $2, true)`,
+    [fx.deviceId, facilityId],
+  );
+  await db.query(
+    `insert into ceedo_collections.collector_assignments (collector_id, facility_id, active)
+     values ($1, $2, true)`,
+    [fx.collectorId, facilityId],
+  );
+
+  const { credentialId, secret } = await issueCredential(db, fx.deviceId);
+  return { ...fx, credentialId, secret, facilityId };
+}
+
+/**
+ * Polls pg_stat_activity (over `probe`) until the backend `pid` shows a Lock wait, or
+ * throws after `timeoutMs`.
+ *
+ * A fixed `setTimeout` before committing the winner's transaction is not a wait for the
+ * race -- it is a guess at how long the loser's query takes to reach the server and block,
+ * and guesses are exactly what make a concurrency test flaky. Confirmed empirically: the
+ * first draft of stale-allocations.test.ts used a bare `await new Promise(r => setTimeout(r,
+ * ...))` and, without it long enough, the loser's query had not even been dispatched by the
+ * time the winner committed, so both posts succeeded against disjoint charge rows and the
+ * race was never staged at all. Polling `pg_stat_activity` for the loser's own backend pid
+ * waits for the actual fact -- it is blocked on the row lock the winner holds -- rather than
+ * a duration that happens to be long enough on this machine.
+ *
+ * Shared by every test that stages a FIFO race (stale-allocations.test.ts,
+ * sync-concurrency.test.ts) so there is exactly one implementation of the wait, not a second
+ * copy that quietly drifts from the first.
+ */
+export async function waitForLockWait(
+  probe: PgClient,
+  pid: number,
+  timeoutMs = 5000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const { rows } = await probe.query(
+      `select wait_event_type from pg_stat_activity where pid = $1`,
+      [pid],
+    );
+    if (rows[0]?.wait_event_type === "Lock") return;
+    if (Date.now() > deadline) {
+      throw new Error(
+        `Backend ${pid} never reached a Lock wait within ${timeoutMs}ms ` +
+          `(last wait_event_type: ${rows[0]?.wait_event_type ?? "no such backend"})`,
+      );
+    }
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}

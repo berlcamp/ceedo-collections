@@ -496,7 +496,9 @@ single test guards the entire COA position. Everything below it is ordinary corr
 - Never on an opening balance
 - 31 January charge becomes delinquent 28 February — tested via a **daily** lease, since
   `due_day` is constrained to 1–28 and cannot produce a 31st monthly due date
-- `₱83.50 × 3% = ₱2.51` — the exact case IEEE 754 gets wrong (`250.49999999999997`)
+- `₱83.50 × 3% = ₱2.51` — the exact half-centavo case a flooring float pipeline gets
+  wrong by rounding direction, not representation (see §8a: `0.03 * 8350` is exactly
+  `250.5`, and flooring it gives `250`)
 
 **`post_collection` rejections**, one test each: duplicate UUID, OR outside booklet range,
 already-consumed serial, spoiled serial, booklet not assigned to that collector,

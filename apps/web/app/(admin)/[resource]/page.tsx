@@ -1,6 +1,9 @@
+import { isAdmin } from "@ceedo/shared";
 import { notFound } from "next/navigation";
+import { DeviceCredentialPanel } from "@/components/devices/device-credential-panel";
 import { ResourceForm } from "@/components/resource-form";
 import { ResourceTable } from "@/components/resource-table";
+import { SetPinPanel } from "@/components/staff/set-pin-panel";
 import { RESOURCES, type SelectOption } from "@/lib/admin/resource";
 import { getServerClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/supabase/session";
@@ -76,6 +79,31 @@ export default async function ResourcePage({
           fields={config.fields}
           dynamicOptions={dynamicOptions}
           {...(editRows ? { editRows } : {})}
+        />
+      ) : null}
+      {/*
+        Task 15: an admin-only action per resource, alongside its create/edit form rather
+        than folded into the generic engine -- neither "issue a device credential" nor
+        "set a collector PIN" is a create/update of the resource's own row shape (the
+        credential and PIN both live behind SECURITY DEFINER RPCs, not a plain table
+        write), so ResourceForm's schema-driven form has no way to express either. Gated
+        on isAdmin the same way the ledger screens gate an action, not a read -- the RPCs
+        check again themselves.
+      */}
+      {config.key === "devices" && isAdmin(staff.role) && !error ? (
+        <DeviceCredentialPanel
+          devices={(rows ?? []).map((row) => {
+            const record = row as unknown as { id: string; label: string };
+            return { id: record.id, label: record.label };
+          })}
+        />
+      ) : null}
+      {config.key === "users" && isAdmin(staff.role) && !error ? (
+        <SetPinPanel
+          collectors={(rows ?? [])
+            .map((row) => row as unknown as { id: string; full_name: string; role: string })
+            .filter((record) => record.role === "collector")
+            .map((record) => ({ id: record.id, fullName: record.full_name }))}
         />
       ) : null}
       {/*

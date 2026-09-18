@@ -5,6 +5,7 @@ import {
   canUseWeb,
   canVerifyRemittance,
   canViewReports,
+  isAdmin,
   ROLES,
 } from "./roles.js";
 
@@ -33,5 +34,9 @@ describe("role predicates", () => {
 
   it("allows accounting and admins to verify remittance", () => {
     expect(ROLES.filter(canVerifyRemittance)).toEqual(["accounting", "admin"]);
+  });
+
+  it("restricts isAdmin to admins, mirroring the database's is_admin()", () => {
+    expect(ROLES.filter(isAdmin)).toEqual(["admin"]);
   });
 });
