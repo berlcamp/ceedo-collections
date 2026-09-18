@@ -4734,9 +4734,44 @@ Spec §4. Thin by design — §4.5: "A Function that starts accumulating busines
 - Create: `supabase/functions/sync-push/index.ts`
 - Create: `supabase/functions/closeout/index.ts`
 - Create: `supabase/functions/deno.json`
+- Modify: `packages/shared/src/sync-contract.ts` (add `PullResponse` — see below)
 
 **Interfaces:**
 - Consumes: `authenticate_device`, `sync_pull`, `sync_push`, `close_shift` — the four `ceedo_app` may execute.
+
+**`PullResponse` lands here, not in Task 11.** Task 11's brief named it and never defined it;
+Task 11 correctly refused to fabricate one, because the envelope's real shape is only knowable
+by reading `sync_pull.sql` — and that SQL reveals `epoch` can legitimately be **null**
+(`v_epoch` comes via a `left join` to `device_assignments`, so a device with no active
+assignment gets null as a normal state). A schema guessed from the brief would very plausibly
+have written `.nonnegative()` and rejected a valid response.
+
+Pin the envelope, leave the rows loose:
+
+```typescript
+/**
+ * The pull envelope. Deliberately does NOT enumerate the 17 table arrays: their row shapes
+ * are already generated into `db.types.ts` from the live schema and cannot drift there, so a
+ * second hand-written definition would be a drift hazard with no payoff. The device inserts
+ * rows against its own SQLite schema, so a renamed column breaks nothing this would catch —
+ * whereas a malformed `cursor` or `epoch` breaks the sync loop itself.
+ *
+ * `epoch` is nullable: a device with no active assignment has none. Confirmed against
+ * `sync_pull.sql`, not assumed.
+ */
+export const PullResponse = z
+  .object({
+    cursor: z.number().int().nonnegative(),
+    epoch: z.number().int().nonnegative().nullable(),
+  })
+  .passthrough();
+
+export type PullResponse = z.infer<typeof PullResponse>;
+```
+
+Verify `cursor`'s type against what actually crosses the wire before committing to
+`z.number()` — `row_version_seq` is a `bigint`, and PostgREST/jsonb may surface it as a
+string. If it does, the schema must say so.
 - Produces: three HTTP endpoints. Each accepts `POST` with a JSON body and returns JSON.
 
 - [ ] **Step 1: Write `_shared/respond.ts`**
