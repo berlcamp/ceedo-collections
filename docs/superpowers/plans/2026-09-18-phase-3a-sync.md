@@ -656,7 +656,6 @@ import {
   createAppUser,
   createSyncFixture,
   serviceClient,
-  uniqueEmail,
 } from "../helpers/supabase";
 
 let db: Client;
@@ -728,8 +727,10 @@ describe("set_collector_pin", () => {
     // Creates its own non-collector rather than querying for a seeded admin. A fixture that
     // depends on seed contents fails as a TypeError on `rows[0].id` instead of as the
     // assertion it was written to make.
-    const supervisorId = await createAppUser({
-      email: uniqueEmail("pin-target-supervisor@example.com"),
+    // createAppUser returns { client, userId } and uniquifies the email itself — do not
+    // wrap the address in uniqueEmail() as well.
+    const { userId: supervisorId } = await createAppUser({
+      email: "pin-target-supervisor@example.com",
       role: "supervisor",
     });
 
