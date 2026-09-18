@@ -712,9 +712,65 @@ export type Database = {
           },
         ]
       }
+      device_credentials: {
+        Row: {
+          device_id: string
+          id: string
+          issued_at: string
+          issued_by: string | null
+          revoked_at: string | null
+          revoked_by: string | null
+          row_version: number
+          secret_hash: string
+        }
+        Insert: {
+          device_id: string
+          id?: string
+          issued_at?: string
+          issued_by?: string | null
+          revoked_at?: string | null
+          revoked_by?: string | null
+          row_version?: number
+          secret_hash: string
+        }
+        Update: {
+          device_id?: string
+          id?: string
+          issued_at?: string
+          issued_by?: string | null
+          revoked_at?: string | null
+          revoked_by?: string | null
+          row_version?: number
+          secret_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "device_credentials_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "device_credentials_issued_by_fkey"
+            columns: ["issued_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "device_credentials_revoked_by_fkey"
+            columns: ["revoked_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       devices: {
         Row: {
           active: boolean
+          assignment_epoch: number
           created_at: string
           credential_id: string | null
           id: string
@@ -725,6 +781,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          assignment_epoch?: number
           created_at?: string
           credential_id?: string | null
           id?: string
@@ -735,6 +792,7 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          assignment_epoch?: number
           created_at?: string
           credential_id?: string | null
           id?: string
@@ -1006,6 +1064,66 @@ export type Database = {
           },
         ]
       }
+      shifts: {
+        Row: {
+          business_date: string
+          closed_at: string | null
+          collector_id: string
+          declared_total: number | null
+          device_id: string
+          id: string
+          opened_at: string
+          row_version: number
+          status: string
+          system_count: number | null
+          system_total: number | null
+          variance: number | null
+        }
+        Insert: {
+          business_date: string
+          closed_at?: string | null
+          collector_id: string
+          declared_total?: number | null
+          device_id: string
+          id: string
+          opened_at: string
+          row_version?: number
+          status: string
+          system_count?: number | null
+          system_total?: number | null
+          variance?: number | null
+        }
+        Update: {
+          business_date?: string
+          closed_at?: string | null
+          collector_id?: string
+          declared_total?: number | null
+          device_id?: string
+          id?: string
+          opened_at?: string
+          row_version?: number
+          status?: string
+          system_count?: number | null
+          system_total?: number | null
+          variance?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shifts_collector_id_fkey"
+            columns: ["collector_id"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shifts_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       spoiled_forms: {
         Row: {
           booklet_id: string
@@ -1126,6 +1244,82 @@ export type Database = {
             columns: ["section_id"]
             isOneToOne: false
             referencedRelation: "sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sync_exceptions: {
+        Row: {
+          attempts: number
+          collection_uuid: string
+          collector_id: string
+          device_id: string
+          first_seen_at: string
+          id: string
+          last_seen_at: string
+          payload: Json
+          reason_code: string
+          resolution: string | null
+          resolution_reason: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          row_version: number
+          status: string
+        }
+        Insert: {
+          attempts?: number
+          collection_uuid: string
+          collector_id: string
+          device_id: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          payload: Json
+          reason_code: string
+          resolution?: string | null
+          resolution_reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          row_version?: number
+          status?: string
+        }
+        Update: {
+          attempts?: number
+          collection_uuid?: string
+          collector_id?: string
+          device_id?: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          payload?: Json
+          reason_code?: string
+          resolution?: string | null
+          resolution_reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          row_version?: number
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sync_exceptions_collector_id_fkey"
+            columns: ["collector_id"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sync_exceptions_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sync_exceptions_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
             referencedColumns: ["id"]
           },
         ]
@@ -1326,7 +1520,15 @@ export type Database = {
         Args: { table_name: string }
         Returns: undefined
       }
+      assert_can_resolve_exceptions: {
+        Args: { p_reason: string }
+        Returns: undefined
+      }
       attach_audit: { Args: { table_name: string }; Returns: undefined }
+      authenticate_device: {
+        Args: { p_credential_id: string; p_secret: string }
+        Returns: string
+      }
       business_date: { Args: never; Returns: string }
       can_collector_use_device: {
         Args: { collector: string; device: string }
@@ -1335,6 +1537,16 @@ export type Database = {
       cancel_collection: {
         Args: { p_collection_id: string; p_reason: string }
         Returns: string
+      }
+      close_shift: {
+        Args: {
+          p_declared_total: number
+          p_device_count: number
+          p_device_id: string
+          p_device_total: number
+          p_shift_id: string
+        }
+        Returns: Json
       }
       condone_charge: {
         Args: {
@@ -1346,11 +1558,16 @@ export type Database = {
         Returns: string
       }
       cutover_date: { Args: never; Returns: string }
+      escalate_exception: {
+        Args: { p_exception_id: string; p_reason: string }
+        Returns: undefined
+      }
       has_role: {
         Args: { roles: Database["ceedo_collections"]["Enums"]["app_role"][] }
         Returns: boolean
       }
       is_admin: { Args: never; Returns: boolean }
+      issue_device_credential: { Args: { p_device_id: string }; Returns: Json }
       lease_periods: {
         Args: {
           p_accrual_period: Database["ceedo_collections"]["Enums"]["accrual_period"]
@@ -1367,6 +1584,10 @@ export type Database = {
         }[]
       }
       next_row_version: { Args: never; Returns: number }
+      open_shift: {
+        Args: { p_collector: string; p_device_id: string; p_payload: Json }
+        Returns: Json
+      }
       post_collection: { Args: { p_payload: Json }; Returns: Json }
       record_opening_balance: {
         Args: {
@@ -1377,17 +1598,45 @@ export type Database = {
         }
         Returns: string
       }
+      record_spoiled_form: {
+        Args: { p_collector: string; p_device_id: string; p_payload: Json }
+        Returns: Json
+      }
       rental_fee_type: {
         Args: {
           p_accrual_period: Database["ceedo_collections"]["Enums"]["accrual_period"]
         }
         Returns: string
       }
+      resolve_exception_corrected: {
+        Args: { p_exception_id: string; p_payload: Json; p_reason: string }
+        Returns: Json
+      }
+      resolve_exception_spoiled: {
+        Args: { p_exception_id: string; p_reason: string }
+        Returns: Json
+      }
+      revoke_device_credential: {
+        Args: { p_device_id: string }
+        Returns: undefined
+      }
       run_accrual: { Args: { p_business_date?: string }; Returns: string }
       run_nightly: { Args: never; Returns: string }
       run_surcharge: {
         Args: { p_business_date?: string; p_run_id?: string }
         Returns: number
+      }
+      set_collector_pin: {
+        Args: { p_collector_id: string; p_pin: string }
+        Returns: undefined
+      }
+      sync_pull: {
+        Args: { p_cursor: number; p_device_id: string }
+        Returns: Json
+      }
+      sync_push: {
+        Args: { p_device_id: string; p_entries: Json }
+        Returns: Json
       }
       unpaid_period_groups: {
         Args: { p_lease_id: string }
