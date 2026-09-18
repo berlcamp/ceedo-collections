@@ -1255,6 +1255,21 @@ describe("sync_exceptions", () => {
     ).rejects.toThrow(/sync_exceptions_lifecycle/);
   });
 
+  it("refuses a resolution_reason while the status is open", async () => {
+    // Symmetry with the three fields above. An open exception carries no reason because
+    // there is nothing yet to give a reason FOR; a populated one means some caller wrote a
+    // resolution's worth of state without moving the status, which is the shape a
+    // half-applied resolution would leave behind.
+    const uuid = await fileException();
+    await expect(
+      db.query(
+        `update ceedo_collections.sync_exceptions
+            set resolution_reason = 'premature' where collection_uuid = $1`,
+        [uuid],
+      ),
+    ).rejects.toThrow(/sync_exceptions_lifecycle/);
+  });
+
   it("refuses escalating without a written reason", async () => {
     const uuid = await fileException();
     await expect(
@@ -1421,6 +1436,12 @@ create table ceedo_collections.sync_exceptions (
   -- §11.3: "A written reason is mandatory on every resolution." Enforced here rather than
   -- in the form, because the form is one caller and the RPC is another.
   --
+  -- Safe against the CASE/NULL trap: a `case` with no `else` returns NULL for an unmatched
+  -- value, and a CHECK treats NULL as SATISFIED. What forecloses it is that `status` carries
+  -- its own `not null check (status in (...))`, every CHECK on a row is evaluated for the
+  -- same statement, and PostgreSQL does not permit a CHECK to be DEFERRABLE -- so no row can
+  -- reach this CASE carrying a status it does not name.
+  --
   -- 'escalated' is a STATUS, not a resolution: §11.3's third action is "escalate for
   -- investigation", which is not a terminus. An escalated exception is still unresolved
   -- and still counts against the collector at closeout. Modelling it as a resolution would
@@ -1429,6 +1450,7 @@ create table ceedo_collections.sync_exceptions (
     case status
       when 'open' then
         resolution is null and resolved_by is null and resolved_at is null
+        and resolution_reason is null
       when 'escalated' then
         resolution is null and resolved_by is null and resolved_at is null
         and resolution_reason is not null
