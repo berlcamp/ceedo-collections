@@ -34,17 +34,58 @@ describe("ceedo_app", () => {
     ]);
   });
 
-  it("holds no privilege on any table or view in the schema", async () => {
+  it("holds no privilege on any relation in the schema", async () => {
+    // relkind was 'r','v' only, which is every relation this schema happens to contain
+    // TODAY. A stray grant on a materialized view, a partitioned table or a foreign table
+    // would have sailed past — and the reporting views (migration 0024) are exactly the
+    // sort of thing that becomes a matview the first time one of them is slow. The kinds
+    // are enumerated rather than left open so the next kind added to Postgres is a
+    // deliberate decision, not a silent hole.
+    //
+    //   r = ordinary table   p = partitioned table   f = foreign table
+    //   v = view             m = materialized view
     const { rows } = await db.query(
-      `select c.relname, priv.p
+      `select c.relname, c.relkind, priv.p
          from pg_class c
          join pg_namespace n on n.oid = c.relnamespace
          cross join lateral unnest(array['SELECT','INSERT','UPDATE','DELETE']) as priv(p)
         where n.nspname = 'ceedo_collections'
-          and c.relkind in ('r', 'v')
+          and c.relkind in ('r', 'v', 'm', 'p', 'f')
           and has_table_privilege('ceedo_app', c.oid, priv.p)`,
     );
     expect(rows).toEqual([]);
+  });
+
+  it("holds USAGE and SELECT on exactly two sequences, and UPDATE on none", async () => {
+    // "No privilege on any table" is true and is NOT the whole story. Migration 0001's
+    // `alter default privileges ... grant usage, select on sequences ... to ceedo_app`,
+    // plus an explicit grant on `row_version_seq` (which predates it), give ceedo_app read
+    // access to two sequences. Reading a counter is not reading a row, so this does not
+    // weaken the "a leaked ceedo_app token reads no data" position — but it is a standing
+    // grant, so it is pinned by name rather than left as an unstated exception.
+    //
+    // The default privilege applies to every sequence created in this schema from now on,
+    // so a new sequence inherits it silently. That is precisely why this list is exact:
+    // adding one has to be a decision someone writes down here.
+    const { rows } = await db.query(
+      `select c.relname,
+              has_sequence_privilege('ceedo_app', c.oid, 'USAGE')  as usage_priv,
+              has_sequence_privilege('ceedo_app', c.oid, 'SELECT') as select_priv,
+              has_sequence_privilege('ceedo_app', c.oid, 'UPDATE') as update_priv
+         from pg_class c
+         join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'ceedo_collections'
+          and c.relkind = 'S'
+          and (has_sequence_privilege('ceedo_app', c.oid, 'USAGE')
+            or has_sequence_privilege('ceedo_app', c.oid, 'SELECT')
+            or has_sequence_privilege('ceedo_app', c.oid, 'UPDATE'))
+        order by c.relname`,
+    );
+
+    expect(rows).toEqual([
+      { relname: "audit_log_id_seq", usage_priv: true, select_priv: true, update_priv: false },
+      { relname: "row_version_seq", usage_priv: true, select_priv: true, update_priv: false },
+    ]);
   });
 
   it("cannot execute post_collection directly", async () => {

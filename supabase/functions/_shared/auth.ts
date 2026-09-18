@@ -9,9 +9,11 @@ import { create, getNumericDate } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
  * the ceedo_app role claim, signed with the project JWT secret, and PostgREST does
  * `set role ceedo_app` on the strength of it.
  *
- * ceedo_app holds EXECUTE on exactly four functions and no privilege on any table, so a
- * leaked token of this kind can call four functions -- each with its own internal
- * authorization -- and read nothing directly.
+ * ceedo_app holds EXECUTE on exactly four functions and no privilege on any table, view or
+ * matview, so a leaked token of this kind can call four functions -- each with its own
+ * internal authorization -- and read no row directly. It does hold USAGE, SELECT on two
+ * SEQUENCES (row_version_seq, audit_log_id_seq; migration 0001), which leaks a pair of
+ * counters and no data. Both facts are pinned by tests/db/sync-privileges.test.ts.
  */
 let cached: SupabaseClient | null = null;
 

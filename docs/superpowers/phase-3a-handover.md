@@ -1,6 +1,6 @@
 # CEEDO Collections — Phase 3a Handover
 
-**Branch:** `phase-3a-sync` · 670 tests / 58 files · 13 migrations (`0026`–`0038`)
+**Branch:** `phase-3a-sync` · 681 tests / 58 files · 16 migrations (`0026`–`0041`)
 **Spec:** `docs/superpowers/specs/2026-09-18-phase-3a-sync-design.md`
 **Plan:** `docs/superpowers/plans/2026-09-18-phase-3a-sync.md`
 **Predecessor:** `docs/superpowers/phase-2-handover.md`
@@ -10,7 +10,7 @@ per-task reports beside it — the reasoning behind everything below.
 ## What exists
 
 **New tables** (three, not the four this phase's own brief claimed at the outset — verified
-by grepping `create table` across migrations `0026`–`0038`; `spoiled_forms`, the fourth
+by grepping `create table` across migrations `0026`–`0041`; `spoiled_forms`, the fourth
 candidate, was created in Phase 1's migration `0006` and is only referenced here):
 `device_credentials`, `shifts`, `sync_exceptions`. Plus one **new column on an existing
 table**: `devices.assignment_epoch` (migration `0031`), bumped by trigger on every
@@ -72,10 +72,25 @@ test, PASS, 602ms** against a freshly reset database with `sync-pull` confirmed 
 
 ## Before go-live — things no test can enforce
 
-1. **Set `CEEDO_JWT_SECRET` as a hosted Supabase Edge Function secret.** Every Edge Function
-   mints a `ceedo_app`-role JWT signed with this value (`supabase/functions/_shared/auth.ts`);
-   locally it comes from `supabase/functions/.env`, which is not deployed. Without it, every
-   Edge Function throws on its first call.
+1. **Set `CEEDO_JWT_SECRET` to the PROJECT'S OWN JWT SECRET, as a hosted Supabase Edge
+   Function secret.** Every Edge Function mints a `ceedo_app`-role JWT signed with this value
+   (`supabase/functions/_shared/auth.ts`); locally it comes from `supabase/functions/.env`,
+   which is not deployed. Two distinct ways to get this wrong, and only the first is obvious:
+   - **Unset** — every Edge Function throws on its first call (`ceedoAppClient()` refuses to
+     build).
+   - **Set to anything other than the project's JWT secret** — the Functions start cleanly
+     and mint a perfectly well-formed token that **PostgREST rejects**, because it verifies
+     the signature with the project secret. Every call then fails at the role switch, with
+     nothing in this repo's test suite able to see it. Take the value from the project's API
+     settings (locally: `supabase status -o env` → `JWT_SECRET`); it is not a value to
+     invent.
+   - **Also note `verify_jwt` is not set anywhere in `supabase/config.toml`, so it defaults
+     to `true`.** The tablet must therefore send the project's anon/publishable key as the
+     `apikey`/`Authorization` **gateway** credential on every call, or Kong answers 401
+     before any Function runs — with its own body (`UNAUTHORIZED_NO_AUTH_HEADER`), not ours.
+     The gateway credential and the `ceedo_app` JWT are two different headers doing two
+     different jobs; see `tests/helpers/functions.ts`, which documents this because getting
+     it wrong once made every 401 assertion in the suite vacuous.
 2. **Issue a real device credential per tablet, and record where each secret went.**
    `issue_device_credential()` (migration `0026`) returns the plaintext secret exactly once;
    it is stored server-side only as a SHA-256 hash (D3). There is no recovery path for a
@@ -91,14 +106,37 @@ test, PASS, 602ms** against a freshly reset database with `sync-pull` confirmed 
 ## Two production-blocking bugs a large, fully green test suite could not see
 
 Both were found with the suite fully green — 641 tests for the first, 652 for the second,
-not the eventual 670 — which is beside the point and stated only so the figures below are
-honest about what was true at discovery. The actual cause is structural, not a matter of
-scale: `tests/helpers/supabase.ts` connects every SQL test as the `postgres` superuser
-(`POSTGRES_URL`). Every real caller — every Edge Function, every device — arrives as
-`ceedo_app`, reached by `authenticator` doing `SET ROLE ceedo_app` per request. Postgres
-exempts superusers from restrictions that bind every other role, so a superuser connection
-can silently pass through a path a real caller cannot, no matter how large or how green the
-suite around it grows.
+not the 681 this branch now carries — which is beside the point and stated only so the
+figures below are honest about what was true at discovery. The actual cause is structural, not a matter of
+scale: `tests/helpers/supabase.ts` connects every SQL test as `postgres` (`POSTGRES_URL`).
+Every real caller — every Edge Function, every device — arrives as `ceedo_app`, reached by
+`authenticator` doing `SET ROLE ceedo_app` per request. The two connections are exempt from
+different things, so one can silently pass through a path the other cannot, no matter how
+large or how green the suite around it grows.
+
+**An earlier draft of this section said "Postgres exempts superusers from restrictions that
+bind every other role". That is wrong, and it was the load-bearing explanation for
+everything below, so it is corrected rather than quietly dropped.** `postgres` on this
+instance is **not a superuser**: `select rolsuper, rolbypassrls from pg_roles where rolname
+= 'postgres'` returns `f, t`. What actually exempts it is narrower and worth stating
+exactly, because Phase 3b will build test infrastructure on it:
+
+- **It owns every object in `ceedo_collections`.** An owner's privileges are not checked
+  against an ACL at all, so no `GRANT`/`REVOKE` this repo writes can ever constrain it.
+  That is what made bug 2 below — `permission denied for table collections` as `ceedo_app` —
+  invisible to every test.
+- **It carries `rolbypassrls`.** Row-level security is skipped outright, so no policy in
+  this schema is ever evaluated on a test connection.
+- **The unqualified-`DELETE` guard (bug 1) is a THIRD mechanism, and not a role property at
+  all.** Determined by inspection: `select setconfig from pg_db_role_setting` shows
+  `authenticator` — and only `authenticator` — carrying
+  `session_preload_libraries = 'supautils, safeupdate'`. `safeupdate` (`pg_safeupdate`) is
+  what raises `DELETE requires a WHERE clause`, and it is loaded **per session, for that one
+  role**. A `postgres` session never loads the library, so for it the guard does not exist
+  to be exempt from. Note what this means for a test that merely does `set role ceedo_app`
+  on a `postgres` connection: it picks up the ACL and RLS behaviour of `ceedo_app` but NOT
+  the preloaded library, so it would still not have caught bug 1. Only a connection made as
+  `authenticator` does.
 
 1. **`sync_pull`'s scope-table clear.** Migration `20260918000033` wrote
    `delete from _scope_leases;` — no `WHERE` clause. This local Postgres image enforces a
@@ -136,13 +174,103 @@ that commit; anyone scanning that log for schema history alone will miss it.
 **The class of gap remains open.** Exactly one test in this repo runs as the role production
 actually uses: `tests/db/sync-pull.test.ts`'s `"succeeds over the real ceedo_app role-switch
 path, not just as the postgres superuser \`db\` uses"`, added alongside the fix for bug 1,
-which does `conn.query("set role ceedo_app")` on its own connection. Every test in this
-repo but that one — including every other assertion in that same file — still connects as
-`postgres`. Two bugs of this exact class were found this phase, both only by accident of a
-task that happened to route through HTTP. **Nothing proves there is not a third.** The
-generalizable fix — running the whole suite, or at minimum every write path, under a
-`ceedo_app`-scoped connection — was not attempted this phase; it is the single highest-value
-piece of test-infrastructure work available to Phase 3b.
+which does `conn.query("set role ceedo_app")` on its own connection. (That test's own title
+carries the "superuser" error corrected above; the title is left as written so this
+paragraph and the test are searchable as the same thing, but `postgres` is not a superuser.)
+Every test in this repo but that one — including every other assertion in that same file —
+still connects as `postgres`. Two bugs of this exact class were found this phase, both only
+by accident of a task that happened to route through HTTP. **Nothing proves there is not a
+third.**
+
+**And `set role ceedo_app` is not the generalizable fix, which is the part of this that
+Phase 3b most needs to get right.** Verified directly on this instance: on a `postgres`
+connection, `set role ceedo_app` followed by an unqualified `DELETE` on a table `ceedo_app`
+holds `DELETE` on returns `DELETE 1` — no guard, because `safeupdate` is preloaded per
+SESSION for `authenticator`, and a `postgres` session never loads it (see the mechanism note
+above). So `set role` reproduces `ceedo_app`'s ACL and RLS exposure but **not** its session
+configuration, and would not have caught bug 1. The real fix is a test connection made **as
+`authenticator`**, which then assumes `ceedo_app` — the same sequence PostgREST performs.
+That is the single highest-value piece of test-infrastructure work available to Phase 3b,
+and it is a different piece of work from the one an earlier draft of this paragraph
+described.
+
+## A third bug of the same family, plus three more, found by the final whole-branch review
+
+All four were found with the suite green, after the two above were fixed. Migrations `0039`,
+`0040` and `0041` are the repairs; every one carries a falsifying test, and each of those
+tests was confirmed to fail against the unfixed code before being committed.
+
+### Per-entry isolation was incomplete until migration `0039` (the serious one)
+
+Migration `0035`'s header claims each entry runs in its own subtransaction so that "one
+permanently-rejectable entry must cost its own receipt, never the round's". That was true of
+**dispatch** and false of **exception filing**: the `begin ... exception when others` block
+closed at line 96, and the filing block that follows it ran in the OUTER transaction. Three
+inputs a device can actually send make that filing `INSERT` raise —
+
+| input | what raises |
+| --- | --- |
+| `collector_id` naming a non-existent user | `sync_exceptions_collector_id_fkey` |
+| `collector_id` absent or null | `collector_id` NOT NULL |
+| `payload.id` not a valid UUID | the `nullif(...)::uuid` cast |
+
+— and any of them aborted the whole `sync_push` call. Reproduced over real HTTP as
+`ceedo_app` with a two-entry batch (one good receipt, one naming a non-existent collector):
+**500 `{"error":"sync_failed"}`, and the good receipt never reached `collections`.** Both
+entries lost, nothing filed, and §6.4 has the device re-pushing the identical batch forever:
+a permanent sync deadlock with the cash already taken. That is exactly the discard failure
+§6.3 exists to prevent, arriving by the road the phase claimed to have closed.
+
+Fixed by giving the filing its own subtransaction, and by never letting a filing failure
+lose the entry — a filing that raises still returns the entry as `rejected`, with the filing
+failure appended to `detail`. Folded into the same migration: the `ON CONFLICT` clause gained
+`where ... status <> 'resolved'`, so a device re-pushing a receipt a supervisor already
+resolved as `spoiled` no longer overwrites that row's `reason_code` and bumps its `attempts`.
+
+### A shift could close with no cash declaration at all (migration `0040`)
+
+`close_shift`'s `p_declared_total` was never NULL-checked, so an omitted field wrote the
+shift `closed` with `declared_total = null` and `variance = null` — and the `already_closed`
+idempotency guard then made that permanent. §6.5's "variance is recorded, not hidden" was
+defeated not by a wrong number but by an absent one. Now refused outright, before anything is
+written. (`p_device_count`/`p_device_total` needed no equivalent: `is distinct from` already
+treats NULL as a mismatch and leaves the shift open.)
+
+### The wire contract did not match what the server returns (`sync-contract.ts`)
+
+`PushResult` is `.strict()`, and four real responses failed it: `gross_amount` (returned on
+**every** accepted collection) and `shift_status` were absent from the schema, `closed` was
+missing from the status enum, and `money` was a `string` regex while `jsonb_build_object`
+emits `numeric` as a bare JSON **number**. A Phase 3b device validating its responses — the
+entire point of shipping a contract — would have treated every settled receipt and every
+completed closeout as a protocol error, and gone on re-pushing them. `sync-contract.test.ts`
+could not catch this: it parses hand-written literals, which only ever prove the schema
+agrees with whoever wrote them. `tests/http/functions.test.ts` now pipes real `sync-push`
+responses through `PushResult.array().parse()`.
+
+### Every sync request wrote an `audit_log` row (migration `0041`)
+
+`authenticate_device` touches `devices.last_seen_at` on every success, and `devices` carried
+the blanket AFTER INSERT/UPDATE/DELETE audit trigger `attach_audit()` puts on every
+master-data table. Each Edge Function authenticates separately, so a device that pulls,
+pushes and closes out wrote three full before/after row images recording no decision at all.
+Thirty tablets over an eight-hour round would bury the accountability table under its own
+heartbeat. The UPDATE side of the trigger is now scoped to the columns that carry a decision;
+INSERT and DELETE are untouched, and deactivating a device (§4.1) still audits. **Not fixed:
+the heartbeat still bumps `devices.row_version` from `row_version_seq`, because that BEFORE
+trigger is schema-wide and `row_version` is what `sync_pull`'s cursor reads — changing it is
+a cursor-semantics decision for Phase 3b, not an audit-noise fix.**
+
+### And one weak test made real
+
+`tests/http/functions.test.ts`'s `"leaks no Postgres detail"` (item 6 on the vacuous list
+above, previously marked **still open**) sent `entries: "not-an-array"`, which `sync-push`
+refuses at its own `Array.isArray` check — Postgres never ran, so there was never an error
+string that could have leaked. It now drives a real Postgres failure (a `closeout` with a
+malformed `shift_id`, which PostgREST answers with `invalid input syntax for type uuid`) and
+asserts the body **deep-equals** `{"error":"closeout_failed"}` — not merely that it lacks
+forbidden substrings, which a body with an appended `detail` would still satisfy. That list
+item is now closed.
 
 ## Mandatory for Phase 3b
 
@@ -245,7 +373,15 @@ in the 1.5–3 MB range. Still under the alarm on that estimate, but genuinely u
      `begin ... exception` block to catch. Removing the whole subtransaction block changed
      **zero** observable behaviour for that payload; invariant 22 (isolation) was verified
      by nothing. Fixed by changing the poison entry to `booklet_id: "not-a-uuid"`, which
-     fails the function's own `::uuid` cast and genuinely raises.
+     fails the function's own `::uuid` cast and genuinely raises. **And that fix was only
+     half of it.** The repaired test still exercised only the DISPATCH half of the loop
+     body. Migration `0035`'s subtransaction closed *before* the exception-filing block, so
+     filing ran in the outer transaction and any error it raised aborted the entire
+     `sync_push` call — every entry in the batch, including accepted ones. Found by the
+     final whole-branch review and fixed in migration `0039`; see "Per-entry isolation was
+     incomplete until migration 0039" below for the full account. Until that migration,
+     invariant 22 was **half** verified, and this handover's own claim that the round trip
+     proved it was, to that extent, wrong.
   4. **Task 11** — the `PushResult` wire-contract schema used Zod's `.passthrough()`:
      deleting `retryable` from the schema entirely still let both `{retryable: true}` and a
      wrong-typed `{retryable: "yes"}` validate successfully.
@@ -256,9 +392,12 @@ in the 1.5–3 MB range. Still under the alarm on that estimate, but genuinely u
      one entry on this list that never reached a green run.
   6. **Task 13** — `tests/http/functions.test.ts`'s `"leaks no Postgres detail"` test
      passes against *any* generic error body, including a bare 503 from a dead server — it
-     only fails if a real Postgres error detail actually leaks through. **Still open**,
-     unlike the rest of this list: narrowing it needs a positive assertion on the redacted
-     shape, which this phase did not add.
+     only fails if a real Postgres error detail actually leaks through. Worse than that, as
+     the final review found: its input (`entries: "not-an-array"`) stopped at `sync-push`'s
+     own `Array.isArray` check and returned 400 without Postgres ever running, so there was
+     no error string in existence for it to have caught. **Now closed** — it drives a real
+     Postgres failure and deep-equals the redacted body; see the final-review section
+     below.
   7. **Task 14** — `summarisePayload({})`: property access on an empty object never throws
      in JavaScript, so an unguarded implementation with no empty-payload handling at all
      passes the test identically to a correct one.
@@ -388,7 +527,7 @@ full reasoning and the one-line fix if the ordinance turns out to require full-m
 
 | # | Was | Now |
 | --- | --- | --- |
-| P1 | Phase 2's handover flagged `ceedo_app` as existing with zero table privileges and not granted to `authenticator` — wired before Edge Functions use it. | `grant ceedo_app to authenticator` (migration `0026`); `ceedo_app` holds `EXECUTE` on exactly four functions and no privilege on any table, pinned by `sync-privileges.test.ts`. |
+| P1 | Phase 2's handover flagged `ceedo_app` as existing with zero table privileges and not granted to `authenticator` — wired before Edge Functions use it. | `grant ceedo_app to authenticator` (migration `0026`); `ceedo_app` holds `EXECUTE` on exactly four functions and no privilege on any table, view, materialized view, partitioned table or foreign table — **but it does hold `USAGE, SELECT` on two sequences**, `row_version_seq` and `audit_log_id_seq` (migration `0001`, deliberately). All of it pinned by `sync-privileges.test.ts`. |
 | P2 | Phase 2's handover named a lost FIFO race returning the misleading `allocation_not_prefix`, and asked Phase 3 to add a distinct retryable reason code (D6 in the Phase 3a design doc responds to this directly). | `stale_allocations` (migration `0032`), the one reason `PUSH_REASONS` marks `retryable: true`; the device is expected to re-pull and re-push automatically, no supervisor exception filed. |
 | P3 | Phase 2's handover flagged `role === "admin"` inlined in five (actually four) places in `apps/web`. | Zero occurrences remain, verified by grep this task. |
 
@@ -399,6 +538,7 @@ phases:
 
 | Item | Where it lands |
 | --- | --- |
+| **Edge Functions validate nothing — `sync-contract.ts` is imported by no function** (see the note directly below this table) | Phase 3b |
 | `apps/collector` — Expo, SQLite outbox, offline sign-in, collection flow | Phase 3b |
 | Five-failed-attempt PIN lock | Phase 3b (device-side) |
 | `closed_unsynced` written by a device with no signal | Phase 3b |
@@ -408,3 +548,30 @@ phases:
 | Materialised `charge_balances` with scheduled refresh | When §9's alarm fires |
 | QR cards, scan flow, amount-driven FIFO entry | Phase 4 |
 | Parking, terminal, slaughterhouse rate classes | Phase 5 |
+
+**The first row needs saying plainly, because it is the one deferral that sounds worse than
+it is — and because the reason it is survivable is a fact about the SQL, not a reassurance.**
+`packages/shared/src/sync-contract.ts` is imported by `packages/shared`, by
+`apps/web`, and by this repo's tests. It is imported by **none of the three Edge Functions**
+(`grep -rn "sync-contract" supabase/functions/` returns nothing). `sync-push` checks
+`Array.isArray(body.entries)` and passes the array to Postgres as jsonb; `sync-pull` and
+`closeout` forward their fields untouched. So the server today accepts arbitrary JSON, and
+**the contract's two load-bearing refusals — `gross_amount` and `device_id` — are
+client-side conventions, not server-enforced rules.**
+
+What makes that a defence-in-depth gap rather than a money bug is that the SQL enforces both
+independently, and neither enforcement reads the contract:
+
+- **`gross_amount`**: `post_collection()` (migration `0022`, STEP 5) recomputes the amount
+  from the rate table and writes what it computed. A client-supplied `gross_amount` is never
+  read by any handler on any path — it is ignored, not trusted.
+- **`device_id`**: `sync_push()` overrides it from the authenticated credential
+  (`v_payload || jsonb_build_object('device_id', p_device_id)`, invariant 21), so a payload
+  carrying one cannot take effect. `tests/http/functions.test.ts` proves this over the wire.
+
+This is design D1 working as intended — thin Functions, SQL as the enforcement layer — and
+the reason it was carried rather than fixed at the end of this phase is that adding a Deno
+validation layer is new work with its own failure modes, not a repair. Phase 3b should add
+it: a malformed payload should be refused at the edge with a 400 naming the field, rather
+than reaching Postgres and coming back as a `server_error` rejection a supervisor has to
+read a `detail` string to understand.
