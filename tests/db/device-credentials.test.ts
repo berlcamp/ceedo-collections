@@ -202,7 +202,7 @@ describe("ceedo_app", () => {
   // adds sync_pull, Task 8 close_shift, Task 9 sync_push, and Task 9 moves this whole block
   // to sync-privileges.test.ts where the final four are pinned. An exact assertion is what
   // makes an accidental fifth grant fail a test instead of passing unnoticed.
-  it("holds EXECUTE on authenticate_device and nothing else yet", async () => {
+  it("holds EXECUTE on authenticate_device and sync_pull", async () => {
     const { rows } = await db.query(
       `select p.proname
          from pg_proc p
@@ -211,7 +211,7 @@ describe("ceedo_app", () => {
           and has_function_privilege('ceedo_app', p.oid, 'execute')
         order by p.proname`,
     );
-    expect(rows.map((r) => r.proname)).toEqual(["authenticate_device"]);
+    expect(rows.map((r) => r.proname)).toEqual(["authenticate_device", "sync_pull"]);
   });
 
   it("holds no privilege on any table in the schema", async () => {
