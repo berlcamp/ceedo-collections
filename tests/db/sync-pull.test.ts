@@ -414,4 +414,46 @@ describe("sync_pull", () => {
     );
     expect(result.spoiled_forms.map((sf) => sf.booklet_id)).not.toContain(bookletId);
   });
+
+  it("succeeds over the real ceedo_app role-switch path, not just as the postgres superuser `db` uses", async () => {
+    // Fix round 1. `db` (and therefore every other test in this file, and all 641 tests
+    // in this suite) connects as `postgres` -- a superuser. This local Postgres image
+    // enforces a guard rejecting an unqualified DELETE or UPDATE for every non-superuser
+    // role, and sync_pull's own scope-table clear (`delete from _scope_leases;`, no WHERE)
+    // had exactly that shape. A superuser session is exempt from the guard -- even after
+    // `set role ceedo_app` -- so no test built on `db` could ever have failed against it.
+    // Confirmed directly, before the fix (migration 20260918000037): as postgres, `delete
+    // from _scope_leases` succeeds; as ceedo_app reached the way described below, it
+    // raises "DELETE requires a WHERE clause".
+    //
+    // No real caller ever reaches sync_pull as postgres. PostgREST -- and so every Edge
+    // Function, and so every device -- logs in as `authenticator` (NOSUPERUSER) and does
+    // `SET ROLE ceedo_app` per request, on the strength of migration 0026's `grant
+    // ceedo_app to authenticator`. This test is the one in this file that takes that exact
+    // path, deliberately not `db`, and asserts a genuinely successful, correctly-scoped
+    // pull -- not merely the absence of a thrown error.
+    const fx = await createSyncFixture(db);
+
+    // Same host/port/database as `db`; only the login role differs. Local dev only: every
+    // built-in role in this stack (postgres, authenticator, ...) shares one password, the
+    // same assumption POSTGRES_URL's own default already bakes in.
+    const authenticatorUrl = new URL(POSTGRES_URL);
+    authenticatorUrl.username = "authenticator";
+
+    const conn = new Client({ connectionString: authenticatorUrl.toString() });
+    await conn.connect();
+    try {
+      await conn.query("set role ceedo_app");
+      const { rows } = await conn.query(
+        `select ceedo_collections.sync_pull($1::uuid, $2::bigint) as result`,
+        [fx.deviceId, 0],
+      );
+      const result = rows[0].result as Pull;
+
+      expect(result.facilities.map((f) => f.id)).toContain(fx.facilityId);
+      expect(result.leases.map((l) => l.id)).toContain(fx.leaseId);
+    } finally {
+      await conn.end();
+    }
+  });
 });
