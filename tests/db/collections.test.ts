@@ -70,6 +70,37 @@ describe("collections constraints", () => {
     ).rejects.toThrow(/collections_pkey/);
   });
 
+  /**
+   * The ABSENCE of a default on collections.id is the idempotency contract, and it is
+   * asserted here because nothing else can see it.
+   *
+   * The test above proves a duplicate id is refused; it cannot prove that the id came from
+   * the caller. Phase 3's tablets sync offline receipts through post_collection() carrying
+   * an id they generated themselves, and a retried sync is recognised as a retry by that
+   * id alone. Add `default gen_random_uuid()` to this column in some future migration and
+   * an omitted id stops being an error and silently becomes a NEW row -- so every retried
+   * sync issues a second official receipt for one payment. Every existing test still
+   * passes, because every one of them supplies an id.
+   *
+   * Read from the catalog rather than inferred from behaviour: an insert omitting `id`
+   * fails today with a NOT NULL violation, which is exactly what it would ALSO do if a
+   * default existed and were somehow not applied, so the behavioural probe cannot
+   * distinguish the two. `column_default` null is the property itself.
+   */
+  it("has no default on collections.id -- the tablet supplies it, and that is the idempotency key", async () => {
+    const { rows } = await db.query(
+      `select column_default
+         from information_schema.columns
+        where table_schema = 'ceedo_collections'
+          and table_name = 'collections'
+          and column_name = 'id'`,
+    );
+    // One row, or the column has been renamed and the assertion below would pass
+    // vacuously on undefined.
+    expect(rows).toHaveLength(1);
+    expect(rows[0].column_default).toBeNull();
+  });
+
   it("computes a line's amount from quantity and rate", async () => {
     const id = await postRaw({
       orNo: 1004, gross: "150.00", lines: [{ quantity: 3, unitRate: "50.00" }],
