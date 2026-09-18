@@ -5,6 +5,7 @@ import {
   POSTGRES_URL,
   createSyncFixture,
   resetCutover,
+  waitForLockWait,
   FIXTURE_BOOKLET_START_NO,
   type CollectionFixture,
 } from "../helpers/supabase";
@@ -56,41 +57,8 @@ function payloadFor(fx: CollectionFixture, orNo: number, groupRanks: number[]) {
   };
 }
 
-/**
- * Polls pg_stat_activity (over `probe`) until the backend `pid` shows a Lock wait, or
- * throws after `timeoutMs`.
- *
- * A fixed `setTimeout` before committing the winner's transaction is not a wait for the
- * race -- it is a guess at how long the loser's query takes to reach the server and block,
- * and guesses are exactly what make a concurrency test flaky. Confirmed empirically: the
- * first draft of this test used a bare `await new Promise(r => setTimeout(r, ...))` and,
- * without it long enough, the loser's query had not even been dispatched by the time the
- * winner committed, so both posts succeeded against disjoint charge rows and the race was
- * never staged at all. Polling `pg_stat_activity` for the loser's own backend pid waits for
- * the actual fact -- it is blocked on the row lock the winner holds -- rather than a
- * duration that happens to be long enough on this machine.
- */
-async function waitForLockWait(
-  probe: Client,
-  pid: number,
-  timeoutMs = 5000,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    const { rows } = await probe.query(
-      `select wait_event_type from pg_stat_activity where pid = $1`,
-      [pid],
-    );
-    if (rows[0]?.wait_event_type === "Lock") return;
-    if (Date.now() > deadline) {
-      throw new Error(
-        `Backend ${pid} never reached a Lock wait within ${timeoutMs}ms ` +
-          `(last wait_event_type: ${rows[0]?.wait_event_type ?? "no such backend"})`,
-      );
-    }
-    await new Promise((r) => setTimeout(r, 20));
-  }
-}
+// waitForLockWait now lives in tests/helpers/supabase.ts, shared with
+// sync-concurrency.test.ts. See its doc comment there for why a fixed sleep does not work.
 
 describe("stale_allocations", () => {
   it("is returned to the loser of a FIFO race, not allocation_not_prefix", async () => {

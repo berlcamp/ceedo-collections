@@ -739,3 +739,43 @@ export async function createSyncFixture(
   const { credentialId, secret } = await issueCredential(db, fx.deviceId);
   return { ...fx, credentialId, secret, facilityId };
 }
+
+/**
+ * Polls pg_stat_activity (over `probe`) until the backend `pid` shows a Lock wait, or
+ * throws after `timeoutMs`.
+ *
+ * A fixed `setTimeout` before committing the winner's transaction is not a wait for the
+ * race -- it is a guess at how long the loser's query takes to reach the server and block,
+ * and guesses are exactly what make a concurrency test flaky. Confirmed empirically: the
+ * first draft of stale-allocations.test.ts used a bare `await new Promise(r => setTimeout(r,
+ * ...))` and, without it long enough, the loser's query had not even been dispatched by the
+ * time the winner committed, so both posts succeeded against disjoint charge rows and the
+ * race was never staged at all. Polling `pg_stat_activity` for the loser's own backend pid
+ * waits for the actual fact -- it is blocked on the row lock the winner holds -- rather than
+ * a duration that happens to be long enough on this machine.
+ *
+ * Shared by every test that stages a FIFO race (stale-allocations.test.ts,
+ * sync-concurrency.test.ts) so there is exactly one implementation of the wait, not a second
+ * copy that quietly drifts from the first.
+ */
+export async function waitForLockWait(
+  probe: PgClient,
+  pid: number,
+  timeoutMs = 5000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const { rows } = await probe.query(
+      `select wait_event_type from pg_stat_activity where pid = $1`,
+      [pid],
+    );
+    if (rows[0]?.wait_event_type === "Lock") return;
+    if (Date.now() > deadline) {
+      throw new Error(
+        `Backend ${pid} never reached a Lock wait within ${timeoutMs}ms ` +
+          `(last wait_event_type: ${rows[0]?.wait_event_type ?? "no such backend"})`,
+      );
+    }
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
