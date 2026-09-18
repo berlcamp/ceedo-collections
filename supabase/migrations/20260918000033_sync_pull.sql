@@ -133,6 +133,7 @@ begin
        join ceedo_collections.app_users u on u.id = ba.collector_id
        where ba.returned_at is null
          and ca.active and ca.facility_id = v_facility
+         and (ca.section_id is null or v_section is null or ca.section_id = v_section)
          and u.role = 'collector' and u.status = 'active'
          and b.row_version > p_cursor), '[]'::jsonb),
 
@@ -141,6 +142,7 @@ begin
        join ceedo_collections.collector_assignments ca on ca.collector_id = ba.collector_id
        join ceedo_collections.app_users u on u.id = ba.collector_id
        where ca.active and ca.facility_id = v_facility
+         and (ca.section_id is null or v_section is null or ca.section_id = v_section)
          and u.role = 'collector' and u.status = 'active'
          and ba.row_version > p_cursor), '[]'::jsonb),
 
@@ -153,6 +155,7 @@ begin
         join ceedo_collections.booklet_assignments ba on ba.booklet_id = c.booklet_id
         join ceedo_collections.collector_assignments ca on ca.collector_id = ba.collector_id
        where ca.active and ca.facility_id = v_facility
+         and (ca.section_id is null or v_section is null or ca.section_id = v_section)
          and c.row_version > p_cursor), '[]'::jsonb),
 
     'spoiled_forms', coalesce((
@@ -160,6 +163,7 @@ begin
        join ceedo_collections.booklet_assignments ba on ba.booklet_id = sf.booklet_id
        join ceedo_collections.collector_assignments ca on ca.collector_id = ba.collector_id
        where ca.active and ca.facility_id = v_facility
+         and (ca.section_id is null or v_section is null or ca.section_id = v_section)
          and sf.row_version > p_cursor), '[]'::jsonb),
 
     -- §6.1: unpaid charges, plus paid ones from the last 90 days for the history view.

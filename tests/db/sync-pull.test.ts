@@ -6,6 +6,8 @@ import {
   createSyncFixture,
   postCollectionAsOwner,
   resetCutover,
+  uniqueCode,
+  uniqueEmail,
 } from "../helpers/supabase";
 
 let db: Client;
@@ -34,6 +36,7 @@ type Pull = {
   booklets: { id: string }[];
   booklet_assignments: { booklet_id: string }[];
   consumed_serials: { booklet_id: string; or_no: number }[];
+  spoiled_forms: { booklet_id: string; or_no: number }[];
   charges: { id: string }[];
   collections: { id: string }[];
   collection_allocations: { collection_id: string }[];
@@ -137,18 +140,28 @@ describe("sync_pull", () => {
     // grant either way, but also not an admin as far as is_admin() is concerned). Without
     // this, the call fails with "Only an administrator may set a collector PIN" -- the
     // brief's version of this test called it with no admin context at all and could never
-    // have passed. condonation.test.ts's `adminConnection()` establishes the same pattern.
+    // have passed. Mirrors condonation.test.ts's `adminConnection()` exactly, including
+    // using a SHORT-LIVED, DEDICATED connection rather than `db`: `set_config(..., false)`
+    // (session-scoped, not `true`/transaction-scoped) would otherwise leave a stray admin
+    // claim on the shared `db` connection for every test that runs after this one in the
+    // file.
     const fx = await createSyncFixture(db);
     const { userId: adminUserId } = await createAppUser({
       email: "sync-pull-admin@example.com",
       role: "admin",
     });
-    await db.query("select set_config('request.jwt.claims', $1, false)", [
-      JSON.stringify({ sub: adminUserId, role: "authenticated" }),
-    ]);
-    await db.query(`select ceedo_collections.set_collector_pin($1::uuid, '123456')`, [
-      fx.collectorId,
-    ]);
+    const adminConn = new Client({ connectionString: POSTGRES_URL });
+    await adminConn.connect();
+    try {
+      await adminConn.query("select set_config('request.jwt.claims', $1, false)", [
+        JSON.stringify({ sub: adminUserId, role: "authenticated" }),
+      ]);
+      await adminConn.query(`select ceedo_collections.set_collector_pin($1::uuid, '123456')`, [
+        fx.collectorId,
+      ]);
+    } finally {
+      await adminConn.end();
+    }
 
     const result = await pull(fx.deviceId);
     const me = result.collectors.find((c) => c.id === fx.collectorId);
@@ -272,5 +285,133 @@ describe("sync_pull", () => {
     const result = await pull(mine.deviceId);
 
     expect(result.collections.map((c) => c.id)).not.toContain(theirCollectionId);
+  });
+
+  it("excludes booklets, booklet_assignments, consumed_serials and spoiled_forms held by a collector in a different section of the same facility", async () => {
+    // Fix round 1: `can_collector_use_device()`'s own predicate checks BOTH facility AND
+    // `(ca.section_id is null or v_section is null or ca.section_id = v_section)`. The
+    // `collectors` subquery above already reproduces both halves; `booklets`,
+    // `booklet_assignments`, `consumed_serials` and `spoiled_forms` originally reproduced
+    // only the facility half -- a real leak on any market with per-section devices, and
+    // one the migration's own header comment (booklets go to "every collector currently
+    // permitted to sign in") explicitly promises not to have.
+    //
+    // createSyncFixture never exercises this: its device_assignments and
+    // collector_assignments rows are both facility-wide (section_id null), so no test
+    // built on it can tell a correct section predicate from a missing one. This test
+    // builds the one shape that can: two sections under one facility, a device scoped to
+    // section A, and a collector -- holding a booklet, a spoiled form and a posted
+    // collection -- scoped to section B.
+    const { rows: facRows } = await db.query(
+      `insert into ceedo_collections.facilities (code, name, type)
+       values ($1, $2, 'market') returning id`,
+      [uniqueCode("SECFX"), "Section Scoping Fixture Market"],
+    );
+    const facilityId = facRows[0].id as string;
+
+    const { rows: sectionRows } = await db.query(
+      `insert into ceedo_collections.sections (facility_id, name, default_accrual_period)
+       values ($1, 'Section A', 'daily'), ($1, 'Section B', 'daily')
+       returning id`,
+      [facilityId],
+    );
+    const [sectionAId, sectionBId] = sectionRows.map((r) => r.id as string);
+
+    // The device: scoped to section A only.
+    const { rows: deviceRows } = await db.query(
+      `insert into ceedo_collections.devices (label) values ($1) returning id`,
+      [uniqueCode("SECFX-DEV")],
+    );
+    const deviceId = deviceRows[0].id as string;
+    await db.query(
+      `insert into ceedo_collections.device_assignments (device_id, facility_id, section_id, active)
+       values ($1, $2, $3, true)`,
+      [deviceId, facilityId, sectionAId],
+    );
+
+    // The collector: scoped to section B only -- can_collector_use_device() would refuse
+    // to let them sign in to the section-A device above.
+    const { userId: collectorId } = await createAppUser({
+      email: uniqueEmail("section-b-collector@example.com"),
+      role: "collector",
+    });
+    await db.query(
+      `insert into ceedo_collections.collector_assignments (collector_id, facility_id, section_id, active)
+       values ($1, $2, $3, true)`,
+      [collectorId, facilityId, sectionBId],
+    );
+
+    // OR51 and SLAUGHTER are seeded by supabase/seed.sql unconditionally -- no dependency
+    // on another test file's fixtures having run first.
+    const { rows: formTypeRows } = await db.query(
+      `select id from ceedo_collections.form_types where code = 'OR51'`,
+    );
+    const formTypeId = formTypeRows[0].id as string;
+    const { rows: feeTypeRows } = await db.query(
+      `select id from ceedo_collections.fee_types where code = 'SLAUGHTER'`,
+    );
+    const feeTypeId = feeTypeRows[0].id as string;
+
+    const { rows: bookletRows } = await db.query(
+      `insert into ceedo_collections.booklets
+         (form_type_id, serial_prefix, start_no, end_no, received_date)
+       values ($1, $2, 1, 50, '2026-01-01') returning id`,
+      [formTypeId, uniqueCode("SECFX-BK")],
+    );
+    const bookletId = bookletRows[0].id as string;
+
+    await db.query(
+      `insert into ceedo_collections.booklet_assignments
+         (booklet_id, collector_id, assigned_at, returned_at)
+       values ($1, $2, '2026-01-01', null)`,
+      [bookletId, collectorId],
+    );
+
+    await db.query(
+      `insert into ceedo_collections.spoiled_forms (booklet_id, or_no, reason, recorded_by)
+       values ($1, 1, 'test spoilage', $2)`,
+      [bookletId, collectorId],
+    );
+
+    // A direct insert, not post_collection(): this test is about sync_pull's own scoping
+    // join, not about the ledger's posting rules, and `db` -- the table owner -- can write
+    // the rows directly. device_id is a plain not-null FK here (consumed_serials never
+    // filters on it), so the section-A device satisfies it without implying anything about
+    // scope. A matching collection_lines row is required too: invariant #9's deferred
+    // constraint trigger checks that a collection's lines plus allocations sum to its
+    // gross_amount -- and, being DEFERRED, it fires at COMMIT, so both inserts must share
+    // one explicit transaction rather than `db`'s usual one-statement-per-call autocommit.
+    await db.query("begin");
+    let collectionId: string;
+    try {
+      const { rows: collectionRows } = await db.query(
+        `insert into ceedo_collections.collections
+           (id, or_no, booklet_id, collector_id, device_id, collected_at, business_date,
+            fee_type_id, gross_amount, posted_by)
+         values (gen_random_uuid(), 2, $1, $2, $3, now(), current_date, $4, 85.00, $2)
+         returning id`,
+        [bookletId, collectorId, deviceId, feeTypeId],
+      );
+      collectionId = collectionRows[0].id as string;
+      await db.query(
+        `insert into ceedo_collections.collection_lines
+           (collection_id, fee_type_id, rate_class, quantity, unit_rate)
+         values ($1, $2, 'hog', 1, 85.00)`,
+        [collectionId, feeTypeId],
+      );
+      await db.query("commit");
+    } catch (err) {
+      await db.query("rollback");
+      throw err;
+    }
+
+    const result = await pull(deviceId);
+
+    expect(result.booklets.map((b) => b.id)).not.toContain(bookletId);
+    expect(result.booklet_assignments.map((ba) => ba.booklet_id)).not.toContain(bookletId);
+    expect(result.consumed_serials).not.toContainEqual(
+      expect.objectContaining({ booklet_id: bookletId, or_no: 2 }),
+    );
+    expect(result.spoiled_forms.map((sf) => sf.booklet_id)).not.toContain(bookletId);
   });
 });
