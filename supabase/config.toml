@@ -84,7 +84,14 @@ allowed_cidrs_v6 = ["::/0"]
 # enabled = true
 
 [realtime]
-enabled = true
+# Disabled: this project uses zero Realtime -- no .channel(), no postgres_changes
+# subscriptions anywhere in apps/web or packages. Leaving it on also made
+# `supabase db reset` fail locally, because the Realtime container's own seed step
+# aborts with a unique violation on `_realtime.tenants.external_id = 'realtime-dev'`
+# even against a freshly recreated database, which takes the whole reset down with it
+# ("error running container: exit 1") before any migration is applied.
+# Re-enable if a later phase actually subscribes to changes.
+enabled = false
 # Bind realtime via either IPv4 or IPv6. (default: IPv4)
 # ip_version = "IPv6"
 # The maximum length in bytes of HTTP request headers. (default: 4096)
@@ -406,7 +413,12 @@ deno_version = 2
 # secret_key = "env(SECRET_VALUE)"
 
 [analytics]
-enabled = true
+# Disabled: this is the Logflare stack behind Studio's Logs Explorer, plus the `vector`
+# log shipper that feeds it. Nothing in development needs it, it is the heaviest pair of
+# containers in the stack, and both reported unhealthy on this machine (several Supabase
+# projects run here at once), which took `supabase start` down after all 25 migrations
+# had already applied cleanly. Re-enable if you need the Logs Explorer.
+enabled = false
 port = 54327
 # Configure one of the supported backends: `postgres`, `bigquery`.
 backend = "postgres"
