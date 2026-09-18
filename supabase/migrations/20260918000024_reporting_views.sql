@@ -66,12 +66,18 @@ order by lb.days_overdue desc, lb.outstanding desc;
 
 grant select on ceedo_collections.delinquency_list to authenticated;
 
--- Charges and payments interleaved for one lease. The running balance is computed here
--- rather than in report code so every consumer gets the same number.
+-- Charges, payments and condonations interleaved for one lease. The running balance is
+-- computed here rather than in report code so every consumer gets the same number.
 --
 -- A cancelled collection appears with a zero amount and its cancellation noted, rather
 -- than vanishing: the paper trail shows the receipt was issued and then voided, which is
 -- what an auditor is looking for.
+--
+-- A condonation is a credit like a payment, because charge_balances.outstanding subtracts
+-- it exactly as it subtracts an allocation. Omitting the branch does not merely lose a
+-- row: the closing running_balance then disagrees with lease_balances.outstanding by the
+-- whole condoned amount, and /ledger/leases/[id] renders BOTH figures on one screen
+-- (apps/web/lib/ledger/queries.ts) -- two totals, and no row explaining the gap.
 create view ceedo_collections.subsidiary_ledger
 with (security_invoker = true)
 as
@@ -107,10 +113,40 @@ with entries as (
   from ceedo_collections.collections c
   left join ceedo_collections.collection_cancellations x on x.collection_id = c.id
   where c.lease_id is not null
+
+  union all
+
+  -- The write-off. Dated by when it was granted, not by the charge's due date: the
+  -- ordinance is an event in its own right, and dating it back would silently rewrite the
+  -- balance the lease carried in the months before it was passed.
+  --
+  -- It carries the parent charge's period so the row says WHICH month was forgiven; the
+  -- authority_ref is the detail because the ordinance is the only thing that makes a
+  -- write-off a decision rather than a missing record.
+  select
+    k_charge.lease_id,
+    k.condoned_at::date,
+    'condonation'::text,
+    k.authority_ref,
+    k_charge.period_start,
+    k_charge.period_end,
+    0::numeric(14,2),
+    k.amount,
+    null::integer,
+    k.id,
+    false
+  from ceedo_collections.charge_condonations k
+  join ceedo_collections.charges k_charge on k_charge.id = k.charge_id
 )
 select
   lease_id, entry_date, entry_type, detail, period_start, period_end,
   debit, credit, or_no, source_id, cancelled,
+  -- The tie-break is (entry_type, source_id), unchanged. entry_type is sorted as text, and
+  -- 'charge' < 'collection' < 'condonation' already reads correctly for a single day: the
+  -- charge is raised, then whatever was paid against it, then whatever was forgiven of the
+  -- remainder. source_id keeps it total, so the window is deterministic. Consumers that
+  -- print the rows must ORDER BY the same three columns -- apps/web/lib/ledger/queries.ts
+  -- does -- because the outer SELECT carries no ORDER BY of its own.
   sum(debit - credit) over (
     partition by lease_id order by entry_date, entry_type, source_id
     rows between unbounded preceding and current row

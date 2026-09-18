@@ -182,6 +182,69 @@ describe("subsidiary_ledger", () => {
     expect(Number(rows[rows.length - 1].running_balance)).toBe(50);
   });
 
+  /**
+   * The branch this file had no test for at all -- "condon" did not appear in it once.
+   *
+   * A condonation is a credit exactly as a payment is: charge_balances.outstanding
+   * subtracts it the same way. With no branch emitting one, the running balance never shed
+   * what an amnesty wrote off, so the ledger's closing figure and lease_balances.outstanding
+   * disagreed by the whole condoned amount -- and /ledger/leases/[id] renders both on one
+   * screen, leaving an accountant with two totals and no row accounting for the difference.
+   *
+   * The agreement assertion is the one that matters; the row-shape assertions are there so
+   * a failure says which of the two surfaces moved.
+   */
+  it("emits a condonation as a credit, and closes at what lease_balances says is owed", async () => {
+    // Two charges of 50.00 each, due 2026-10-01 and 2026-10-02.
+    await db.query("select ceedo_collections.run_accrual('2026-10-02')");
+    const { rows: charges } = await db.query(
+      `select id from ceedo_collections.charges
+        where lease_id = $1 order by due_date limit 1`,
+      [fx.leaseId],
+    );
+    const { client: admin } = await createAppUser({
+      email: "reporting-views-condone-admin@example.com", role: "admin",
+    });
+    // 30.00 of the oldest charge, not all of it: a partial write-off leaves the parent
+    // charge unsettled, so lease_balances still reports the lease and the two surfaces have
+    // something non-trivial to agree on. A full condonation would settle the charge and
+    // drop it from lease_balances' `where not is_settled` filter entirely.
+    const { error } = await admin.rpc("condone_charge", {
+      p_charge_id: charges[0].id,
+      p_amount: 30.0,
+      p_authority_ref: "Ordinance 2026-114",
+      p_reason: "Typhoon amnesty",
+    });
+    expect(error).toBeNull();
+
+    const { rows } = await db.query(
+      `select * from ceedo_collections.subsidiary_ledger
+        where lease_id = $1 order by entry_date, entry_type, source_id`, [fx.leaseId],
+    );
+    const condonations = rows.filter((r: any) => r.entry_type === "condonation");
+    expect(condonations).toHaveLength(1);
+    expect(Number(condonations[0].debit)).toBe(0);
+    expect(Number(condonations[0].credit)).toBe(30);
+    // The ordinance, not the reason: an authority_ref is what makes the write-off a
+    // decision rather than a missing record, and it is what an auditor traces.
+    expect(condonations[0].detail).toBe("Ordinance 2026-114");
+    expect(condonations[0].cancelled).toBe(false);
+    expect(condonations[0].or_no).toBeNull();
+    // source_id is the condonation's own id, so two write-offs against one charge are two
+    // distinct rows and the window's tie-break stays total.
+    expect(condonations[0].source_id).not.toBe(charges[0].id);
+
+    // 100.00 charged, 30.00 forgiven. Both surfaces, by different routes.
+    const { rows: balance } = await db.query(
+      "select outstanding from ceedo_collections.lease_balances where lease_id = $1",
+      [fx.leaseId],
+    );
+    expect(Number(balance[0].outstanding)).toBe(70);
+    expect(Number(rows[rows.length - 1].running_balance)).toBe(
+      Number(balance[0].outstanding),
+    );
+  });
+
   it("shows a cancelled receipt as issued and voided, not as absent", async () => {
     await db.query("select ceedo_collections.run_accrual('2026-10-01')");
     const collectionId = await postCollectionAsOwner(db, fx, { groupRanks: [1] });

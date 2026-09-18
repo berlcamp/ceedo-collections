@@ -204,25 +204,45 @@ describe("a market month", () => {
         expect(Number(a.from_lease_balances)).toBe(Number(a.from_charges));
         expect(Number(a.from_aging)).toBe(Number(a.from_charges));
         expect(Number(a.from_fifo)).toBe(Number(a.from_charges));
+
+        // The subsidiary ledger's closing running balance must equal the outstanding
+        // figure. It reaches it by a completely different route: a cumulative sum of every
+        // debit and credit ever recorded against the lease, rather than a per-charge
+        // netting. The two can only agree if cancellation, allocation, condonation and the
+        // running-balance window all treat the same rows the same way.
+        //
+        // This runs for BOTH leases, not just the daily one. Design §8 asked for exactly
+        // that -- "condone one charge; then assert that charge_balances, the subsidiary
+        // ledger, aging and delinquency all agree" -- and checking only the daily lease
+        // left the condoned monthly lease unchecked against this view, which is where the
+        // missing condonation branch hid: lease_balances read 45.00 while the ledger closed
+        // at 1545.00, and /ledger/leases/[id] prints both.
+        const { rows: ledger } = await db.query(
+          `select running_balance from ceedo_collections.subsidiary_ledger
+            where lease_id = $1 order by entry_date, entry_type, source_id`,
+          [leaseId],
+        );
+        expect(Number(ledger[ledger.length - 1].running_balance)).toBe(
+          Number(a.from_lease_balances),
+        );
       }
 
-      // The subsidiary ledger's closing running balance must equal the outstanding figure.
-      // It reaches it by a completely different route: a cumulative sum of every debit and
-      // credit ever recorded against the lease, rather than a per-charge netting. The two
-      // can only agree if cancellation, allocation and the running-balance window all
-      // treat the same rows the same way.
-      const { rows: ledger } = await db.query(
-        `select running_balance from ceedo_collections.subsidiary_ledger
+      // Stated as an absolute figure as well as an agreement, so a bug that moved BOTH
+      // surfaces the same way could not pass the loop above unnoticed. The monthly lease
+      // charged 1500.00 rental + 45.00 surcharge and had the rental condoned in full; the
+      // penalty survives the amnesty, because the ordinance was applied to the rental alone.
+      const { rows: monthlyLedger } = await db.query(
+        `select entry_type, detail, debit, credit, running_balance
+           from ceedo_collections.subsidiary_ledger
           where lease_id = $1 order by entry_date, entry_type, source_id`,
-        [daily.leaseId],
+        [monthly.leaseId],
       );
-      const { rows: balance } = await db.query(
-        "select outstanding from ceedo_collections.lease_balances where lease_id = $1",
-        [daily.leaseId],
-      );
-      expect(Number(ledger[ledger.length - 1].running_balance)).toBe(
-        Number(balance[0].outstanding),
-      );
+      const condonationRow = monthlyLedger.find((r: any) => r.entry_type === "condonation");
+      expect(condonationRow).toBeDefined();
+      expect(condonationRow.detail).toBe("Ordinance 2026-114");
+      expect(Number(condonationRow.debit)).toBe(0);
+      expect(Number(condonationRow.credit)).toBe(1500);
+      expect(Number(monthlyLedger[monthlyLedger.length - 1].running_balance)).toBe(45);
 
       // The condoned charge is settled without a single peso having been collected for it.
       const { rows: condoned } = await db.query(
