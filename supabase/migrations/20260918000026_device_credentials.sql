@@ -8,6 +8,10 @@
 -- The secret is 256 random bits, so it gets SHA-256 and not a slow KDF. A cost factor
 -- defends a LOW-entropy secret against enumeration; there is nothing to enumerate here.
 -- The collector PIN is the opposite case and gets bcrypt -- see migration 0027.
+--
+-- Also closes a PUBLIC-EXECUTE gap on 14 pre-existing Phase 1 functions that ceedo_app
+-- inherited through PUBLIC; see the block at the end of this file for the list and why
+-- revoking it is safe.
 
 create extension if not exists pgcrypto with schema extensions;
 
