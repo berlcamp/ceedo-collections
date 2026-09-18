@@ -3,17 +3,26 @@ import { Client } from "pg";
 import {
   POSTGRES_URL,
   createAppUser,
+  createOutsiderClient,
   createSyncFixture,
   serviceClient,
 } from "../helpers/supabase";
 
 let db: Client;
 let collectorId: string;
+let adminClient: Awaited<ReturnType<typeof createAppUser>>["client"];
 
 beforeAll(async () => {
   db = new Client({ connectionString: POSTGRES_URL });
   await db.connect();
   collectorId = (await createSyncFixture(db)).collectorId;
+  // set_collector_pin requires a real admin caller (migration 0028's NULL-safety fix means
+  // a bare postgres connection with no auth.uid() -- what this file used to call the RPC
+  // with -- is now correctly refused, not silently let through). Every call to the RPC
+  // below that isn't itself testing the admin guard goes through this client.
+  adminClient = (
+    await createAppUser({ email: "pin-caller-admin@example.com", role: "admin" })
+  ).client;
 });
 
 afterAll(async () => {
@@ -21,10 +30,11 @@ afterAll(async () => {
 });
 
 async function setPin(pin: string): Promise<void> {
-  await db.query(`select ceedo_collections.set_collector_pin($1::uuid, $2::text)`, [
-    collectorId,
-    pin,
-  ]);
+  const { error } = await adminClient.rpc("set_collector_pin", {
+    p_collector_id: collectorId,
+    p_pin: pin,
+  });
+  if (error) throw new Error(error.message);
 }
 
 async function pinHash(): Promise<string | null> {
@@ -83,11 +93,43 @@ describe("set_collector_pin", () => {
       role: "supervisor",
     });
 
-    await expect(
-      db.query(`select ceedo_collections.set_collector_pin($1::uuid, '123456')`, [
-        supervisorId,
-      ]),
-    ).rejects.toThrow(/collector/i);
+    const { error } = await adminClient.rpc("set_collector_pin", {
+      p_collector_id: supervisorId,
+      p_pin: "123456",
+    });
+    expect(error).not.toBeNull();
+    expect(error!.message).toMatch(/collector/i);
+  });
+
+  // Every test above calls set_collector_pin as adminClient, a real authenticated admin.
+  // These two instead go through non-admin and no-app_users-row callers, to exercise the
+  // admin guard itself. supabase-js's .rpc() resolves to { error } rather than rejecting,
+  // so the assertion shape differs from setPin()'s.
+  it("refuses a caller who is not an admin", async () => {
+    const { client } = await createAppUser({
+      email: "pin-caller-supervisor@example.com",
+      role: "supervisor",
+    });
+    const { error } = await client.rpc("set_collector_pin", {
+      p_collector_id: collectorId,
+      p_pin: "123456",
+    });
+    expect(error).not.toBeNull();
+    expect(error!.message).toMatch(/administrator/i);
+  });
+
+  // The population migration 0002's "THE GATE" comment says to expect on this shared
+  // Supabase project: signed in, but with no app_users row at all. active_role() returns
+  // NULL for this caller, and before migration 0028 that NULL propagated through
+  // is_admin() uncoalesced -- `if not is_admin() then raise` never fires when is_admin()
+  // itself is NULL, so this caller sailed through the guard that should have refused them.
+  it("refuses a caller with no app_users row at all", async () => {
+    const outsider = await createOutsiderClient();
+    const { error } = await outsider.rpc("set_collector_pin", {
+      p_collector_id: collectorId,
+      p_pin: "123456",
+    });
+    expect(error).not.toBeNull();
   });
 });
 

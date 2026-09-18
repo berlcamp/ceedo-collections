@@ -67,10 +67,17 @@ grant execute on function ceedo_collections.set_collector_pin(uuid, text) to aut
 -- is: set_collector_pin() above is SECURITY DEFINER and checks is_admin() itself, so
 -- service_role has no remaining reason to touch the column directly, and every reason not
 -- to -- a service key that can read or overwrite pin_hash makes this RPC decorative.
--- Column-list grants, not a table-level revoke, so INSERT (still needed by fixtures and
--- any future staff-provisioning path) is untouched.
-revoke select, update on ceedo_collections.app_users from service_role;
+-- Narrowed to a column list, not just moved from table-level to table-level, on all three
+-- privileges INSERT included: Postgres checks INSERT's column privilege only against
+-- columns actually named in the statement's target list, and nothing that inserts into
+-- this table (fixtures included) ever names pin_hash, so excluding it from the grant
+-- changes nothing any caller currently does -- it just stops a service key from being able
+-- to plant a plaintext or otherwise non-bcrypt value in a *new* row the way the narrowed
+-- UPDATE grant already stops it from doing to an existing one.
+revoke select, insert, update on ceedo_collections.app_users from service_role;
 grant select (id, employee_no, full_name, role, status, created_at, updated_at, row_version)
+  on ceedo_collections.app_users to service_role;
+grant insert (id, employee_no, full_name, role, status, created_at, updated_at, row_version)
   on ceedo_collections.app_users to service_role;
 grant update (id, employee_no, full_name, role, status, created_at, updated_at, row_version)
   on ceedo_collections.app_users to service_role;
