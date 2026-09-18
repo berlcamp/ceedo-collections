@@ -515,6 +515,28 @@ leases at mixed accrual periods, let two fall past due into surcharge, settle so
 and with hand-computed figures. This is the test that stands in for the UI Phase 2 does not
 have, and it is the one that has to pass before Phase 3 starts.
 
+## 8a. Correction: why integer basis points, stated accurately
+
+Earlier drafts of this document — and the parent spec, `money.ts`, and several migration
+comments inherited from Phase 1 — justify integer basis points by claiming
+`0.03 * 8350` evaluates to `250.49999999999997` in IEEE 754. **That is false**, and it was
+verified false during Task 16: `0.03 * 8350` is exactly `250.5` in JavaScript.
+
+The conclusion is unchanged; the mechanism is not representation error but **rounding
+direction**. `Math.floor(250.5)` is `250`, where half-up gives `251`. A float pipeline that
+floors — which is what a naive `Math.floor(rate * amount)` does — loses the centavo on every
+exact half. Integer arithmetic, `floor((amount * bps + 5000) / 10000)`, carries the half-up
+rule in the `+5000` and cannot drift.
+
+Genuine representation error does exist elsewhere and `money.ts` cites a real instance
+correctly (`1.005 * 100` is `100.49999999999999`), which is why `roundHalfUp` normalises
+through `toFixed(9)` first. The surcharge example was simply the wrong illustration.
+
+Phase 1's copies of the false claim (`packages/shared/src/money.ts`,
+`supabase/migrations/20260917000005_rates.sql`, `money.test.ts`, and the Phase 1 spec,
+plan and handover) are recorded in the Phase 2 handover for correction in one pass rather
+than edited piecemeal mid-phase.
+
 ## 9. Risks and known limits
 
 | Risk | Handling |
