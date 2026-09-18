@@ -452,8 +452,12 @@ describe("post_collection — concurrency", () => {
 
       // What B does once it wakes: it re-reads, sees the period it locked is gone, and
       // refuses rather than silently aiming this tenant's money at the next period.
+      //
+      // Migration 20260918000032 (Task 6) gives this exact branch its own reason code:
+      // this is a lost FIFO race, not a genuinely bad prefix, and the right device
+      // response is an automatic re-sync and retry, not a supervisor exception.
       expect(second.status).toBe("rejected");
-      expect(second.reason).toBe("allocation_not_prefix");
+      expect(second.reason).toBe("stale_allocations");
 
       const { rows: allocs } = await db.query(
         `select count(*)::int as n from ceedo_collections.collection_allocations
