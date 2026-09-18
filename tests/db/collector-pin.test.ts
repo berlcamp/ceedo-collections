@@ -130,6 +130,7 @@ describe("set_collector_pin", () => {
       p_pin: "123456",
     });
     expect(error).not.toBeNull();
+    expect(error!.message).toMatch(/administrator/i);
   });
 });
 
