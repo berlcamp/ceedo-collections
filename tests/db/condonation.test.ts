@@ -5,6 +5,7 @@ import {
   createAppUser,
   createCollectionFixture,
   createLeaseFixture,
+  createOutsiderClient,
   postCollectionAsOwner,
   resetCutover,
   type TestClient,
@@ -154,6 +155,27 @@ describe("condone_charge", () => {
     });
     expect(error).not.toBeNull();
     expect(error!.message).toMatch(/administrator/);
+  });
+
+  it("refuses an outsider with no app_users row", async () => {
+    // The population migration 0002's "THE GATE" comment says to expect on this shared
+    // project: signed in, but with no app_users row at all. active_role() is NULL for this
+    // caller; before migration 0028 that NULL propagated through is_admin() uncoalesced,
+    // so `if not is_admin() then raise` silently no-op'd instead of refusing them.
+    const { chargeId } = await accruedLease();
+    const outsider = await createOutsiderClient();
+    const { error } = await outsider.rpc("condone_charge", {
+      p_charge_id: chargeId, p_amount: 10.0,
+      p_authority_ref: "Ordinance 2026-114", p_reason: "not allowed",
+    });
+    expect(error).not.toBeNull();
+    expect(error!.message).toMatch(/administrator/);
+
+    const { rows } = await db.query(
+      "select count(*)::int as n from ceedo_collections.charge_condonations where charge_id = $1",
+      [chargeId],
+    );
+    expect(rows[0].n).toBe(0);
   });
 
   it("refuses a blank authority reference", async () => {
