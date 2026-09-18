@@ -41,10 +41,26 @@ create table ceedo_collections.sync_exceptions (
   -- investigation", which is not a terminus. An escalated exception is still unresolved
   -- and still counts against the collector at closeout. Modelling it as a resolution would
   -- let an exception be closed by declaring it interesting.
+  --
+  -- 'open' also pins resolution_reason to null, not just resolution/resolved_by/resolved_at:
+  -- without it a row could sit open while carrying a reason for a resolution that never
+  -- happened -- a half-applied resolution, which is exactly the state this constraint exists
+  -- to make unrepresentable given Task 10's resolve_exception_* functions will write against
+  -- it.
+  --
+  -- No ELSE, and this is safe rather than merely convenient: `status` carries its own
+  -- `check (status in (...))` immediately above, and CHECK constraints cannot be marked
+  -- DEFERRABLE in PostgreSQL (only UNIQUE/PK/FK/EXCLUDE can be) -- both checks are always
+  -- evaluated against the final row in the same statement, with no window in which one holds
+  -- and the other hasn't run yet. So every row that survives to be committed has a `status`
+  -- already proven to be one of the three literals, and this CASE always matches a named
+  -- branch. It can never fall through to an implicit NULL, which a CHECK would otherwise wave
+  -- through as satisfied.
   constraint sync_exceptions_lifecycle check (
     case status
       when 'open' then
         resolution is null and resolved_by is null and resolved_at is null
+        and resolution_reason is null
       when 'escalated' then
         resolution is null and resolved_by is null and resolved_at is null
         and resolution_reason is not null

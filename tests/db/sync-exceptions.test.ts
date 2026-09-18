@@ -74,6 +74,17 @@ describe("sync_exceptions", () => {
     ).rejects.toThrow(/sync_exceptions_lifecycle/);
   });
 
+  it("refuses a resolution_reason while the status is open", async () => {
+    const uuid = await fileException();
+    await expect(
+      db.query(
+        `update ceedo_collections.sync_exceptions
+            set resolution_reason = 'premature' where collection_uuid = $1`,
+        [uuid],
+      ),
+    ).rejects.toThrow(/sync_exceptions_lifecycle/);
+  });
+
   it("refuses resolving without a written reason", async () => {
     // §11.3: "A written reason is mandatory on every resolution." A constraint, not a form
     // validation -- the form is one caller and the RPC is another.
