@@ -298,3 +298,55 @@ describe("reporting views respect RLS", () => {
     expect(data ?? []).toEqual([]);
   });
 });
+
+/**
+ * The structural counterpart to the four outsider tests above, kept ALONGSIDE them rather
+ * than instead of them. They catch a real leak; this catches a silent flag removal that
+ * the current data shapes happen to mask.
+ *
+ * `delinquency_list` is the case that makes it necessary. Its own `security_invoker` flag
+ * is unfalsifiable by any behavioural test: its FROM clause is two OTHER security_invoker
+ * views (aging_of_receivables, lease_balances), which keep enforcing the real caller's RLS
+ * whatever the outer view is declared as, so an outsider already sees nothing before
+ * delinquency_list's flag can matter. Dropping the flag from it produced ZERO test
+ * failures when that was actually run. Yet it joins `tenants` directly for `address` and
+ * `contact_no` -- so if anyone later rewrites its FROM clause, or flips one of those two
+ * views to definer rights, it leaks tenant PII and nothing behavioural notices.
+ *
+ * `pg_class.reloptions`, not information_schema: there is no information_schema column for
+ * security_invoker before PG17, and reloptions is where Postgres actually stores it. A
+ * view created without the option has `reloptions` null, so the `= any(...)` test fails
+ * closed.
+ *
+ * `charge_balances` is included even though its own outsider test lives in
+ * charge-balances.test.ts -- it is the view every other one reads through, so if its flag
+ * went, all five would leak at once. `accrual_health` is included for the same reason the
+ * reviewer gave for the others: it is granted to `authenticated` and it is the one view
+ * here with no outsider test at all.
+ */
+describe("every reporting view is security_invoker", () => {
+  const VIEWS = [
+    "charge_balances",
+    "lease_balances",
+    "aging_of_receivables",
+    "delinquency_list",
+    "subsidiary_ledger",
+    "accrual_health",
+  ];
+
+  it.each(VIEWS)("%s declares security_invoker = true", async (view) => {
+    const { rows } = await db.query(
+      `select 'security_invoker=true' = any(c.reloptions) as invoker
+         from pg_class c
+         join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'ceedo_collections'
+          and c.relname = $1
+          and c.relkind = 'v'`,
+      [view],
+    );
+    // One row, or the view has been renamed or dropped and the assertion below would
+    // otherwise pass vacuously on `undefined`.
+    expect(rows).toHaveLength(1);
+    expect(rows[0].invoker).toBe(true);
+  });
+});
