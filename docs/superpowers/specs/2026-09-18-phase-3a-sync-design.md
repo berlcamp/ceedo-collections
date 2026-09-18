@@ -710,6 +710,25 @@ here, and §5.7's reasoning for preferring a sequence over a timestamp still hol
 at this write volume, but it is the reason a device's full re-sync path (D7's epoch) must stay
 working: it is the only thing that recovers a skipped row.
 
+**Closeout reconciles by collector and business date, not by shift.** `close_shift` computes
+the server's figures from `(collector_id, business_date)`, which is §6.5 step 3 taken
+literally. That assumes one collector, one device, one shift per date. Two cases break it: a
+collector working two tablets, and a second shift opened on the same device later the same day
+— which `shifts_one_open_per_device` deliberately permits, since it forbids only
+*simultaneously* open shifts.
+
+Both **fail safe**: the server's figures are a superset of what the closing device knows, so
+its count falls short, the mismatch branch returns before any write, and the shift stays open.
+An honest closeout is refused and needs a supervisor; no other shift's money is ever silently
+absorbed into this one's variance.
+
+Scoping by `device_id` was rejected as a trap — it fixes the rarer two-device case while
+leaving the likelier same-device case untouched and looking fixed. Scoping by the shift's time
+window was rejected as strictly worse: a collection queued before `shift_open` is acked can
+carry `collected_at < opened_at` and would be dropped invisibly, turning a safe over-block into
+an under-count that closes cleanly. The real fix is `shift_id` on `collections`, which needs a
+`post_collection` payload change and belongs in Phase 3b alongside the device-side closeout.
+
 **Subtransaction count per push** (D8) — bounded by round size, fine at this scale,
 chunking is the fallback.
 
