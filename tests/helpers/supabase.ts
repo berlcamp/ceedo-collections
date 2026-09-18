@@ -250,3 +250,425 @@ export async function createUnregisteredAuthUser(
   const client = await signIn(email);
   return { userId, client };
 }
+
+/**
+ * Finds the seeded accruing market fee type matching an accrual period (`MKT_DAILY`,
+ * `MKT_MONTHLY`), or creates it if it does not exist yet — `weekly` has no seed row, and a
+ * `supabase db reset` skipped in a given test run must not be a hard requirement either.
+ */
+async function ensureAccrualFeeType(db: PgClient, accrualPeriod: string): Promise<string> {
+  const code =
+    accrualPeriod === "daily" ? "MKT_DAILY" : accrualPeriod === "monthly" ? "MKT_MONTHLY" : "MKT_WEEKLY";
+  const { rows } = await db.query(
+    "select id from ceedo_collections.fee_types where code = $1",
+    [code],
+  );
+  if (rows.length > 0) return rows[0].id as string;
+
+  const { rows: created } = await db.query(
+    `insert into ceedo_collections.fee_types (code, name, accrues, surcharge_bps)
+     values ($1, $2, true, 300)
+     returning id`,
+    [code, `Market stall rental (${accrualPeriod})`],
+  );
+  return created[0].id as string;
+}
+
+/**
+ * Builds a minimal facility -> section -> stall -> tenant -> lease chain plus the matching
+ * accruing fee type, over a direct Postgres connection (as table owner, so it works
+ * regardless of client-role privileges — every ledger test needs this same chain, which is
+ * why it lives here rather than being rebuilt per test file.
+ *
+ * `db` must already be connected; the caller owns its lifecycle (connect/end).
+ */
+export async function createLeaseFixture(
+  db: PgClient,
+  opts: {
+    accrualPeriod?: "daily" | "weekly" | "monthly";
+    startDate?: string;
+    endDate?: string | null;
+    dueDay?: number | null;
+    // string | number, not just number: a string is the safer way to express an exact
+    // decimal for a numeric(14,2) column (no float round-trip through JS), and the Task 5
+    // accrual tests already pass amounts this way (e.g. "50.00"). Do not narrow this back
+    // to `number` -- pg accepts both and coerces identically, but the string form is the
+    // one callers should actually prefer.
+    rateAmount?: number | string;
+    status?: "active" | "ended" | "terminated";
+  } = {},
+): Promise<{ leaseId: string; feeTypeId: string; stallId: string; tenantId: string }> {
+  const accrualPeriod = opts.accrualPeriod ?? "daily";
+  const startDate = opts.startDate ?? "2026-01-01";
+  const endDate = opts.endDate ?? null;
+  // due_day is required for a monthly lease (leases_monthly_needs_due_day) and constrained
+  // to 1-28 (leases.due_day check); irrelevant, so left null, for daily/weekly.
+  const dueDay = opts.dueDay ?? (accrualPeriod === "monthly" ? 5 : null);
+  const rateAmount = opts.rateAmount ?? 100.0;
+  const status = opts.status ?? "active";
+
+  const facilityCode = uniqueCode("LFX");
+  const { rows: facilityRows } = await db.query(
+    `insert into ceedo_collections.facilities (code, name, type)
+     values ($1, $2, 'market') returning id`,
+    [facilityCode, `Lease Fixture Market ${facilityCode}`],
+  );
+  const facilityId = facilityRows[0].id as string;
+
+  const { rows: sectionRows } = await db.query(
+    `insert into ceedo_collections.sections (facility_id, name, default_accrual_period)
+     values ($1, $2, $3) returning id`,
+    [facilityId, `Section ${uniqueCode("SEC")}`, accrualPeriod],
+  );
+  const sectionId = sectionRows[0].id as string;
+
+  const { rows: stallRows } = await db.query(
+    `insert into ceedo_collections.stalls (section_id, stall_no) values ($1, '01') returning id`,
+    [sectionId],
+  );
+  const stallId = stallRows[0].id as string;
+
+  const { rows: tenantRows } = await db.query(
+    `insert into ceedo_collections.tenants (full_name) values ($1) returning id`,
+    [`Lease Fixture Tenant ${uniqueCode("TEN")}`],
+  );
+  const tenantId = tenantRows[0].id as string;
+
+  const feeTypeId = await ensureAccrualFeeType(db, accrualPeriod);
+
+  const { rows: leaseRows } = await db.query(
+    `insert into ceedo_collections.leases
+       (stall_id, tenant_id, start_date, end_date, rate_amount, accrual_period, due_day, status)
+     values ($1, $2, $3, $4, $5, $6, $7, $8)
+     returning id`,
+    [stallId, tenantId, startDate, endDate, rateAmount, accrualPeriod, dueDay, status],
+  );
+  const leaseId = leaseRows[0].id as string;
+
+  return { leaseId, feeTypeId, stallId, tenantId };
+}
+
+/**
+ * Finds the seeded OR51 accountable-form type, or creates it if it does not exist yet —
+ * the same guard `ensureAccrualFeeType` applies, for the same reason: a `supabase db
+ * reset` skipped in a given test run must not be a hard requirement.
+ */
+async function ensureFormType(db: PgClient): Promise<string> {
+  const { rows } = await db.query(
+    "select id from ceedo_collections.form_types where code = 'OR51'",
+  );
+  if (rows.length > 0) return rows[0].id as string;
+
+  const { rows: created } = await db.query(
+    `insert into ceedo_collections.form_types (code, name)
+     values ('OR51', 'Official Receipt (Accountable Form 51)')
+     returning id`,
+  );
+  return created[0].id as string;
+}
+
+/**
+ * The cutover date every Phase 2 test's dates are designed against, and the one
+ * `supabase/seed.sql` installs.
+ */
+export const SEEDED_CUTOVER_DATE = "2026-10-01";
+
+/**
+ * The serial range on the booklet `createCollectionFixture` builds, exported so a test
+ * picking OR numbers checks itself against the fixture instead of against a comment.
+ */
+export const FIXTURE_BOOKLET_START_NO = 1000;
+export const FIXTURE_BOOKLET_END_NO = 1999;
+
+/**
+ * When the fixture booklet was received and handed to its collector. A FIXED date, not
+ * `current_date - 30` / `current_date - 7`.
+ *
+ * post_collection authorises a post by checking that the booklet was assigned to the
+ * collector ON THE BUSINESS DATE, and every Phase 2 test posts at a fixed 2026-10-05 --
+ * fixed because the suite's real wall-clock date is before the seeded 2026-10-01 cutover,
+ * so nothing accrues at `current_date` at all. An assignment dated relative to today
+ * therefore walks forward while the collection date stands still, and on 2026-10-13
+ * `current_date - 7` would overtake 2026-10-05 and fail every post in
+ * post-collection.test.ts with `booklet_not_assigned` -- on a day nobody changed anything,
+ * blaming whatever commit happened to land that morning. A fixture that expires is worse
+ * than one that is simply wrong, so both dates are literals well before any test's
+ * collection date.
+ */
+export const FIXTURE_BOOKLET_DATE = "2026-01-01";
+
+/**
+ * Puts `settings.cutover_date` back to the seeded date, whether or not a row exists.
+ *
+ * `settings` is a singleton shared by every test file, and `vitest.config.ts` sets
+ * `fileParallelism: false`, so whatever one file leaves behind is what the next file
+ * starts from. Six files mutate this row; five of them happened to re-insert the seeded
+ * date and so restored it by coincidence rather than by design, and the sixth
+ * (surcharge.test.ts, which legitimately needs a 2027 cutover) did not — which made the
+ * suite pass only on the first run after `supabase db reset` and then fail, on a second
+ * run, inside files that never touched settings at all. Every file that mutates it calls
+ * this in `afterAll`, so each one leaves the world as it found it.
+ *
+ * `on conflict ((true))` rather than delete-then-insert: `settings_singleton` is a unique
+ * index on the constant expression `(true)`, so a plain insert fails whenever a row
+ * already exists, and this infers that index by its expression and updates in place
+ * instead. One statement, no window in which the row is missing, and it works from either
+ * starting state.
+ */
+export async function resetCutover(db: PgClient): Promise<void> {
+  await db.query(
+    `insert into ceedo_collections.settings (cutover_date) values ($1::date)
+     on conflict ((true)) do update set cutover_date = excluded.cutover_date`,
+    [SEEDED_CUTOVER_DATE],
+  );
+}
+
+/**
+ * Finds the seeded non-accruing per-head fee type (`SLAUGHTER`) and its `hog` rate, or
+ * creates both if they do not exist yet — the same guard `ensureAccrualFeeType` and
+ * `ensureFormType` apply, for the same reason.
+ *
+ * Every collection fixture carries this so `post_collection`'s line pricing has something
+ * to price: `collection_lines` needs a fee type with a rate class and a rate row, and the
+ * accruing market fee type has neither (its rate lives on the lease). The seeded rate is
+ * 85.00 per head, but the amount is read back rather than assumed — tests multiply by
+ * `perHeadRate`, so a reseed at a different figure changes the expectation with it.
+ */
+async function ensurePerHeadFeeType(
+  db: PgClient,
+): Promise<{ feeTypeId: string; rate: string }> {
+  const { rows: found } = await db.query(
+    "select id from ceedo_collections.fee_types where code = 'SLAUGHTER'",
+  );
+  const feeTypeId =
+    found.length > 0
+      ? (found[0].id as string)
+      : ((
+          await db.query(
+            `insert into ceedo_collections.fee_types (code, name, accrues, surcharge_bps)
+             values ('SLAUGHTER', 'Slaughter fee', false, 0)
+             returning id`,
+          )
+        ).rows[0].id as string);
+
+  // ::text, not a JS number: numeric(14,2) round-tripped through a float is exactly the
+  // kind of cent-level drift this ledger exists to avoid.
+  const { rows: rateRows } = await db.query(
+    `select amount::text as amount from ceedo_collections.rates
+      where fee_type_id = $1 and rate_class = 'hog'`,
+    [feeTypeId],
+  );
+  if (rateRows.length > 0) return { feeTypeId, rate: rateRows[0].amount as string };
+
+  const { rows: created } = await db.query(
+    `insert into ceedo_collections.rates
+       (fee_type_id, rate_class, effective_from, amount, basis)
+     values ($1, 'hog', '2026-01-01', 85.00, 'per_head')
+     returning amount::text as amount`,
+    [feeTypeId],
+  );
+  return { feeTypeId, rate: created[0].amount as string };
+}
+
+/**
+ * Builds everything `createLeaseFixture` builds, plus the collector/device/booklet chain
+ * every collections test needs: an `app_users` row with role `collector` (the only role
+ * `booklet_assignments`' trigger accepts — see migration 0006), a shared `devices` row, a
+ * `booklets` row whose 1000-1999 serial range comfortably covers the OR numbers tests use,
+ * and a `booklet_assignments` row linking the two with `assigned_at` in the past and
+ * `returned_at` null (an open assignment).
+ *
+ * The collector is inserted straight into `auth.users` (mirroring
+ * `createAuthUserWithoutProvider`) rather than through the admin API: nothing here needs
+ * the collector to sign in, only to exist as a valid `app_users.id`. A random per-fixture
+ * `serial_prefix` (via `uniqueCode`) keeps concurrent fixtures from colliding on
+ * `booklets_no_serial_overlap`, which excludes on `(form_type_id, serial_prefix,
+ * int4range(start_no, end_no))` — two fixtures sharing a prefix and range would collide,
+ * distinct prefixes never do.
+ *
+ * `db` must already be connected; the caller owns its lifecycle (connect/end), same as
+ * `createLeaseFixture`.
+ */
+export async function createCollectionFixture(
+  db: PgClient,
+  opts: Parameters<typeof createLeaseFixture>[1] = {},
+): Promise<{
+  leaseId: string;
+  feeTypeId: string;
+  collectorId: string;
+  deviceId: string;
+  bookletId: string;
+  stallId: string;
+  tenantId: string;
+  perHeadFeeTypeId: string;
+  perHeadRate: string;
+}> {
+  const { leaseId, feeTypeId, stallId, tenantId } = await createLeaseFixture(db, opts);
+  const perHead = await ensurePerHeadFeeType(db);
+
+  const collectorId = randomUUID();
+  const collectorEmail = uniqueEmail("collection-fixture-collector@example.com");
+  await db.query(
+    `insert into auth.users
+       (id, instance_id, aud, role, email, email_confirmed_at,
+        raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+        confirmation_token, is_sso_user, is_anonymous)
+     values
+       ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2, now(),
+        '{"provider": "email", "providers": ["email"]}'::jsonb, '{}'::jsonb, now(), now(),
+        '', false, false)`,
+    [collectorId, collectorEmail],
+  );
+  await db.query(
+    `insert into ceedo_collections.app_users (id, employee_no, full_name, role, status)
+     values ($1, $2, $3, 'collector', 'active')`,
+    [collectorId, `E-${uniqueCode("CFX")}`, `Collection Fixture Collector ${uniqueCode("CFX")}`],
+  );
+
+  const { rows: deviceRows } = await db.query(
+    `insert into ceedo_collections.devices (label) values ($1) returning id`,
+    [uniqueCode("DEV")],
+  );
+  const deviceId = deviceRows[0].id as string;
+
+  const formTypeId = await ensureFormType(db);
+  const { rows: bookletRows } = await db.query(
+    `insert into ceedo_collections.booklets
+       (form_type_id, serial_prefix, start_no, end_no, received_date)
+     values ($1, $2, $3, $4, $5::date)
+     returning id`,
+    [
+      formTypeId,
+      uniqueCode("BK"),
+      FIXTURE_BOOKLET_START_NO,
+      FIXTURE_BOOKLET_END_NO,
+      FIXTURE_BOOKLET_DATE,
+    ],
+  );
+  const bookletId = bookletRows[0].id as string;
+
+  await db.query(
+    `insert into ceedo_collections.booklet_assignments
+       (booklet_id, collector_id, assigned_at, returned_at)
+     values ($1, $2, $3::date, null)`,
+    [bookletId, collectorId, FIXTURE_BOOKLET_DATE],
+  );
+
+  return {
+    leaseId,
+    feeTypeId,
+    collectorId,
+    deviceId,
+    bookletId,
+    stallId,
+    tenantId,
+    perHeadFeeTypeId: perHead.feeTypeId,
+    perHeadRate: perHead.rate,
+  };
+}
+
+export type CollectionFixture = Awaited<ReturnType<typeof createCollectionFixture>>;
+
+/**
+ * Serial numbers for `postCollectionAsOwner`. Booklets built by `createCollectionFixture`
+ * run 1000-1999; this half of the range is left alone by the test files that pick their
+ * own OR numbers, so a fixture used both ways does not collide on
+ * `collections_serial_spent_once`.
+ */
+let ownerOrNo = 1500;
+
+/**
+ * Fails loudly when a counter walks off the end of the fixture booklet.
+ *
+ * An OR number outside the booklet's range is not an error the caller sees as one: the
+ * engine returns `or_out_of_range`, which is a perfectly valid rejection, so a test file
+ * that quietly overran its range would fail with the wrong reason -- or, worse, an
+ * `or_out_of_range` test would keep passing for the wrong cause. This turns the overrun
+ * into the message that explains it.
+ */
+export function assertOrNoInFixtureRange(orNo: number): number {
+  if (orNo < FIXTURE_BOOKLET_START_NO || orNo > FIXTURE_BOOKLET_END_NO) {
+    throw new Error(
+      `OR ${orNo} is outside the fixture booklet range ` +
+        `${FIXTURE_BOOKLET_START_NO}-${FIXTURE_BOOKLET_END_NO}. ` +
+        "Reset the counter per test, or widen the range in createCollectionFixture.",
+    );
+  }
+  return orNo;
+}
+
+/**
+ * Posts a collection through `post_collection` over the owner connection, and returns the
+ * new collection's id.
+ *
+ * The one way money enters the ledger, so every test that needs a settled charge to exist
+ * goes through it rather than inserting rows directly — an inserted row can be shaped in a
+ * way the engine would never produce, and a test built on one proves nothing about the
+ * system that actually runs.
+ *
+ * Throws on anything but `accepted`, carrying the reason code: a fixture that silently
+ * failed to settle anything makes the test that depends on it fail somewhere else entirely.
+ * Tests asserting on rejections call the RPC directly instead.
+ *
+ * `db` must already be connected; the caller owns its lifecycle.
+ */
+export async function postCollectionAsOwner(
+  db: PgClient,
+  fixture: {
+    leaseId: string;
+    feeTypeId: string;
+    collectorId: string;
+    deviceId: string;
+    bookletId: string;
+  },
+  opts: {
+    groupRanks?: number[];
+    orNo?: number;
+    id?: string;
+    collectedAt?: string;
+    leaseId?: string | null;
+    feeTypeId?: string;
+    lines?: { fee_type_id: string; rate_class?: string; quantity: number }[];
+    payerRef?: string;
+    notes?: string;
+  } = {},
+): Promise<string> {
+  const groupRanks = opts.groupRanks ?? [1];
+  const id = opts.id ?? randomUUID();
+  const payload = {
+    id,
+    or_no: assertOrNoInFixtureRange(opts.orNo ?? ++ownerOrNo),
+    booklet_id: fixture.bookletId,
+    collector_id: fixture.collectorId,
+    device_id: fixture.deviceId,
+    // A timestamptz literal with an explicit offset. Never Date#toISOString(): it converts
+    // through the runner's local zone, and the business date this resolves to (Asia/Manila)
+    // is what the booklet assignment and the rate lookup are checked against.
+    collected_at: opts.collectedAt ?? "2026-10-05T02:00:00+00:00",
+    fee_type_id: opts.feeTypeId ?? fixture.feeTypeId,
+    lease_id: opts.leaseId === undefined ? fixture.leaseId : opts.leaseId,
+    payer_ref: opts.payerRef ?? null,
+    notes: opts.notes ?? null,
+    allocations: groupRanks.map((group_rank) => ({ group_rank })),
+    lines: opts.lines ?? [],
+  };
+
+  const { rows } = await db.query(
+    "select ceedo_collections.post_collection($1::jsonb) as result",
+    [JSON.stringify(payload)],
+  );
+  const result = rows[0].result as {
+    status: string;
+    collection_id?: string;
+    reason?: string;
+    detail?: string;
+  };
+  if (result.status !== "accepted") {
+    throw new Error(
+      `post_collection did not accept: ${result.status}` +
+        `${result.reason ? ` (${result.reason})` : ""}` +
+        `${result.detail ? `: ${result.detail}` : ""}`,
+    );
+  }
+  return result.collection_id as string;
+}

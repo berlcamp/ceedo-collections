@@ -30,6 +30,53 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             </li>
           ))}
         </ul>
+        {/*
+          Ledger: read-plus-RPC screens over Task 14's reporting views, not master-data
+          CRUD, so they live outside RESOURCES/the registry engine rather than being forced
+          into a shape built for editing. No per-role filter is needed here the way
+          `visible` filters resources above: every role that reaches this layout at all
+          already cleared canUseWeb() in requireStaff(), and that is exactly the role set
+          the views' own RLS policy admits (migration 20260918000011's
+          apply_ledger_policies: supervisor, accounting, admin). The subsidiary ledger is
+          reached by drilling in from Aging or Delinquency, not linked here directly.
+        */}
+        <p className="mt-8 mb-2 px-2 text-xs font-semibold uppercase text-neutral-400">
+          Ledger
+        </p>
+        <ul className="space-y-1">
+          <li>
+            <Link
+              href="/ledger/aging"
+              className="block rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
+            >
+              Aging of receivables
+            </Link>
+          </li>
+          <li>
+            <Link
+              href="/ledger/delinquency"
+              className="block rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
+            >
+              Delinquency list
+            </Link>
+          </li>
+          <li>
+            <Link
+              href="/ledger/collections"
+              className="block rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
+            >
+              Collections
+            </Link>
+          </li>
+          <li>
+            <Link
+              href="/ledger/opening-balances"
+              className="block rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
+            >
+              Opening balances
+            </Link>
+          </li>
+        </ul>
         <p className="mt-8 text-xs text-neutral-500">
           {staff.fullName}
           <br />

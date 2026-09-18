@@ -11,6 +11,39 @@ export type Json =
 export type Database = {
   ceedo_collections: {
     Tables: {
+      accrual_runs: {
+        Row: {
+          business_date: string
+          charges_raised: number
+          error: string | null
+          finished_at: string | null
+          id: string
+          started_at: string
+          status: string
+          surcharges_raised: number
+        }
+        Insert: {
+          business_date: string
+          charges_raised?: number
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          started_at?: string
+          status?: string
+          surcharges_raised?: number
+        }
+        Update: {
+          business_date?: string
+          charges_raised?: number
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          started_at?: string
+          status?: string
+          surcharges_raised?: number
+        }
+        Relationships: []
+      }
       app_users: {
         Row: {
           created_at: string
@@ -179,6 +212,384 @@ export type Database = {
             columns: ["form_type_id"]
             isOneToOne: false
             referencedRelation: "form_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      charge_condonations: {
+        Row: {
+          amount: number
+          authority_ref: string
+          charge_id: string
+          condoned_at: string
+          condoned_by: string
+          id: string
+          reason: string
+          row_version: number
+        }
+        Insert: {
+          amount: number
+          authority_ref: string
+          charge_id: string
+          condoned_at?: string
+          condoned_by: string
+          id?: string
+          reason: string
+          row_version?: number
+        }
+        Update: {
+          amount?: number
+          authority_ref?: string
+          charge_id?: string
+          condoned_at?: string
+          condoned_by?: string
+          id?: string
+          reason?: string
+          row_version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "charge_condonations_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "charge_balances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "charge_condonations_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "charges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "charge_condonations_condoned_by_fkey"
+            columns: ["condoned_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      charges: {
+        Row: {
+          amount: number
+          charge_type: Database["ceedo_collections"]["Enums"]["charge_type"]
+          created_at: string
+          created_by: string | null
+          due_date: string
+          fee_type_id: string
+          id: string
+          lease_id: string
+          parent_charge_id: string | null
+          period_end: string
+          period_start: string
+          row_version: number
+          source: Database["ceedo_collections"]["Enums"]["charge_source"]
+          surcharge_bps: number
+        }
+        Insert: {
+          amount: number
+          charge_type: Database["ceedo_collections"]["Enums"]["charge_type"]
+          created_at?: string
+          created_by?: string | null
+          due_date: string
+          fee_type_id: string
+          id?: string
+          lease_id: string
+          parent_charge_id?: string | null
+          period_end: string
+          period_start: string
+          row_version?: number
+          source: Database["ceedo_collections"]["Enums"]["charge_source"]
+          surcharge_bps?: number
+        }
+        Update: {
+          amount?: number
+          charge_type?: Database["ceedo_collections"]["Enums"]["charge_type"]
+          created_at?: string
+          created_by?: string | null
+          due_date?: string
+          fee_type_id?: string
+          id?: string
+          lease_id?: string
+          parent_charge_id?: string | null
+          period_end?: string
+          period_start?: string
+          row_version?: number
+          source?: Database["ceedo_collections"]["Enums"]["charge_source"]
+          surcharge_bps?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "charges_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "charges_fee_type_id_fkey"
+            columns: ["fee_type_id"]
+            isOneToOne: false
+            referencedRelation: "fee_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "charges_lease_id_fkey"
+            columns: ["lease_id"]
+            isOneToOne: false
+            referencedRelation: "leases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "charges_parent_charge_id_fkey"
+            columns: ["parent_charge_id"]
+            isOneToOne: false
+            referencedRelation: "charge_balances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "charges_parent_charge_id_fkey"
+            columns: ["parent_charge_id"]
+            isOneToOne: false
+            referencedRelation: "charges"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      collection_allocations: {
+        Row: {
+          amount: number
+          charge_id: string
+          collection_id: string
+          id: string
+          row_version: number
+        }
+        Insert: {
+          amount: number
+          charge_id: string
+          collection_id: string
+          id?: string
+          row_version?: number
+        }
+        Update: {
+          amount?: number
+          charge_id?: string
+          collection_id?: string
+          id?: string
+          row_version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collection_allocations_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "charge_balances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_allocations_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "charges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_allocations_collection_id_fkey"
+            columns: ["collection_id"]
+            isOneToOne: false
+            referencedRelation: "collections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      collection_cancellations: {
+        Row: {
+          cancelled_at: string
+          cancelled_by: string
+          collection_id: string
+          id: string
+          reason: string
+          row_version: number
+        }
+        Insert: {
+          cancelled_at?: string
+          cancelled_by: string
+          collection_id: string
+          id?: string
+          reason: string
+          row_version?: number
+        }
+        Update: {
+          cancelled_at?: string
+          cancelled_by?: string
+          collection_id?: string
+          id?: string
+          reason?: string
+          row_version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collection_cancellations_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_cancellations_collection_id_fkey"
+            columns: ["collection_id"]
+            isOneToOne: true
+            referencedRelation: "collections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      collection_lines: {
+        Row: {
+          amount: number | null
+          collection_id: string
+          fee_type_id: string
+          id: string
+          quantity: number
+          rate_class: string
+          row_version: number
+          unit_rate: number
+        }
+        Insert: {
+          amount?: number | null
+          collection_id: string
+          fee_type_id: string
+          id?: string
+          quantity: number
+          rate_class?: string
+          row_version?: number
+          unit_rate: number
+        }
+        Update: {
+          amount?: number | null
+          collection_id?: string
+          fee_type_id?: string
+          id?: string
+          quantity?: number
+          rate_class?: string
+          row_version?: number
+          unit_rate?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collection_lines_collection_id_fkey"
+            columns: ["collection_id"]
+            isOneToOne: false
+            referencedRelation: "collections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_lines_fee_type_id_fkey"
+            columns: ["fee_type_id"]
+            isOneToOne: false
+            referencedRelation: "fee_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      collections: {
+        Row: {
+          booklet_id: string
+          business_date: string
+          collected_at: string
+          collector_id: string
+          device_id: string
+          fee_type_id: string
+          gross_amount: number
+          id: string
+          lease_id: string | null
+          notes: string | null
+          or_no: number
+          payer_ref: string | null
+          posted_at: string
+          posted_by: string | null
+          row_version: number
+          synced_at: string | null
+        }
+        Insert: {
+          booklet_id: string
+          business_date: string
+          collected_at: string
+          collector_id: string
+          device_id: string
+          fee_type_id: string
+          gross_amount: number
+          id: string
+          lease_id?: string | null
+          notes?: string | null
+          or_no: number
+          payer_ref?: string | null
+          posted_at?: string
+          posted_by?: string | null
+          row_version?: number
+          synced_at?: string | null
+        }
+        Update: {
+          booklet_id?: string
+          business_date?: string
+          collected_at?: string
+          collector_id?: string
+          device_id?: string
+          fee_type_id?: string
+          gross_amount?: number
+          id?: string
+          lease_id?: string | null
+          notes?: string | null
+          or_no?: number
+          payer_ref?: string | null
+          posted_at?: string
+          posted_by?: string | null
+          row_version?: number
+          synced_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collections_booklet_id_fkey"
+            columns: ["booklet_id"]
+            isOneToOne: false
+            referencedRelation: "booklets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collections_collector_id_fkey"
+            columns: ["collector_id"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collections_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collections_fee_type_id_fkey"
+            columns: ["fee_type_id"]
+            isOneToOne: false
+            referencedRelation: "fee_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collections_lease_id_fkey"
+            columns: ["lease_id"]
+            isOneToOne: false
+            referencedRelation: "leases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collections_posted_by_fkey"
+            columns: ["posted_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
             referencedColumns: ["id"]
           },
         ]
@@ -563,6 +974,38 @@ export type Database = {
           },
         ]
       }
+      settings: {
+        Row: {
+          cutover_date: string
+          id: string
+          row_version: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          cutover_date: string
+          id?: string
+          row_version?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          cutover_date?: string
+          id?: string
+          row_version?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "settings_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       spoiled_forms: {
         Row: {
           booklet_id: string
@@ -719,28 +1162,244 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      accrual_health: {
+        Row: {
+          business_date: string | null
+          charges_raised: number | null
+          error: string | null
+          finished_at: string | null
+          status: string | null
+          surcharges_raised: number | null
+        }
+        Relationships: []
+      }
+      aging_of_receivables: {
+        Row: {
+          bucket_1_30: number | null
+          bucket_31_60: number | null
+          bucket_61_90: number | null
+          bucket_over_90: number | null
+          lease_id: string | null
+          not_yet_due: number | null
+          stall_id: string | null
+          stall_no: string | null
+          tenant_name: string | null
+          total: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "charges_lease_id_fkey"
+            columns: ["lease_id"]
+            isOneToOne: false
+            referencedRelation: "leases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leases_stall_id_fkey"
+            columns: ["stall_id"]
+            isOneToOne: false
+            referencedRelation: "stalls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      charge_balances: {
+        Row: {
+          allocated: number | null
+          amount: number | null
+          charge_type:
+            | Database["ceedo_collections"]["Enums"]["charge_type"]
+            | null
+          condoned: number | null
+          created_at: string | null
+          days_overdue: number | null
+          due_date: string | null
+          fee_type_id: string | null
+          id: string | null
+          is_settled: boolean | null
+          lease_id: string | null
+          outstanding: number | null
+          parent_charge_id: string | null
+          period_end: string | null
+          period_start: string | null
+          surcharge_bps: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "charges_fee_type_id_fkey"
+            columns: ["fee_type_id"]
+            isOneToOne: false
+            referencedRelation: "fee_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "charges_lease_id_fkey"
+            columns: ["lease_id"]
+            isOneToOne: false
+            referencedRelation: "leases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "charges_parent_charge_id_fkey"
+            columns: ["parent_charge_id"]
+            isOneToOne: false
+            referencedRelation: "charge_balances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "charges_parent_charge_id_fkey"
+            columns: ["parent_charge_id"]
+            isOneToOne: false
+            referencedRelation: "charges"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      delinquency_list: {
+        Row: {
+          address: string | null
+          contact_no: string | null
+          days_overdue: number | null
+          lease_id: string | null
+          oldest_due_date: string | null
+          outstanding: number | null
+          stall_no: string | null
+          tenant_name: string | null
+          unpaid_charges: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "charges_lease_id_fkey"
+            columns: ["lease_id"]
+            isOneToOne: false
+            referencedRelation: "leases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lease_balances: {
+        Row: {
+          days_overdue: number | null
+          lease_id: string | null
+          oldest_due_date: string | null
+          outstanding: number | null
+          unpaid_charges: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "charges_lease_id_fkey"
+            columns: ["lease_id"]
+            isOneToOne: false
+            referencedRelation: "leases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subsidiary_ledger: {
+        Row: {
+          cancelled: boolean | null
+          credit: number | null
+          debit: number | null
+          detail: string | null
+          entry_date: string | null
+          entry_type: string | null
+          lease_id: string | null
+          or_no: number | null
+          period_end: string | null
+          period_start: string | null
+          running_balance: number | null
+          source_id: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       active_role: {
         Args: never
         Returns: Database["ceedo_collections"]["Enums"]["app_role"]
       }
+      apply_ledger_policies: {
+        Args: { table_name: string }
+        Returns: undefined
+      }
       apply_master_data_policies: {
         Args: { table_name: string }
         Returns: undefined
       }
       attach_audit: { Args: { table_name: string }; Returns: undefined }
+      business_date: { Args: never; Returns: string }
       can_collector_use_device: {
         Args: { collector: string; device: string }
         Returns: boolean
       }
+      cancel_collection: {
+        Args: { p_collection_id: string; p_reason: string }
+        Returns: string
+      }
+      condone_charge: {
+        Args: {
+          p_amount: number
+          p_authority_ref: string
+          p_charge_id: string
+          p_reason: string
+        }
+        Returns: string
+      }
+      cutover_date: { Args: never; Returns: string }
       has_role: {
         Args: { roles: Database["ceedo_collections"]["Enums"]["app_role"][] }
         Returns: boolean
       }
       is_admin: { Args: never; Returns: boolean }
+      lease_periods: {
+        Args: {
+          p_accrual_period: Database["ceedo_collections"]["Enums"]["accrual_period"]
+          p_cutover: string
+          p_due_day: number
+          p_lease_end: string
+          p_lease_start: string
+          p_through: string
+        }
+        Returns: {
+          due_date: string
+          period_end: string
+          period_start: string
+        }[]
+      }
       next_row_version: { Args: never; Returns: number }
+      post_collection: { Args: { p_payload: Json }; Returns: Json }
+      record_opening_balance: {
+        Args: {
+          p_amount: number
+          p_authority_ref: string
+          p_lease_id: string
+          p_oldest_unpaid_date: string
+        }
+        Returns: string
+      }
+      rental_fee_type: {
+        Args: {
+          p_accrual_period: Database["ceedo_collections"]["Enums"]["accrual_period"]
+        }
+        Returns: string
+      }
+      run_accrual: { Args: { p_business_date?: string }; Returns: string }
+      run_nightly: { Args: never; Returns: string }
+      run_surcharge: {
+        Args: { p_business_date?: string; p_run_id?: string }
+        Returns: number
+      }
+      unpaid_period_groups: {
+        Args: { p_lease_id: string }
+        Returns: {
+          charge_ids: string[]
+          due_date: string
+          group_rank: number
+          outstanding: number
+          period_end: string
+          period_start: string
+        }[]
+      }
     }
     Enums: {
       accrual_period: "daily" | "weekly" | "monthly"
@@ -751,6 +1410,8 @@ export type Database = {
         | "in_use"
         | "returned"
         | "exhausted"
+      charge_source: "accrual" | "opening_balance" | "manual"
+      charge_type: "rental" | "surcharge" | "opening_balance"
       facility_type: "market" | "terminal" | "parking" | "slaughterhouse"
       lease_status: "active" | "ended" | "terminated"
       rate_basis:
@@ -897,6 +1558,8 @@ export const Constants = {
         "returned",
         "exhausted",
       ],
+      charge_source: ["accrual", "opening_balance", "manual"],
+      charge_type: ["rental", "surcharge", "opening_balance"],
       facility_type: ["market", "terminal", "parking", "slaughterhouse"],
       lease_status: ["active", "ended", "terminated"],
       rate_basis: [

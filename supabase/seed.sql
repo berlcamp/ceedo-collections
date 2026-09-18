@@ -21,6 +21,7 @@ where s.facility_id = (select id from ceedo_collections.facilities where code = 
 
 insert into ceedo_collections.fee_types (code, name, accrues, surcharge_bps) values
   ('MKT_DAILY',  'Market stall rental (daily)',   true,  300),
+  ('MKT_WEEKLY', 'Market stall rental (weekly)',  true,  300),
   ('MKT_MONTHLY','Market stall rental (monthly)', true,  300),
   ('AMBULANT',   'Ambulant vendor fee',           false, 0),
   ('PARKING',    'Parking fee',                   false, 0),
@@ -33,6 +34,8 @@ insert into ceedo_collections.fee_types (code, name, accrues, surcharge_bps) val
 -- first branch fixes the whole column once, rather than repeating the cast on every branch.
 insert into ceedo_collections.rates (fee_type_id, rate_class, effective_from, amount, basis)
 select id, '', '2026-01-01'::date, 120.00, 'per_day'::ceedo_collections.rate_basis from ceedo_collections.fee_types where code = 'MKT_DAILY'
+union all
+select id, '', '2026-01-01', 800.00, 'per_week' from ceedo_collections.fee_types where code = 'MKT_WEEKLY'
 union all
 select id, '', '2026-01-01', 3000.00, 'per_month' from ceedo_collections.fee_types where code = 'MKT_MONTHLY'
 union all
@@ -52,6 +55,16 @@ select id, 'goat', '2026-01-01', 45.00, 'per_head' from ceedo_collections.fee_ty
 
 insert into ceedo_collections.form_types (code, name) values
   ('OR51', 'Official Receipt (Accountable Form 51)');
+
+-- Every later Phase 2 task's test dates are designed against this exact cutover date.
+-- settings.id is a generated uuid, not a fixed value `on conflict` could target -- the
+-- singleton is enforced by settings_singleton (a unique index on the constant expression
+-- `(true)`), not by id -- so idempotency across reseeds is a `where not exists` guard
+-- instead. settings.test.ts is the one file allowed to delete/mutate this row, and
+-- restores this exact date afterward.
+insert into ceedo_collections.settings (cutover_date)
+select '2026-10-01'
+where not exists (select 1 from ceedo_collections.settings);
 
 -- First administrator.
 --
