@@ -211,7 +211,11 @@ describe("ceedo_app", () => {
           and has_function_privilege('ceedo_app', p.oid, 'execute')
         order by p.proname`,
     );
-    expect(rows.map((r) => r.proname)).toEqual(["authenticate_device", "sync_pull"]);
+    expect(rows.map((r) => r.proname)).toEqual([
+      "authenticate_device",
+      "close_shift",
+      "sync_pull",
+    ]);
   });
 
   it("holds no privilege on any table in the schema", async () => {
