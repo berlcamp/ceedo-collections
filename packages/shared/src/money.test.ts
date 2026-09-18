@@ -48,7 +48,9 @@ describe("applyBasisPoints", () => {
 
   it("rounds a half-centavo result up rather than down", () => {
     // 8350 centavos x 3% = 250.5 centavos exactly. Half-up gives 251.
-    // Floating point (0.03 * 8350) yields 250.49999999999997 and would give 250.
+    // A float pipeline that floors -- Math.floor(0.03 * 8350) is Math.floor(250.5) -- would
+    // give 250. The error is rounding direction, not representation: 0.03 * 8350 is exactly
+    // 250.5 in IEEE 754.
     expect(applyBasisPoints(fromCentavos(8350), 300)).toBe(251);
   });
 

@@ -8,8 +8,10 @@ create table ceedo_collections.fee_types (
   -- Whether this fee raises a receivable. Market rentals do; parking, terminal
   -- and slaughter fees are cash on the spot and create no charges.
   accrues       boolean not null default false,
-  -- Surcharge as INTEGER BASIS POINTS. 3% is 300. Never a float: 0.03 * 8350
-  -- is 250.49999999999997 in IEEE 754 and misrounds an exact half-centavo result.
+  -- Surcharge as INTEGER BASIS POINTS. 3% is 300. Never a float: the issue is rounding
+  -- direction, not representation -- 0.03 * 8350 is exactly 250.5 in IEEE 754, and a
+  -- float pipeline that floors misrounds that exact half-centavo result to 250 rather
+  -- than the correct 251.
   surcharge_bps integer not null default 0 check (surcharge_bps between 0 and 10000),
   active        boolean not null default true,
   created_at    timestamptz not null default now(),

@@ -29,8 +29,9 @@ begin
     -- different date than the rent it penalises.
     b.period_start, b.period_end, b.due_date,
     -- Integer basis points on centavos, then back to pesos. A float rate misrounds exact
-    -- half-centavo results: 0.03 * 8350 is 250.49999999999997 in IEEE 754 and floors to
-    -- 250 where half-up gives 251.
+    -- half-centavo results by rounding direction, not representation: 0.03 * 8350 is
+    -- exactly 250.5 in IEEE 754, and a pipeline that floors gives 250 where half-up gives
+    -- the correct 251.
     floor((round(b.amount * 100) * f.surcharge_bps + 5000) / 10000) / 100,
     -- Stamped, not looked up later. A future ordinance changing the rate must not alter a
     -- receipt already issued (invariant #6).

@@ -81,7 +81,9 @@ afterAll(async () => {
 
 describe("run_surcharge", () => {
   it("computes 3% exactly on the case floats get wrong", async () => {
-    // 83.50 at 3% is 2.505, half-up 2.51. A float gives 250.49999999999997 centavos.
+    // 83.50 at 3% is 2.505, half-up 2.51. A float pipeline gives exactly 250.5 centavos
+    // and misrounds by flooring to 250 (direction, not representation) instead of
+    // rounding half up to the correct 251.
     const { leaseId } = await createLeaseFixture(db, {
       accrualPeriod: "daily",
       startDate: "2027-01-31",

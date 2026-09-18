@@ -272,7 +272,8 @@ describe("generatePeriods — monthly", () => {
 
 describe("computeSurcharge", () => {
   it("is exact on the half-centavo case floats get wrong", () => {
-    // 0.03 * 8350 is 250.49999999999997 in IEEE 754 and floors to 250.
+    // 0.03 * 8350 is exactly 250.5 in IEEE 754; a float pipeline that floors gives 250,
+    // where half-up gives the correct 251. Rounding direction, not representation error.
     expect(computeSurcharge(fromCentavos(8350), 300)).toBe(251);
   });
 
