@@ -48,14 +48,15 @@ Phase 1 ended at `20260917000010`. Phase 2 ended at `20260918000025`. Phase 3a c
 supabase/migrations/
 ├── 20260918000026_device_credentials.sql   Task 1  ceedo_app wiring, device_credentials, authenticate_device()
 ├── 20260918000027_collector_pin.sql        Task 2  set_collector_pin()
-├── 20260918000028_shifts.sql               Task 3  shifts
-├── 20260918000029_sync_exceptions.sql      Task 4  sync_exceptions
-├── 20260918000030_assignment_epoch.sql     Task 5  devices.assignment_epoch + trigger
-├── 20260918000031_stale_allocations.sql    Task 6  post_collection re-read branch
-├── 20260918000032_sync_pull.sql            Task 7  sync_pull()
-├── 20260918000033_close_shift.sql          Task 8  close_shift()
-├── 20260918000034_sync_push.sql            Task 9  sync_push(), post_collection grant move
-└── 20260918000035_resolve_exception.sql    Task 10 the three supervisor resolutions
+├── 20260918000028_gate_null_safety.sql     Task 2  is_admin()/has_role() NULL safety (fix round)
+├── 20260918000029_shifts.sql               Task 3  shifts
+├── 20260918000030_sync_exceptions.sql      Task 4  sync_exceptions
+├── 20260918000031_assignment_epoch.sql     Task 5  devices.assignment_epoch + trigger
+├── 20260918000032_stale_allocations.sql    Task 6  post_collection re-read branch
+├── 20260918000033_sync_pull.sql            Task 7  sync_pull()
+├── 20260918000034_close_shift.sql          Task 8  close_shift()
+├── 20260918000035_sync_push.sql            Task 9  sync_push(), post_collection grant move
+└── 20260918000036_resolve_exception.sql    Task 10 the three supervisor resolutions
 
 supabase/functions/
 ├── _shared/
@@ -873,7 +874,7 @@ git commit -m "feat(sync): set_collector_pin, and correct 0002's comment about i
 Spec §3.2. Invariant: one open shift per device.
 
 **Files:**
-- Create: `supabase/migrations/20260918000028_shifts.sql`
+- Create: `supabase/migrations/20260918000029_shifts.sql`
 - Create: `tests/db/shifts.test.ts`
 
 **Interfaces:**
@@ -1020,7 +1021,7 @@ Expected: FAIL — `relation "ceedo_collections.shifts" does not exist`.
 
 - [ ] **Step 3: Write the migration**
 
-Create `supabase/migrations/20260918000028_shifts.sql`:
+Create `supabase/migrations/20260918000029_shifts.sql`:
 
 ```sql
 -- Shifts. Parent spec §5.5 and §6.5.
@@ -1101,7 +1102,7 @@ Expected: `permits a second shift once the first is closed` and `permits open sh
 - [ ] **Step 6: Commit**
 
 ```bash
-git add supabase/migrations/20260918000028_shifts.sql tests/db/shifts.test.ts
+git add supabase/migrations/20260918000029_shifts.sql tests/db/shifts.test.ts
 git commit -m "feat(sync): the shifts table and the one-open-shift guarantee"
 ```
 
@@ -1111,7 +1112,7 @@ git commit -m "feat(sync): the shifts table and the one-open-shift guarantee"
 Spec §3.3. Invariant 23.
 
 **Files:**
-- Create: `supabase/migrations/20260918000029_sync_exceptions.sql`
+- Create: `supabase/migrations/20260918000030_sync_exceptions.sql`
 - Create: `tests/db/sync-exceptions.test.ts`
 
 **Interfaces:**
@@ -1296,7 +1297,7 @@ Expected: FAIL — `relation "ceedo_collections.sync_exceptions" does not exist`
 
 - [ ] **Step 3: Write the migration**
 
-Create `supabase/migrations/20260918000029_sync_exceptions.sql`:
+Create `supabase/migrations/20260918000030_sync_exceptions.sql`:
 
 ```sql
 -- The exceptions queue. Parent spec §6.3 and §11.3.
@@ -1400,7 +1401,7 @@ Both mutations must produce exactly one new failure each. A mutation producing *
 - [ ] **Step 6: Commit**
 
 ```bash
-git add supabase/migrations/20260918000029_sync_exceptions.sql \
+git add supabase/migrations/20260918000030_sync_exceptions.sql \
         tests/db/sync-exceptions.test.ts
 git commit -m "feat(sync): the exceptions queue"
 ```
@@ -1411,7 +1412,7 @@ git commit -m "feat(sync): the exceptions queue"
 Spec D7. A cursor delta cannot say "this left your scope."
 
 **Files:**
-- Create: `supabase/migrations/20260918000030_assignment_epoch.sql`
+- Create: `supabase/migrations/20260918000031_assignment_epoch.sql`
 - Create: `tests/db/assignment-epoch.test.ts`
 
 **Interfaces:**
@@ -1538,7 +1539,7 @@ Expected: FAIL — `column "assignment_epoch" does not exist`.
 
 - [ ] **Step 3: Write the migration**
 
-Create `supabase/migrations/20260918000030_assignment_epoch.sql`:
+Create `supabase/migrations/20260918000031_assignment_epoch.sql`:
 
 ```sql
 -- The re-sync trigger for a reassigned tablet.
@@ -1601,7 +1602,7 @@ Expected: `bumps when an assignment is deactivated`, `bumps when a device is rea
 - [ ] **Step 6: Commit**
 
 ```bash
-git add supabase/migrations/20260918000030_assignment_epoch.sql \
+git add supabase/migrations/20260918000031_assignment_epoch.sql \
         tests/db/assignment-epoch.test.ts
 git commit -m "feat(sync): assignment epoch forces a re-sync on device reassignment"
 ```
@@ -1614,7 +1615,7 @@ Spec D6, §4.3. Closes a gap Phase 2's handover names explicitly.
 **Files:**
 - Modify: `packages/shared/src/reason-codes.ts`
 - Create: `packages/shared/src/reason-codes.test.ts`
-- Create: `supabase/migrations/20260918000031_stale_allocations.sql`
+- Create: `supabase/migrations/20260918000032_stale_allocations.sql`
 - Create: `tests/db/stale-allocations.test.ts`
 - Modify: `tests/db/parity.test.ts` (the reason-code list is asserted against SQL there)
 
@@ -1814,7 +1815,7 @@ the branch is changed and would mean nothing.
 
 - [ ] **Step 7: Write the migration**
 
-Create `supabase/migrations/20260918000031_stale_allocations.sql`.
+Create `supabase/migrations/20260918000032_stale_allocations.sql`.
 
 Postgres has no way to patch one branch of a function, so this migration is a full
 `create or replace` of `post_collection`. **Copy `supabase/migrations/20260918000022_post_collection.sql`
@@ -1882,7 +1883,7 @@ Run:
 diff <(sed -n '/^create or replace function ceedo_collections.post_collection/,/^\$\$;/p' \
          supabase/migrations/20260918000022_post_collection.sql) \
      <(sed -n '/^create or replace function ceedo_collections.post_collection/,/^\$\$;/p' \
-         supabase/migrations/20260918000031_stale_allocations.sql)
+         supabase/migrations/20260918000032_stale_allocations.sql)
 ```
 
 Expected: exactly one changed line, the `'reason', 'allocation_not_prefix'` →
@@ -1904,7 +1905,7 @@ not know about is a device that renders `undefined` to a collector.
 
 ```bash
 git add packages/shared/src/reason-codes.ts packages/shared/src/reason-codes.test.ts \
-        supabase/migrations/20260918000031_stale_allocations.sql \
+        supabase/migrations/20260918000032_stale_allocations.sql \
         tests/db/stale-allocations.test.ts tests/db/parity.test.ts
 git commit -m "feat(sync): stale_allocations, the one retryable rejection"
 ```
@@ -1915,7 +1916,7 @@ git commit -m "feat(sync): stale_allocations, the one retryable rejection"
 Spec §4.2. The mandate from Phase 2's handover: send *collections*, not charge deltas.
 
 **Files:**
-- Create: `supabase/migrations/20260918000032_sync_pull.sql`
+- Create: `supabase/migrations/20260918000033_sync_pull.sql`
 - Create: `tests/db/sync-pull.test.ts`
 
 **Interfaces:**
@@ -2142,7 +2143,7 @@ Expected: FAIL — `function ceedo_collections.sync_pull(uuid, bigint) does not 
 
 - [ ] **Step 3: Write the migration**
 
-Create `supabase/migrations/20260918000032_sync_pull.sql`:
+Create `supabase/migrations/20260918000033_sync_pull.sql`:
 
 ```sql
 -- Master data down. Parent spec §6.1.
@@ -2383,7 +2384,7 @@ facility's collection is absent, then restore the join and confirm the new case 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add supabase/migrations/20260918000032_sync_pull.sql \
+git add supabase/migrations/20260918000033_sync_pull.sql \
         tests/db/sync-pull.test.ts tests/db/device-credentials.test.ts
 git commit -m "feat(sync): sync_pull, scoped to the device and carrying collections"
 ```
@@ -2394,7 +2395,7 @@ git commit -m "feat(sync): sync_pull, scoped to the device and carrying collecti
 Spec §5. Invariant 25 — the two comparisons that must not be conflated.
 
 **Files:**
-- Create: `supabase/migrations/20260918000033_close_shift.sql`
+- Create: `supabase/migrations/20260918000034_close_shift.sql`
 - Create: `tests/db/close-shift.test.ts`
 
 **Interfaces:**
@@ -2650,7 +2651,7 @@ Expected: FAIL — `function ceedo_collections.close_shift(...) does not exist`.
 
 - [ ] **Step 3: Write the migration**
 
-Create `supabase/migrations/20260918000033_close_shift.sql`:
+Create `supabase/migrations/20260918000034_close_shift.sql`:
 
 ```sql
 -- Closeout reconciliation. Parent spec §6.5, which calls it "non-negotiable".
@@ -2799,7 +2800,7 @@ In `tests/db/device-credentials.test.ts`:
 - [ ] **Step 7: Commit**
 
 ```bash
-git add supabase/migrations/20260918000033_close_shift.sql \
+git add supabase/migrations/20260918000034_close_shift.sql \
         tests/db/close-shift.test.ts tests/db/device-credentials.test.ts
 git commit -m "feat(sync): close_shift, and the two comparisons it keeps apart"
 ```
@@ -2810,7 +2811,7 @@ git commit -m "feat(sync): close_shift, and the two comparisons it keeps apart"
 Spec §4.3, D8. Invariants 21, 22, 23, 24. The heart of the phase.
 
 **Files:**
-- Create: `supabase/migrations/20260918000034_sync_push.sql`
+- Create: `supabase/migrations/20260918000035_sync_push.sql`
 - Create: `tests/db/sync-push.test.ts`
 - Create: `tests/db/sync-privileges.test.ts`
 - Modify: `tests/db/post-collection.test.ts` (any case asserting `service_role` may call it)
@@ -3276,7 +3277,7 @@ Expected: FAIL — `function ceedo_collections.sync_push(uuid, jsonb) does not e
 
 - [ ] **Step 3: Write the migration**
 
-Create `supabase/migrations/20260918000034_sync_push.sql`:
+Create `supabase/migrations/20260918000035_sync_push.sql`:
 
 ```sql
 -- Transactions up. Parent spec §6.2.
@@ -3613,7 +3614,7 @@ Expected: PASS.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add supabase/migrations/20260918000034_sync_push.sql \
+git add supabase/migrations/20260918000035_sync_push.sql \
         tests/db/sync-push.test.ts tests/db/sync-privileges.test.ts \
         tests/db/device-credentials.test.ts
 git commit -m "feat(sync): sync_push, with per-entry isolation and exception filing"
@@ -3625,7 +3626,7 @@ git commit -m "feat(sync): sync_push, with per-entry isolation and exception fil
 Spec §6.1, D9. `sync_exceptions` gets its lifecycle.
 
 **Files:**
-- Create: `supabase/migrations/20260918000035_resolve_exception.sql`
+- Create: `supabase/migrations/20260918000036_resolve_exception.sql`
 - Create: `tests/db/resolve-exception.test.ts`
 
 **Interfaces:**
@@ -3923,7 +3924,7 @@ Expected: FAIL — `function ceedo_collections.resolve_exception_corrected(...) 
 
 - [ ] **Step 3: Write the migration**
 
-Create `supabase/migrations/20260918000035_resolve_exception.sql`:
+Create `supabase/migrations/20260918000036_resolve_exception.sql`:
 
 ```sql
 -- The supervisor's three actions. Parent spec §11.3.
@@ -4136,7 +4137,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add supabase/migrations/20260918000035_resolve_exception.sql \
+git add supabase/migrations/20260918000036_resolve_exception.sql \
         tests/db/resolve-exception.test.ts
 git commit -m "feat(sync): the three supervisor resolutions"
 ```
