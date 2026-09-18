@@ -1,7 +1,19 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
-import { POSTGRES_URL, createSyncFixture, serviceClient } from "../helpers/supabase";
+import {
+  POSTGRES_URL,
+  anonClient,
+  createAppUser,
+  createSyncFixture,
+  serviceClient,
+  type TestClient,
+} from "../helpers/supabase";
+
+// Well-formed nil UUID rather than `.neq("id", "")`: an empty string fails to cast to
+// `uuid` (22P02) before the query ever reaches the permission check, which would assert
+// the wrong thing entirely. Mirrors ledger-privileges.test.ts's NIL_UUID exactly.
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
 let db: Client;
 let fx: Awaited<ReturnType<typeof createSyncFixture>>;
@@ -114,22 +126,58 @@ describe("shifts privileges", () => {
     expect(error).not.toBeNull();
   });
 
-  it("denies DELETE to every role", async () => {
-    // 'postgres' owns every table in this schema (migrations run as it), so it holds every
-    // privilege regardless of grants -- excluded by name, not because it lacks DELETE.
-    // 'pg_write_all_data' is a Postgres-predefined role: has_table_privilege() reports it as
-    // holding INSERT/UPDATE/DELETE/TRUNCATE on every relation in the cluster as a hardcoded
-    // system behaviour, not a normal ACL entry -- confirmed by REVOKE against a scratch table
-    // making no difference. No login role is a member of it, so it grants no one anything;
-    // excluding it here is not the same mistake as excluding a role that is genuinely
-    // reachable. rolsuper covers supabase_admin, the only actual superuser on this instance.
+  // Structural check, alongside the behavioural probes below rather than instead of them
+  // (Phase 2 handover item P5: a `security_invoker` flag whose removal passed every
+  // behavioural test until a structural one was added). `information_schema.table_privileges`
+  // lists only real ACL grant rows, so unlike `has_table_privilege()` over `pg_roles` it
+  // never reports a predefined role's built-in bypass (e.g. `pg_write_all_data`, which
+  // `has_table_privilege()` reports as holding DELETE on every relation in the cluster as
+  // hardcoded behaviour, not a revocable grant -- confirmed by REVOKE against a scratch
+  // table making no difference). No exclusion list needed: 'postgres' is the table owner
+  // (migrations run as it), and it is the only grantee this query can ever legitimately
+  // return.
+  it("grants DELETE to no role but the table owner", async () => {
     const { rows } = await db.query(
-      `select r.rolname
-         from pg_roles r
-        where has_table_privilege(r.rolname, 'ceedo_collections.shifts', 'DELETE')
-          and r.rolname not in ('postgres', 'supabase_admin', 'pg_write_all_data')
-          and not r.rolsuper`,
+      `select grantee
+         from information_schema.table_privileges
+        where table_schema = 'ceedo_collections'
+          and table_name = 'shifts'
+          and privilege_type = 'DELETE'
+          and grantee <> 'postgres'`,
     );
     expect(rows).toEqual([]);
+  });
+
+  describe("DELETE probes", () => {
+    // A real authenticated session, exactly as ledger-privileges.test.ts uses one: the
+    // revoke is a table-level grant, checked against the underlying Postgres role
+    // (`authenticated`) before RLS or `has_role()` ever runs, so which app_user role signs
+    // in does not matter here -- only that the session is a genuine `authenticated` one.
+    let adminClient: TestClient;
+
+    beforeAll(async () => {
+      ({ client: adminClient } = await createAppUser({
+        email: "shifts-privileges-admin",
+        role: "admin",
+      }));
+    });
+
+    it("anon cannot DELETE", async () => {
+      const { error } = await anonClient().from("shifts").delete().neq("id", NIL_UUID);
+      expect(error).not.toBeNull();
+      expect(error!.code).toBe("42501");
+    });
+
+    it("authenticated cannot DELETE", async () => {
+      const { error } = await adminClient.from("shifts").delete().neq("id", NIL_UUID);
+      expect(error).not.toBeNull();
+      expect(error!.code).toBe("42501");
+    });
+
+    it("service_role cannot DELETE", async () => {
+      const { error } = await serviceClient().from("shifts").delete().neq("id", NIL_UUID);
+      expect(error).not.toBeNull();
+      expect(error!.code).toBe("42501");
+    });
   });
 });
