@@ -371,14 +371,16 @@ describe("post_collection — rejections", () => {
 });
 
 describe("post_collection — who may call it", () => {
-  // Granted to no web role. service_role is the break-glass key the integration tests
-  // reach the function through over PostgREST; Phase 3 grants ceedo_app and revokes it.
-  // A grant to `authenticated` would put the settlement engine behind every signed-in
-  // account on a Supabase project whose auth.users is shared with unrelated systems.
+  // Granted to no web role, not even service_role. Phase 2 granted service_role as a
+  // break-glass key so its own integration tests could reach the function over PostgREST
+  // before a sync path existed. Task 9 (sync_push) revokes that grant: sync_push is
+  // SECURITY DEFINER and reaches post_collection as its owner, so no client role needs a
+  // grant of its own -- post_collection is reachable ONLY through the sync path now.
+  // sync-privileges.test.ts asserts the service_role revoke explicitly.
   it.each([
     ["anon", false],
     ["authenticated", false],
-    ["service_role", true],
+    ["service_role", false],
   ])("execute for %s is %s", async (role, allowed) => {
     const { rows } = await db.query(
       `select has_function_privilege($1, 'ceedo_collections.post_collection(jsonb)', 'execute') as ok`,
