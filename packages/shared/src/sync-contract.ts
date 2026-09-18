@@ -39,8 +39,28 @@ export type PushReason = (typeof PUSH_REASONS)[number];
  */
 
 const uuid = z.string().uuid();
-/** numeric(14,2) crosses the wire as a string; see the spec's note on PostgREST. */
+
+/**
+ * numeric(14,2) on the wire — TWO shapes, and conflating them is what broke this schema.
+ *
+ *   OUTBOUND (device -> server): a decimal STRING. A base-10 string is the only shape that
+ *     carries pesos and centavos without a binary float somewhere in the middle, and the
+ *     device is the end that chooses the representation.
+ *
+ *   INBOUND (server -> device): a bare JSON NUMBER. Every money field in a sync response is
+ *     assembled by `jsonb_build_object` inside a PL/pgSQL function, and a `numeric` written
+ *     into jsonb becomes a JSON number. PostgREST's habit of quoting numeric COLUMNS does
+ *     not apply here: it forwards the function's jsonb text verbatim — the same mechanism
+ *     documented on `PullResponse.cursor` below. Captured from live `sync-push` and
+ *     `closeout` responses, not assumed.
+ *
+ * `money` was used for both, so `PushResult` — which is `.strict()` — rejected every real
+ * `system_total`, `device_total` and `variance` the server has ever returned. Hence a
+ * second name rather than one permissive definition: widening `money` itself would have
+ * fixed the inbound side by quietly abandoning the outbound discipline as well.
+ */
 const money = z.string().regex(/^-?\d+\.\d{2}$/);
+const wireMoney = z.union([z.number(), money]);
 
 const forbidden = {
   gross_amount: z.never().optional(),
@@ -111,21 +131,54 @@ export const PushEntry = z.discriminatedUnion("type", [
   z.object({ type: z.literal("shift_close"), payload: ShiftClosePayload }),
 ]);
 
+/**
+ * What the server answers with, one object per pushed entry.
+ *
+ * `.strict()` is the point of this schema: a field the server sends and this object does
+ * not name is a contract drift, and a Phase 3b device that validates its responses must be
+ * told about it. That only works if every field the server ACTUALLY sends is named here.
+ * Two were missing, and both were captured live before being added:
+ *
+ *   gross_amount  -- on EVERY accepted collection. post_collection() recomputes the amount
+ *                   (invariant 3) and reports what it charged, which is the figure the
+ *                   device shows the vendor. Absent here, `.strict()` failed every
+ *                   successful push — i.e. a validating device would have treated a settled
+ *                   receipt as a protocol error and, following §6.4, kept re-pushing it.
+ *                   Note this is the response direction: `CollectionPayload` still REFUSES
+ *                   an inbound gross_amount, and must.
+ *   shift_status  -- on close_shift()'s `already_closed` answer, naming the status it found.
+ *
+ * The lesson is in the test, not here: `sync-contract.test.ts` validated hand-written
+ * literals, which can only ever prove the schema agrees with whoever wrote them. The
+ * response shape is now parsed from a real HTTP call in `tests/http/functions.test.ts`.
+ */
 export const PushResult = z
   .object({
     index: z.number().int().nonnegative(),
     type: z.string(),
-    status: z.enum(["accepted", "duplicate", "rejected", "mismatch", "already_closed"]),
+    // `closed` was missing too, and for the same reason as the two fields below: nothing
+    // ever parsed a real response. close_shift() answers a SUCCESSFUL closeout with it, so
+    // `.strict()` rejected every completed shift as well as every accepted collection.
+    status: z.enum([
+      "accepted",
+      "duplicate",
+      "rejected",
+      "mismatch",
+      "closed",
+      "already_closed",
+    ]),
     reason: z.enum(PUSH_REASONS as unknown as [string, ...string[]]).optional(),
     retryable: z.boolean().optional(),
     detail: z.string().optional(),
     collection_id: uuid.optional(),
+    gross_amount: wireMoney.optional(),
     shift_id: uuid.optional(),
+    shift_status: z.string().optional(),
     device_count: z.number().int().optional(),
-    device_total: money.optional(),
+    device_total: wireMoney.optional(),
     system_count: z.number().int().optional(),
-    system_total: money.optional(),
-    variance: money.optional(),
+    system_total: wireMoney.optional(),
+    variance: wireMoney.optional(),
   })
   .strict();
 
