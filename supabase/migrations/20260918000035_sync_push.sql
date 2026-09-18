@@ -5,7 +5,14 @@
 -- 0022's comment warns about -- "a tenant would get a different balance depending on which
 -- door they paid at."
 --
--- PER-ENTRY ISOLATION. Each entry runs in its own BEGIN/EXCEPTION block, which in PL/pgSQL
+-- PER-ENTRY ISOLATION -- AND THIS CLAIM WAS HALF TRUE UNTIL MIGRATION 0039. The block
+-- below isolates DISPATCH. It closes before the exception-filing block that follows, so
+-- filing ran in the OUTER transaction and any error it raised aborted the whole call --
+-- every entry in the batch, accepted ones included. 0039 gives the filing its own
+-- subtransaction and supersedes this function. Read that migration's header before
+-- trusting the paragraph below.
+--
+-- Each entry runs in its own BEGIN/EXCEPTION block, which in PL/pgSQL
 -- is a real subtransaction. A push carries a whole round -- potentially a hundred receipts
 -- -- and one permanently-rejectable entry must cost its own receipt, never the round's.
 -- One transaction per batch would block every other receipt in that round forever, which is

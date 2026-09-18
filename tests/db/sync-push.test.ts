@@ -31,6 +31,7 @@ type Result = {
   reason?: string;
   collection_id?: string;
   retryable?: boolean;
+  detail?: string;
 };
 
 async function push(fx: Fixture, entries: Entry[]): Promise<Result[]> {
@@ -72,6 +73,15 @@ function collectionEntry(fx: Fixture, overrides: Record<string, unknown> = {}): 
 
 async function accrue(): Promise<void> {
   await db.query(`select ceedo_collections.run_accrual($1::date)`, [BUSINESS_DATE]);
+}
+
+/** How many rows the given client UUID actually has in `collections`. */
+async function landed(collectionId: string): Promise<number> {
+  const { rows } = await db.query(
+    `select count(*)::int as n from ceedo_collections.collections where id = $1`,
+    [collectionId],
+  );
+  return rows[0].n as number;
 }
 
 async function exceptionCount(collectionUuid: string): Promise<number> {
@@ -179,6 +189,44 @@ describe("sync_push — collections", () => {
     );
   });
 
+  it("leaves a RESOLVED exception alone when the device re-pushes it", async () => {
+    // §6.4 keeps a rejected entry on the device until it is dealt with, so a device goes
+    // on re-pushing it after a supervisor has already resolved it. Before migration 0039
+    // the ON CONFLICT clause had no status predicate, so that re-push overwrote
+    // `reason_code` on the resolved row and bumped `attempts` — destroying the record of
+    // why the exception was filed, on a row whose whole value is that history.
+    const fx = await createSyncFixture(db);
+    await accrue();
+    const entry = collectionEntry(fx, { or_no: 999999 });
+    await push(fx, [entry]);
+
+    // Resolve it the way resolve_exception_spoiled() does. Written directly rather than
+    // through that function so this test turns on the ON CONFLICT predicate alone and not
+    // on the supervisor-authorization path, which has its own tests.
+    await db.query(
+      `update ceedo_collections.sync_exceptions
+          set status = 'resolved', resolution = 'spoiled',
+              resolution_reason = 'form voided', resolved_by = $2, resolved_at = now(),
+              reason_code = 'filed_before_resolution'
+        where collection_uuid = $1`,
+      [entry.payload.id, fx.collectorId],
+    );
+
+    await push(fx, [entry]);
+
+    const { rows } = await db.query(
+      `select attempts, status, reason_code, resolution
+         from ceedo_collections.sync_exceptions where collection_uuid = $1`,
+      [entry.payload.id],
+    );
+    expect(rows[0].attempts).toBe(1);
+    expect(rows[0].status).toBe("resolved");
+    expect(rows[0].resolution).toBe("spoiled");
+    // A sentinel, so the assertion fails if the re-push writes `excluded.reason_code` over
+    // the reason this exception was actually filed for.
+    expect(rows[0].reason_code).toBe("filed_before_resolution");
+  });
+
   it("files an exception for or_already_used, never collapsing it into duplicate", async () => {
     // §6.3's case that no device can detect on its own: two DIFFERENT devices recorded the
     // same OR number. Phase 2's handover: "Collapsing it into duplicate would make the
@@ -255,6 +303,62 @@ describe("sync_push — batch isolation", () => {
       );
       expect(rows[0].n).toBe(1);
     }
+  });
+
+  // The three tests below are the SECOND half of invariant 22, and until migration 0039
+  // nothing covered them: 0035's subtransaction closed before the exception-filing block,
+  // so filing ran in the OUTER transaction and any error it raised aborted the whole
+  // sync_push() call. Reproduced over real HTTP as ceedo_app: 500 {"error":"sync_failed"},
+  // with the good receipt never reaching `collections` — both entries lost, nothing filed,
+  // and the device re-pushing the identical batch forever.
+  //
+  // Each of the three names one input a device can actually send that makes the filing
+  // INSERT itself raise. Isolating dispatch and leaving filing exposed is not isolation.
+
+  it("survives a rejection whose exception cannot be filed for want of a real collector", async () => {
+    const fx = await createSyncFixture(db);
+    await accrue();
+    const good = collectionEntry(fx);
+    // Rejected as collector_not_on_device, and then sync_exceptions_collector_id_fkey
+    // refuses the filing INSERT, because no app_users row carries this id.
+    const orphan = collectionEntry(fx, { collector_id: randomUUID() });
+
+    const results = await push(fx, [good, orphan]);
+
+    expect(results.map((r) => r.status)).toEqual(["accepted", "rejected"]);
+    expect(await landed(good.payload.id as string)).toBe(1);
+    // The entry is still REPORTED, with the filing failure named rather than swallowed. A
+    // supervisor who cannot find the row in the queue still has the device's answer.
+    expect(results[1]!.detail).toMatch(/could not be filed/);
+  });
+
+  it("survives a rejection carrying no collector_id at all", async () => {
+    const fx = await createSyncFixture(db);
+    await accrue();
+    const good = collectionEntry(fx);
+    // sync_exceptions.collector_id is NOT NULL, so this one fails the filing differently.
+    const headless = collectionEntry(fx, { collector_id: null });
+
+    const results = await push(fx, [good, headless]);
+
+    expect(results.map((r) => r.status)).toEqual(["accepted", "rejected"]);
+    expect(await landed(good.payload.id as string)).toBe(1);
+    expect(results[1]!.detail).toMatch(/could not be filed/);
+  });
+
+  it("survives a rejection whose own id is not a valid uuid", async () => {
+    const fx = await createSyncFixture(db);
+    await accrue();
+    const good = collectionEntry(fx);
+    // Here it is the filing block's own `nullif(payload ->> 'id', '')::uuid` that raises,
+    // not a constraint.
+    const malformed = collectionEntry(fx, { id: "not-a-uuid" });
+
+    const results = await push(fx, [good, malformed]);
+
+    expect(results.map((r) => r.status)).toEqual(["accepted", "rejected"]);
+    expect(await landed(good.payload.id as string)).toBe(1);
+    expect(results[1]!.detail).toMatch(/could not be filed/);
   });
 
   it("returns one result per entry, in input order", async () => {
