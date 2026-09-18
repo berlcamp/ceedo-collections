@@ -701,6 +701,15 @@ stall contributes ~1,460 charge rows and now its collections too. Phase 3a shoul
 realistic first sync and record the figure; if it is large, the answer is pagination on the
 cursor, which the design already permits because the cursor is resumable.
 
+**The sequence cursor can skip a row under a concurrent long-running writer.** `sync_pull`
+reads `last_value` from `row_version_seq` as the response's high-water mark. A transaction
+that has already reserved a lower `nextval()` but commits *after* that read produces a row the
+device will never see again, because its next cursor is already past it. This is inherent to a
+bare-sequence cursor under read-committed isolation — it is not introduced by any migration
+here, and §5.7's reasoning for preferring a sequence over a timestamp still holds. Negligible
+at this write volume, but it is the reason a device's full re-sync path (D7's epoch) must stay
+working: it is the only thing that recovers a skipped row.
+
 **Subtransaction count per push** (D8) — bounded by round size, fine at this scale,
 chunking is the fallback.
 
