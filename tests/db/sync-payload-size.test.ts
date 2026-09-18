@@ -48,6 +48,13 @@ describe("first-sync payload", () => {
       [fx.leaseId],
     );
     const chargeCount = chargeRows[0].n as number;
+    // Logged, not just asserted loosely: a future accrual-window regression (e.g. a change
+    // to Ruling 11's lease_periods bound) could quietly shrink this fixture to a handful of
+    // rows and the byte measurement would still "pass" while no longer measuring anything
+    // close to the ~1,460-charge delinquent stall §9 describes. This guard is intentionally
+    // loose -- it is not the figure under test -- but it stops that regression from being
+    // silent.
+    expect(chargeCount).toBeGreaterThan(1000);
 
     const { rows } = await db.query(
       `select octet_length(ceedo_collections.sync_pull($1::uuid, 0)::text) as bytes`,
