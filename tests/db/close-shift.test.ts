@@ -37,7 +37,7 @@ async function openShift(fx: Fixture): Promise<string> {
 async function close(
   shiftId: string,
   fx: Fixture,
-  opts: { declared: string; count: number; total: string },
+  opts: { declared: string | null; count: number; total: string },
 ): Promise<Record<string, unknown>> {
   const { rows } = await db.query(
     `select ceedo_collections.close_shift($1::uuid, $2::uuid, $3::numeric, $4::int, $5::numeric)
@@ -237,6 +237,29 @@ describe("close_shift — guards", () => {
       [shiftId],
     );
     expect(Number(rows[0].declared_total)).toBe(0);
+  });
+
+  it("refuses a closeout that declares no cash at all", async () => {
+    // §6.5 step 5, "variance is recorded, not hidden". Before migration 0040
+    // `p_declared_total` was never NULL-checked, so an omitted declaration closed the shift
+    // with `declared_total = null` and — since `null - total` is null — `variance = null`.
+    // The already_closed guard then made that permanent: a shortfall erased by an ABSENT
+    // field rather than a wrong one, which is the one way to defeat §6.5 without lying.
+    const fx = await createSyncFixture(db);
+    const shiftId = await openShift(fx);
+
+    await expect(
+      close(shiftId, fx, { declared: null, count: 0, total: "0.00" }),
+    ).rejects.toThrow(/declare the physical cash/i);
+
+    const { rows } = await db.query(
+      `select status, declared_total, variance from ceedo_collections.shifts where id = $1`,
+      [shiftId],
+    );
+    // Still open, so the real closeout can still be made.
+    expect(rows[0].status).toBe("open");
+    expect(rows[0].declared_total).toBeNull();
+    expect(rows[0].variance).toBeNull();
   });
 
   it("raises on a shift that does not exist", async () => {
