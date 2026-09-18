@@ -29,8 +29,13 @@ jobs:
       - uses: supabase/setup-cli@v1
         with: { version: 2.116.0 }
       - run: supabase start
-      # Exports API_URL, ANON_KEY and SERVICE_ROLE_KEY, which the test helpers read.
-      - run: supabase status -o env >> "$GITHUB_ENV"
+      # Exports API_URL, ANON_KEY, SERVICE_ROLE_KEY and DB_URL, which the test helpers read.
+      # The sed is load-bearing: `supabase status -o env` emits KEY="value" with literal
+      # double quotes, and $GITHUB_ENV takes the right-hand side verbatim -- so API_URL
+      # arrived as "http://127.0.0.1:54321" WITH quotes and supabase-js rejected every
+      # client with 'Invalid supabaseUrl', while pg failed resolving a hostname out of the
+      # quoted DB_URL. Strips the opening =" and the trailing ".
+      - run: supabase status -o env | sed 's/="/=/; s/"$//' >> "$GITHUB_ENV"
       - run: supabase db reset
       - run: ./scripts/check-types-current.sh
       - run: pnpm test
