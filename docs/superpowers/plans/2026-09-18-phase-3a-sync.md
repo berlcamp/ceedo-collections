@@ -651,7 +651,13 @@ Create `tests/db/collector-pin.test.ts`:
 ```typescript
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
-import { POSTGRES_URL, createSyncFixture, serviceClient } from "../helpers/supabase";
+import {
+  POSTGRES_URL,
+  createAppUser,
+  createSyncFixture,
+  serviceClient,
+  uniqueEmail,
+} from "../helpers/supabase";
 
 let db: Client;
 let collectorId: string;
@@ -719,12 +725,17 @@ describe("set_collector_pin", () => {
   });
 
   it("refuses a target who is not a collector", async () => {
-    const { rows } = await db.query(
-      `select id from ceedo_collections.app_users where role = 'admin' limit 1`,
-    );
+    // Creates its own non-collector rather than querying for a seeded admin. A fixture that
+    // depends on seed contents fails as a TypeError on `rows[0].id` instead of as the
+    // assertion it was written to make.
+    const supervisorId = await createAppUser({
+      email: uniqueEmail("pin-target-supervisor@example.com"),
+      role: "supervisor",
+    });
+
     await expect(
       db.query(`select ceedo_collections.set_collector_pin($1::uuid, '123456')`, [
-        rows[0].id,
+        supervisorId,
       ]),
     ).rejects.toThrow(/collector/i);
   });
@@ -2160,7 +2171,9 @@ create or replace function ceedo_collections.sync_pull(
 returns jsonb
 language plpgsql
 security definer
-stable
+-- NOT `stable`. A stable function may not create or write the temp table this one uses for
+-- the lease scope, and `stable` buys nothing here: sync_pull is called once per request and
+-- is never inlined into a surrounding query.
 set search_path = ceedo_collections, pg_temp
 as $$
 declare
@@ -2342,9 +2355,6 @@ grant execute on function ceedo_collections.sync_pull(uuid, bigint) to ceedo_app
 
 Run: `supabase db reset && pnpm --filter @ceedo/tests exec vitest run db/sync-pull.test.ts`
 Expected: PASS.
-
-If `stable` conflicts with the temporary table, drop `stable` and keep `volatile` (the
-default) — correctness first. Note the reason in a comment if you change it.
 
 - [ ] **Step 5: Update the `ceedo_app` privilege assertion**
 
@@ -4210,7 +4220,8 @@ Create `packages/shared/src/sync-contract.test.ts`:
 ```typescript
 import { describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { PushEntry, PushResult, CloseoutRequest } from "./sync-contract";
+import { REJECT_REASONS } from "./reason-codes";
+import { PushEntry, PushResult, CloseoutRequest, PUSH_REASONS } from "./sync-contract";
 
 const collection = {
   type: "collection" as const,
@@ -4316,6 +4327,30 @@ describe("PushResult", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("accepts the three reasons sync_push raises that post_collection never does", () => {
+    // These are sync_push's own vocabulary, not the engine's, so they live in PUSH_REASONS
+    // rather than REJECT_REASONS. If PushResult were built on REJECT_REASONS it would
+    // reject three responses the server genuinely sends.
+    for (const reason of [
+      "collector_not_on_device",
+      "unknown_entry_type",
+      "server_error",
+    ]) {
+      expect(
+        PushResult.safeParse({ index: 0, type: "collection", status: "rejected", reason })
+          .success,
+      ).toBe(true);
+    }
+  });
+
+  it("keeps REJECT_REASONS free of sync_push's own vocabulary", () => {
+    // reason-codes.ts documents REJECT_REASONS as "the vocabulary post_collection() answers
+    // with". This is what keeps that comment honest.
+    expect(REJECT_REASONS).not.toContain("collector_not_on_device");
+    expect(REJECT_REASONS).not.toContain("unknown_entry_type");
+    expect(REJECT_REASONS).not.toContain("server_error");
+  });
 });
 
 describe("CloseoutRequest", () => {
@@ -4394,7 +4429,28 @@ Create `packages/shared/src/sync-contract.ts`:
 
 ```typescript
 import { z } from "zod";
-import { REJECT_REASONS } from "./reason-codes";
+import { REJECT_REASONS, type RejectReason } from "./reason-codes";
+
+/**
+ * The reasons that can cross the WIRE, which is a superset of post_collection()'s.
+ *
+ * REJECT_REASONS is documented as "the vocabulary post_collection() answers with" and that
+ * comment must stay true, so the three reasons sync_push() raises on its own -- before or
+ * instead of calling the engine -- are added here rather than there. Two functions, two
+ * vocabularies; collapsing them would make reason-codes.ts lie about itself.
+ */
+export const PUSH_REASONS = [
+  ...REJECT_REASONS,
+  // sync_push rejects the entry before post_collection is reached.
+  "collector_not_on_device",
+  // The device sent a type this server does not know -- including `cancellation`, which
+  // spec D4 removed. Never silently skipped: a skipped entry is a lost receipt.
+  "unknown_entry_type",
+  // An entry's subtransaction raised. Its neighbours are unaffected (spec D8).
+  "server_error",
+] as const;
+
+export type PushReason = (typeof PUSH_REASONS)[number];
 
 /**
  * The wire contract, validated identically on both ends.
@@ -4490,7 +4546,7 @@ export const PushResult = z
     index: z.number().int().nonnegative(),
     type: z.string(),
     status: z.enum(["accepted", "duplicate", "rejected", "mismatch", "already_closed"]),
-    reason: z.enum(REJECT_REASONS as unknown as [string, ...string[]]).optional(),
+    reason: z.enum(PUSH_REASONS as unknown as [string, ...string[]]).optional(),
     retryable: z.boolean().optional(),
     detail: z.string().optional(),
     collection_id: uuid.optional(),
@@ -4526,6 +4582,7 @@ export const CloseoutRequest = z.object({
 });
 
 export type PushEntry = z.infer<typeof PushEntry>;
+export type { RejectReason };
 export type PushResult = z.infer<typeof PushResult>;
 export type PushRequest = z.infer<typeof PushRequest>;
 export type PullRequest = z.infer<typeof PullRequest>;
@@ -4863,16 +4920,6 @@ export async function callFunction(
   const text = await res.text();
   return { status: res.status, body: text ? JSON.parse(text) : null };
 }
-
-/** Skips the HTTP suite when no functions server is reachable. */
-export async function functionsAvailable(): Promise<boolean> {
-  try {
-    const res = await fetch(`${BASE}/sync-pull`, { method: "GET" });
-    return res.status !== 0;
-  } catch {
-    return false;
-  }
-}
 ```
 
 - [ ] **Step 2: Write the failing test**
@@ -5128,6 +5175,58 @@ Expected: green, including `tests/http`.
 git add tests/helpers/functions.ts tests/http/functions.test.ts \
         tests/vitest.config.ts .github/workflows/ci.yml
 git commit -m "test(sync): HTTP tests over the real Edge Functions, wired into CI"
+```
+
+---
+## Task 13.5: Regenerate `db.types.ts` before the web tasks
+
+Ruling R2 from the pre-flight scan. Not in the original plan.
+
+**Why this exists:** Tasks 14 and 15 read `shifts` and `sync_exceptions` through the typed
+`ledgerClient()`, and both gate on `pnpm typecheck --force && pnpm build`. Neither can pass
+while the generated `Database` type predates migrations 0026–0035. The original plan
+regenerated types in Task 17, which is two tasks too late.
+
+**Files:**
+- Modify: `packages/shared/src/db.types.ts` (generated — never edited by hand)
+
+- [ ] **Step 1: Regenerate**
+
+```bash
+supabase db reset
+pnpm db:types
+```
+
+Use the Supabase CLI version CI pins — `2.116.0`, from `.github/workflows/ci.yml`. Phase 2's
+CI notes record what happens otherwise: a newer generator emitted `(X extends {` where the
+committed file had `X extends {`, failing a commit that touched nothing.
+
+Verify with `supabase --version` before running. If the local CLI has drifted, pin it rather
+than regenerating with the wrong one.
+
+- [ ] **Step 2: Confirm the new objects are present**
+
+```bash
+grep -c 'device_credentials\|sync_exceptions\|shifts' packages/shared/src/db.types.ts
+grep -c 'sync_pull\|sync_push\|close_shift\|authenticate_device' packages/shared/src/db.types.ts
+```
+
+Expected: non-zero for both. A zero means the generator ran against a database that had not
+been reset, and the web tasks will fail in a way that points at the wrong thing.
+
+- [ ] **Step 3: Verify the tree still typechecks**
+
+Run: `pnpm typecheck --force && ./scripts/check-types-current.sh`
+Expected: both clean.
+
+`check-types-current.sh` regenerates and diffs, so it is the real check that Step 1 used the
+right CLI.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add packages/shared/src/db.types.ts
+git commit -m "chore: regenerate database types for the Phase 3a sync schema"
 ```
 
 ---
@@ -5445,6 +5544,7 @@ Spec §6.2, §6.3, §6.4.
 - Create: `apps/web/lib/devices/credential-actions.ts`
 - Create: `apps/web/app/(admin)/ledger/shifts/page.tsx`
 - Modify: the existing devices and staff admin screens
+- Modify: `apps/web/app/(admin)/layout.tsx` (shifts nav entry)
 - Modify: `packages/shared/src/roles.ts` (add `isAdmin`)
 
 **Interfaces:**
@@ -5604,7 +5704,12 @@ export async function getShifts(): Promise<ShiftRow[]> {
 }
 ```
 
-- [ ] **Step 4: Write the shifts page**
+- [ ] **Step 4: Write the shifts page and its nav entry**
+
+Add `/ledger/shifts` to `apps/web/app/(admin)/layout.tsx`, gated on
+`canResolveExceptions(role) || canViewReports(role)` — spec §6.2 scopes the audience as
+supervisor, admin and accounting, which is what those two existing helpers express between
+them. A page with no nav entry is a page nobody opens.
 
 Create `apps/web/app/(admin)/ledger/shifts/page.tsx`. Read-only. Sort so `stale_open` and
 `unsynced` rows appear first regardless of date — a supervisor opening this screen should
@@ -5915,10 +6020,14 @@ git commit -m "test(sync): the shared-tablet race, and a first-sync size alarm"
 - Modify: `packages/shared/src/db.types.ts` (generated)
 - Modify: nine files carrying the incorrect basis-points justification
 
-- [ ] **Step 1: Regenerate the database types**
+- [ ] **Step 1: Re-verify the database types**
+
+Task 13.5 already regenerated `db.types.ts`; this is the check that nothing since has drifted
+it (Tasks 14–16 add no migrations, so the expected result is a no-op).
 
 Run: `supabase db reset && pnpm db:types && ./scripts/check-types-current.sh`
-Expected: `db.types.ts` grows by the Phase 3a tables, functions and views; the check passes.
+Expected: **no diff** on `db.types.ts`, and the check passes. A diff here means a migration
+landed after Task 13.5 without the types being regenerated — commit the regenerated file.
 
 Use the same Supabase CLI version CI pins (`2.116.0` in `.github/workflows/ci.yml`).
 Phase 2's CI notes record exactly what happens otherwise: a newer generator changed
