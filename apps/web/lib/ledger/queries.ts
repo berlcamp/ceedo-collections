@@ -13,222 +13,20 @@ function centavos(value: string | number | null): Centavos {
 }
 
 /**
- * Task 14 created `aging_of_receivables`, `delinquency_list`, `lease_balances` and
- * `subsidiary_ledger` as `security_invoker` views. `packages/shared/src/db.types.ts` is
- * regenerated from the database in Task 19 -- until then its `Views` map is empty, so
- * `supabase.from("aging_of_receivables")` does not typecheck against the real `Database`
- * type. These row shapes are declared locally, mirror
- * `supabase/migrations/20260918000024_reporting_views.sql` column-for-column, and should
- * be deleted in favour of the generated ones once Task 19 lands.
+ * Task 19 regenerated `packages/shared/src/db.types.ts` from every Phase 2 migration, so
+ * `charges`, `collections`, `collection_cancellations`, `settings`, `accrual_runs` and the
+ * four reporting views (plus `charge_balances` and the ledger RPCs) are now all part of the
+ * generated `Database` type. The `LedgerViews`/`LedgerTables`/`LedgerFunctions` bridge and
+ * its `as unknown as` cast that Task 17/18 needed are gone -- `getServerClient()` is used
+ * directly. One thing the generator does NOT know: a view's own SQL can guarantee a column
+ * is never null (e.g. `lease_id` is always present because every row comes from a `charges`
+ * join keyed on it), but the generator has no way to see that guarantee and marks every
+ * view column nullable. The functions below assert non-null on exactly the columns each
+ * view's definition (`supabase/migrations/20260918000024_reporting_views.sql`) guarantees,
+ * with a comment at each one.
  */
-type LedgerViews = {
-  aging_of_receivables: {
-    Row: {
-      lease_id: string;
-      stall_id: string;
-      stall_no: string;
-      tenant_name: string;
-      bucket_1_30: string | null;
-      bucket_31_60: string | null;
-      bucket_61_90: string | null;
-      bucket_over_90: string | null;
-      not_yet_due: string | null;
-      total: string | null;
-    };
-    Relationships: [];
-  };
-  delinquency_list: {
-    Row: {
-      lease_id: string;
-      stall_no: string;
-      tenant_name: string;
-      address: string | null;
-      contact_no: string | null;
-      outstanding: string;
-      oldest_due_date: string | null;
-      days_overdue: number;
-      unpaid_charges: number;
-    };
-    Relationships: [];
-  };
-  lease_balances: {
-    Row: {
-      lease_id: string;
-      outstanding: string;
-      oldest_due_date: string | null;
-      days_overdue: number | null;
-      unpaid_charges: number;
-    };
-    Relationships: [];
-  };
-  subsidiary_ledger: {
-    Row: {
-      lease_id: string;
-      entry_date: string;
-      entry_type: string;
-      detail: string;
-      period_start: string | null;
-      period_end: string | null;
-      debit: string;
-      credit: string;
-      or_no: number | null;
-      source_id: string;
-      cancelled: boolean;
-      running_balance: string;
-    };
-    Relationships: [];
-  };
-  /**
-   * Mirrors migration 20260918000019's select list column-for-column, same rationale as
-   * the views above. Task 18 needs it for two things `subsidiary_ledger` does not carry:
-   * a charge's own `outstanding` figure (to default the condone amount) and `charge_type`
-   * (to find leases that already have an `opening_balance` charge).
-   */
-  charge_balances: {
-    Row: {
-      id: string;
-      lease_id: string;
-      fee_type_id: string;
-      charge_type: string;
-      parent_charge_id: string | null;
-      period_start: string;
-      period_end: string;
-      due_date: string;
-      amount: string;
-      surcharge_bps: number;
-      created_at: string;
-      allocated: string;
-      condoned: string;
-      outstanding: string;
-      is_settled: boolean;
-      days_overdue: number;
-    };
-    Relationships: [];
-  };
-};
-
-/**
- * `db.types.ts` has not been regenerated since before ANY of the Phase 2 ledger migrations
- * (0011 onward) -- it is not only the four reporting views that are missing, as the brief
- * anticipated, but the whole ledger schema: `charges`, `collections`,
- * `collection_cancellations`, `charge_balances`, and the rest. This screen needs exactly
- * one of those tables directly (the views cover the rest), so only it is added here.
- * Task 19 should regenerate from every Phase 2 migration, not just add the four views.
- */
-type CollectionCancellationInsert = {
-  id?: string;
-  collection_id: string;
-  reason: string;
-  cancelled_by: string;
-  cancelled_at?: string;
-  row_version?: number;
-};
-
-/**
- * `collections` itself, needed by Task 18's collection browser. Web never inserts or
- * updates it (no role holds either privilege -- `apply_ledger_policies` grants SELECT
- * only), so `Insert`/`Update` are declared but not exercised from this app; they exist
- * only because the `Tables` map's shape requires them.
- */
-type CollectionRowShape = {
-  id: string;
-  or_no: number;
-  booklet_id: string;
-  collector_id: string;
-  device_id: string;
-  collected_at: string;
-  business_date: string;
-  fee_type_id: string;
-  lease_id: string | null;
-  payer_ref: string | null;
-  gross_amount: string;
-  notes: string | null;
-  synced_at: string | null;
-  posted_at: string;
-  posted_by: string | null;
-  row_version: number;
-};
-
-type LedgerTables = {
-  collection_cancellations: {
-    Row: {
-      id: string;
-      collection_id: string;
-      reason: string;
-      cancelled_by: string;
-      cancelled_at: string;
-      row_version: number;
-    };
-    Insert: CollectionCancellationInsert;
-    Update: Partial<CollectionCancellationInsert>;
-    Relationships: [];
-  };
-  collections: {
-    Row: CollectionRowShape;
-    Insert: CollectionRowShape;
-    Update: Partial<CollectionRowShape>;
-    Relationships: [];
-  };
-};
-
-/**
- * The three RPCs Task 18 calls, plus `cutover_date()` (read by both the opening-balances
- * screen and its server action). None of these existed when `db.types.ts` was generated
- * either -- same gap as `LedgerViews`/`LedgerTables` above, same fix: a narrow, documented
- * bridge rather than an untyped `.rpc()` call. Argument names and `Returns` mirror the
- * `create function` signatures in migrations 20260918000013, 20260918000020,
- * 20260918000023 and 20260918000012 exactly.
- */
-type LedgerFunctions = {
-  cancel_collection: {
-    Args: { p_collection_id: string; p_reason: string };
-    Returns: string;
-  };
-  condone_charge: {
-    Args: {
-      p_charge_id: string;
-      p_amount: number;
-      p_authority_ref: string;
-      p_reason: string;
-    };
-    Returns: string;
-  };
-  record_opening_balance: {
-    Args: {
-      p_lease_id: string;
-      p_amount: number;
-      p_oldest_unpaid_date: string;
-      p_authority_ref: string;
-    };
-    Returns: string;
-  };
-  cutover_date: {
-    Args: never;
-    Returns: string;
-  };
-};
-
-type LedgerSchema = Omit<Database["ceedo_collections"], "Views" | "Tables" | "Functions"> & {
-  Views: LedgerViews;
-  Tables: Database["ceedo_collections"]["Tables"] & LedgerTables;
-  Functions: Database["ceedo_collections"]["Functions"] & LedgerFunctions;
-};
-type LedgerDatabase = Omit<Database, "ceedo_collections"> & { ceedo_collections: LedgerSchema };
-
-/**
- * `getServerClient()` is correctly typed against the generated `Database`; the cast below
- * only widens its `Views`, `Tables` and `Functions` maps to the shapes declared above. It
- * is a type-level bridge over a generator gap (see `LedgerViews`/`LedgerTables`/
- * `LedgerFunctions`), not a guess at runtime shape -- every column and argument it asserts
- * is one the corresponding migration actually defines. Everything else in `Database` is
- * untouched and still fully generated-checked.
- *
- * Exported so `lib/ledger/actions.ts` reuses this one bridge for its RPC calls rather than
- * adding a fourth `as unknown as` cast of its own.
- */
-export async function ledgerClient(): Promise<SupabaseClient<LedgerDatabase, "ceedo_collections">> {
-  const supabase = await getServerClient();
-  return supabase as unknown as SupabaseClient<LedgerDatabase, "ceedo_collections">;
+export async function ledgerClient(): Promise<SupabaseClient<Database, "ceedo_collections">> {
+  return getServerClient();
 }
 
 export interface AgingRow {
@@ -251,10 +49,13 @@ export async function getAging(): Promise<AgingRow[]> {
     .order("bucket_over_90", { ascending: false });
   if (error) throw error;
 
+  // lease_id/stall_id/stall_no/tenant_name come from inner joins and a GROUP BY on
+  // lease_id (see the view's own definition) -- never null in practice, though the
+  // generator marks every view column nullable because it cannot see that guarantee.
   return (data ?? []).map((r) => ({
-    leaseId: r.lease_id,
-    stallNo: r.stall_no,
-    tenantName: r.tenant_name,
+    leaseId: r.lease_id!,
+    stallNo: r.stall_no!,
+    tenantName: r.tenant_name!,
     bucket1to30: centavos(r.bucket_1_30),
     bucket31to60: centavos(r.bucket_31_60),
     bucket61to90: centavos(r.bucket_61_90),
@@ -289,16 +90,20 @@ export async function getDelinquency(): Promise<DelinquencyRow[]> {
     .order("outstanding", { ascending: false });
   if (error) throw error;
 
+  // Same reasoning as getAging() above: lease_id/stall_no/tenant_name/outstanding/
+  // days_overdue/unpaid_charges are all guaranteed non-null by the view's joins and
+  // aggregates (a row only exists here for a lease with unsettled charges); address and
+  // contact_no are genuinely nullable tenant fields.
   return (data ?? []).map((r) => ({
-    leaseId: r.lease_id,
-    stallNo: r.stall_no,
-    tenantName: r.tenant_name,
+    leaseId: r.lease_id!,
+    stallNo: r.stall_no!,
+    tenantName: r.tenant_name!,
     address: r.address,
     contactNo: r.contact_no,
     outstanding: centavos(r.outstanding),
     oldestDueDate: r.oldest_due_date,
-    daysOverdue: r.days_overdue,
-    unpaidCharges: r.unpaid_charges,
+    daysOverdue: r.days_overdue!,
+    unpaidCharges: r.unpaid_charges!,
   }));
 }
 
@@ -392,9 +197,11 @@ export async function getSubsidiaryLedger(leaseId: string): Promise<SubsidiaryLe
   // A second, targeted query for just the cancelled entries' reasons is what lets the page
   // honour "struck through with the reason" without extending the view itself, which is
   // out of scope for a read-only task.
+  // source_id is `b.id`/`c.id` in the view's own SELECT (never a NULL-producing
+  // expression) -- guaranteed non-null the same way lease_id etc. are above.
   const cancelledIds = rows
     .filter((r) => r.entry_type === "collection" && r.cancelled)
-    .map((r) => r.source_id);
+    .map((r) => r.source_id!);
 
   const reasonById = new Map<string, string>();
   if (cancelledIds.length > 0) {
@@ -418,21 +225,26 @@ export async function getSubsidiaryLedger(leaseId: string): Promise<SubsidiaryLe
   if (balancesError) throw balancesError;
   const balanceById = new Map((balances ?? []).map((b) => [b.id, b]));
 
+  // lease_id/entry_date/entry_type/detail/source_id/cancelled are all direct columns or
+  // non-NULL-producing expressions in the view's own CTE (see the migration) -- never null
+  // in practice, unlike period_start/period_end/or_no, which the interface already types
+  // as nullable because a 'collection' row genuinely has none.
   return rows.map((r) => {
-    const balance = r.entry_type === "charge" ? balanceById.get(r.source_id) : undefined;
+    const sourceId = r.source_id!;
+    const balance = r.entry_type === "charge" ? balanceById.get(sourceId) : undefined;
     return {
-      leaseId: r.lease_id,
-      entryDate: r.entry_date,
-      entryType: r.entry_type,
-      detail: r.detail,
+      leaseId: r.lease_id!,
+      entryDate: r.entry_date!,
+      entryType: r.entry_type!,
+      detail: r.detail!,
       periodStart: r.period_start,
       periodEnd: r.period_end,
       debit: centavos(r.debit),
       credit: centavos(r.credit),
       orNo: r.or_no,
-      sourceId: r.source_id,
-      cancelled: r.cancelled,
-      cancellationReason: r.cancelled ? (reasonById.get(r.source_id) ?? null) : null,
+      sourceId,
+      cancelled: r.cancelled!,
+      cancellationReason: r.cancelled ? (reasonById.get(sourceId) ?? null) : null,
       runningBalance: centavos(r.running_balance),
       outstanding: balance ? centavos(balance.outstanding) : null,
       isSettled: balance ? balance.is_settled : null,
@@ -595,7 +407,10 @@ export async function getOpeningBalanceLeases(): Promise<OpeningBalanceLeases> {
     };
     const opening = openingByLeaseId.get(lease.id);
     if (opening) {
-      recorded.push({ ...base, amount: centavos(opening.amount), oldestUnpaidDate: opening.due_date });
+      // due_date is a direct, NOT NULL column of the underlying charges table (see
+      // db.types.ts's Tables["charges"]) -- charge_balances only carries it as nullable
+      // because the generator treats every view column that way.
+      recorded.push({ ...base, amount: centavos(opening.amount), oldestUnpaidDate: opening.due_date! });
     } else {
       pending.push(base);
     }
