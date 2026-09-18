@@ -26,6 +26,18 @@
 -- does not fire this. It is listed so that a statement which explicitly targets
 -- `row_version` is not a silent way to touch the row unaudited.
 --
+-- THE LIST IS EVERY COLUMN BUT `last_seen_at`, and it has to be read that way rather than
+-- as "the columns from migration 0007". `assignment_epoch` was added later, by migration
+-- 0031, and a first draft of this list -- enumerated from 0007's `create table` -- left it
+-- out, which would have made it a second unaudited column by accident. Nothing is lost
+-- today, because its only writer is `bump_assignment_epoch()` and `device_assignments`
+-- carries its own unconditional audit trigger. But `update devices set assignment_epoch =
+-- assignment_epoch + 1` by hand, to force a fleet re-sync, is exactly the statement the
+-- `row_version` argument above says must not pass unaudited.
+--
+-- Anything added to `devices` from here belongs in this list unless there is a written
+-- reason it does not.
+--
 -- NOT FIXED HERE, and stated so it is not mistaken for fixed: the heartbeat still bumps
 -- `devices.row_version` from `row_version_seq` on every authentication, because that
 -- BEFORE trigger is installed schema-wide by migration 0003's master-data installer and
@@ -39,6 +51,7 @@ drop trigger devices_audit on ceedo_collections.devices;
 
 create trigger devices_audit
   after insert or delete
-     or update of id, label, credential_id, registered_at, active, created_at, row_version
+     or update of id, label, credential_id, registered_at, active, created_at,
+               assignment_epoch, row_version
   on ceedo_collections.devices
   for each row execute function ceedo_collections.write_audit();

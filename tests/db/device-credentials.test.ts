@@ -173,6 +173,16 @@ describe("device credentials", () => {
       deviceId,
     ]);
     expect(await auditRowCount(deviceId)).toBe(before + 1);
+
+    // `assignment_epoch` (migration 0031) postdates the `devices` create table, so it is the
+    // column an enumerated list forgets. Bumping it by hand is how a fleet is forced to
+    // re-sync, which is exactly the sort of statement this trail exists to record.
+    await db.query(
+      `update ceedo_collections.devices
+          set assignment_epoch = assignment_epoch + 1 where id = $1`,
+      [deviceId],
+    );
+    expect(await auditRowCount(deviceId)).toBe(before + 2);
   });
 
   it("does not record last_seen_at on a failed authentication", async () => {

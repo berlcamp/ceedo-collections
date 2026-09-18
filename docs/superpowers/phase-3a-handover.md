@@ -1,6 +1,6 @@
 # CEEDO Collections — Phase 3a Handover
 
-**Branch:** `phase-3a-sync` · 681 tests / 58 files · 16 migrations (`0026`–`0041`)
+**Branch:** `phase-3a-sync` · 682 tests / 58 files · 17 migrations (`0026`–`0042`)
 **Spec:** `docs/superpowers/specs/2026-09-18-phase-3a-sync-design.md`
 **Plan:** `docs/superpowers/plans/2026-09-18-phase-3a-sync.md`
 **Predecessor:** `docs/superpowers/phase-2-handover.md`
@@ -10,7 +10,7 @@ per-task reports beside it — the reasoning behind everything below.
 ## What exists
 
 **New tables** (three, not the four this phase's own brief claimed at the outset — verified
-by grepping `create table` across migrations `0026`–`0041`; `spoiled_forms`, the fourth
+by grepping `create table` across migrations `0026`–`0042`; `spoiled_forms`, the fourth
 candidate, was created in Phase 1's migration `0006` and is only referenced here):
 `device_credentials`, `shifts`, `sync_exceptions`. Plus one **new column on an existing
 table**: `devices.assignment_epoch` (migration `0031`), bumped by trigger on every
@@ -106,7 +106,7 @@ test, PASS, 602ms** against a freshly reset database with `sync-pull` confirmed 
 ## Two production-blocking bugs a large, fully green test suite could not see
 
 Both were found with the suite fully green — 641 tests for the first, 652 for the second,
-not the 681 this branch now carries — which is beside the point and stated only so the
+not the 682 this branch now carries — which is beside the point and stated only so the
 figures below are honest about what was true at discovery. The actual cause is structural, not a matter of
 scale: `tests/helpers/supabase.ts` connects every SQL test as `postgres` (`POSTGRES_URL`).
 Every real caller — every Edge Function, every device — arrives as `ceedo_app`, reached by
@@ -227,6 +227,36 @@ failure appended to `detail`. Folded into the same migration: the `ON CONFLICT` 
 `where ... status <> 'resolved'`, so a device re-pushing a receipt a supervisor already
 resolved as `spoiled` no longer overwrites that row's `reason_code` and bumps its `attempts`.
 
+### One entry's exception was filed against the previous entry's collector (migration `0042`)
+
+Found by the re-review, and **older than any of the above** — present since migration `0035`,
+untouched by `0039`. `v_collector` is declared at FUNCTION scope, and PL/pgSQL variables are
+not rolled back by a subtransaction; only database state is. So an entry whose
+`collector_id` cast raised left the PREVIOUS entry's collector in scope, and the filing block
+wrote that entry's exception against them:
+
+```
+entry 0: collector_id = a835224d...    -> rejected, collector_not_on_device
+entry 1: collector_id = "not-a-uuid"   -> rejected, server_error
+
+sync_exceptions:
+  1111...  collector_id a835224d...  collector_not_on_device
+  2222...  collector_id a835224d...  server_error     <-- entry 1, entry 0's collector
+```
+
+`sync_exceptions` is indexed and read **by collector**, and §11.3 counts an unresolved one
+against that collector at closeout — so this attached a failed receipt to a person with
+nothing to do with it, in the queue a supervisor uses to judge whether someone is short. And
+it **succeeded**: the foreign key was satisfied, nothing raised, nothing was logged. A silent
+wrong answer, which is why it was fixed rather than carried.
+
+`v_collector := null;` at the top of the loop body — the stale-variable fault itself rather
+than one symptom of it, so any future reader of `v_collector` after the dispatch block is
+safe by construction. An entry whose `collector_id` cannot be parsed now files no exception
+at all (correctly — there is no collector to file it against) and says so in `detail`. The
+migration header records the check that no other variable in the function needs the same
+treatment, `v_uuid` included.
+
 ### A shift could close with no cash declaration at all (migration `0040`)
 
 `close_shift`'s `p_declared_total` was never NULL-checked, so an omitted field wrote the
@@ -256,7 +286,10 @@ master-data table. Each Edge Function authenticates separately, so a device that
 pushes and closes out wrote three full before/after row images recording no decision at all.
 Thirty tablets over an eight-hour round would bury the accountability table under its own
 heartbeat. The UPDATE side of the trigger is now scoped to the columns that carry a decision;
-INSERT and DELETE are untouched, and deactivating a device (§4.1) still audits. **Not fixed:
+INSERT and DELETE are untouched, and deactivating a device (§4.1) still audits. The list is
+every column **but** `last_seen_at` — read it that way and not as "the columns in migration
+`0007`", which is how a first draft omitted `assignment_epoch` (added later, by `0031`) and
+would have made it a second unaudited column by accident. **Not fixed:
 the heartbeat still bumps `devices.row_version` from `row_version_seq`, because that BEFORE
 trigger is schema-wide and `row_version` is what `sync_pull`'s cursor reads — changing it is
 a cursor-semantics decision for Phase 3b, not an audit-noise fix.**
@@ -287,6 +320,19 @@ item is now closed.
   `0035`). It is retried automatically — the device re-pulls and re-pushes on its own, no
   supervisor involved, per D6. Every other rejection reason is shown to the collector and
   kept in the outbox as unresolved until a supervisor acts on it in `sync_exceptions`.
+- **Build the SQL test harness on a connection made AS `authenticator`, not on
+  `set role ceedo_app`.** This is the single most actionable sentence in this document, and
+  it is easy to get wrong in a way that looks right. Three separate things exempt the
+  current `postgres` test connection from what a real caller faces — object ownership,
+  `rolbypassrls`, and the `pg_safeupdate` guard — and **`set role ceedo_app` reproduces only
+  the first two**. `safeupdate` is preloaded per SESSION for `authenticator` alone
+  (`pg_db_role_setting`), so a `postgres` session never loads it at all: verified directly on
+  this instance, `set role ceedo_app` followed by an unqualified `DELETE` on a table
+  `ceedo_app` holds `DELETE` on returns `DELETE 1`, no guard. A harness built on `set role`
+  would still not have caught bug 1 below, while looking like it closed the class. Connect as
+  `authenticator` and let it assume `ceedo_app` — the sequence PostgREST actually performs.
+  Full reasoning in "Two production-blocking bugs a large, fully green test suite could not
+  see".
 - **The device enforces one open shift locally**, because §6.5 says it must work offline —
   a new collector cannot sign in while the previous shift is open, `closed_unsynced` if
   there is no signal at that moment. The server-side guarantee behind this is

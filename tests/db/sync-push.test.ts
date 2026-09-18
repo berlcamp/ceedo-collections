@@ -361,6 +361,49 @@ describe("sync_push — batch isolation", () => {
     expect(results[1]!.detail).toMatch(/could not be filed/);
   });
 
+  it("never files one entry's exception against the previous entry's collector", async () => {
+    // A misattribution that PREDATES migration 0039 and that its subtransaction did not
+    // touch. `v_collector` is declared at function scope, and PL/pgSQL variables are not
+    // rolled back by a subtransaction -- only database state is. So an entry whose
+    // collector_id cast RAISES left the previous entry's collector in scope, and the filing
+    // block wrote this entry's exception against them.
+    //
+    // sync_exceptions is read by collector and §11.3 counts an unresolved one against that
+    // collector at closeout, so this blamed an innocent person for someone else's failed
+    // receipt -- and it succeeded silently, which is worse than raising. Fixed in 0042.
+    const fx = await createSyncFixture(db);
+    const stranger = await createSyncFixture(db);
+    await accrue();
+
+    // Rejected as collector_not_on_device, and FILED -- stranger is a real app_users row, so
+    // the foreign key is satisfied. This is what leaves a collector id in scope.
+    const first = collectionEntry(fx, { collector_id: stranger.collectorId });
+    // Raises on the cast, so it never assigns a collector of its own.
+    const second = collectionEntry(fx, { collector_id: "not-a-uuid" });
+
+    const results = await push(fx, [first, second]);
+
+    expect(results.map((r) => r.status)).toEqual(["rejected", "rejected"]);
+
+    // The first entry is still attributed correctly. The fix must not cost this.
+    const filed = await db.query(
+      `select collector_id from ceedo_collections.sync_exceptions where collection_uuid = $1`,
+      [first.payload.id],
+    );
+    expect(filed.rows[0]?.collector_id).toBe(stranger.collectorId);
+
+    // The second is filed against NOBODY -- correctly, because there is no collector to file
+    // it against -- and never against the stranger. Asserted as the row set rather than a
+    // `not.toBe`, so a row filed against some third collector fails this too.
+    const misfiled = await db.query(
+      `select collector_id from ceedo_collections.sync_exceptions where collection_uuid = $1`,
+      [second.payload.id],
+    );
+    expect(misfiled.rows).toEqual([]);
+    // ...and the device is told, rather than the failure being swallowed (migration 0039).
+    expect(results[1]!.detail).toMatch(/could not be filed/);
+  });
+
   it("returns one result per entry, in input order", async () => {
     const fx = await createSyncFixture(db);
     await accrue();
