@@ -1,3 +1,4 @@
+import { isAdmin } from "@ceedo/shared";
 import { notFound } from "next/navigation";
 import { Money } from "@/components/ledger/money";
 import { LedgerTable, type LedgerColumn } from "@/components/ledger/ledger-table";
@@ -98,7 +99,7 @@ export default async function SubsidiaryLedgerPage({
         </p>
       </div>
       <LedgerTable
-        columns={columns(leaseId, staff.role === "admin")}
+        columns={columns(leaseId, isAdmin(staff.role))}
         rows={entries}
         rowKey={(row) => `${row.entryType}-${row.sourceId}`}
       />

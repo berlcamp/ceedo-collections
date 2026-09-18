@@ -12,6 +12,11 @@ export function canManageMasterData(role: Role): boolean {
   return role === "admin";
 }
 
+/** Mirrors the database's own is_admin(). Prefer this to an inline role comparison. */
+export function isAdmin(role: Role): boolean {
+  return role === "admin";
+}
+
 export function canResolveExceptions(role: Role): boolean {
   return role === "supervisor" || role === "admin";
 }
