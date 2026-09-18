@@ -60,6 +60,22 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               Delinquency list
             </Link>
           </li>
+          <li>
+            <Link
+              href="/ledger/collections"
+              className="block rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
+            >
+              Collections
+            </Link>
+          </li>
+          <li>
+            <Link
+              href="/ledger/opening-balances"
+              className="block rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
+            >
+              Opening balances
+            </Link>
+          </li>
         </ul>
         <p className="mt-8 text-xs text-neutral-500">
           {staff.fullName}
