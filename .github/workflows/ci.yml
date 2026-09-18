@@ -20,8 +20,14 @@ jobs:
       # production build is where a bad import boundary, a client/server mistake or a
       # failing page render actually surfaces.
       - run: pnpm build
+      # Pinned, not `latest`. db.types.ts is generated output that lives in the repo, and
+      # check-types-current.sh regenerates it and diffs. With `latest`, any CLI release
+      # that changes the generator's formatting fails that step on a commit that touched
+      # nothing -- which is exactly what happened: CI's newer CLI emitted
+      # `(X extends {` where the committed file has `X extends {`. Bump this deliberately,
+      # and regenerate db.types.ts with the same version in the same commit.
       - uses: supabase/setup-cli@v1
-        with: { version: latest }
+        with: { version: 2.116.0 }
       - run: supabase start
       # Exports API_URL, ANON_KEY and SERVICE_ROLE_KEY, which the test helpers read.
       - run: supabase status -o env >> "$GITHUB_ENV"
