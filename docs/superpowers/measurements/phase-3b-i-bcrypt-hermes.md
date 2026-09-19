@@ -94,11 +94,32 @@ cd apps/collector
 npx expo run:android --device --variant release
 ```
 
-### Run 2 — release build
+### Run 2 — release build (`expo run:android --device --variant release`)
 
 | Sample | 1 | 2 | 3 | 4 | 5 | Median |
 | --- | --- | --- | --- | --- | --- | --- |
-| ms | — | — | — | — | — | **—** |
+| ms | 22,270 | 22,218 | 22,270 | 22,265 | 22,246 | **22,265** |
+
+- **Engine:** Hermes, ahead-of-time `.hbc`, `__DEV__` false, JS bundled into the APK.
+- **Spread: 0.2%** (52 ms across five samples), against 27% in the debug run. This is the
+  number to carry; run 1's was noisy as well as inflated.
+
+**22.3 seconds. This is the figure of record.**
+
+Release is **2.1× faster than debug, not 10×.** That matters for two reasons. It kills the
+hope that dev-mode overhead was the story — and it falsifies the prediction, made while
+this was still unmeasured, that a release build would land in the 2–7 s range. It did not.
+Recorded because a prediction that was wrong by 3–10× is worth keeping next to the
+measurement that corrected it.
+
+Against the targets: **11× past the 2 s threshold, 28× past the 800 ms goal.** No amount of
+tuning closes that.
+
+**The revised engine penalty.** 233 ms on V8 to 22,265 ms here is ~95×, not the ~200× run 1
+suggested. That now decomposes sensibly — roughly 30× for a no-JIT interpreter against a
+JIT, times ~3× for a tablet CPU against an M-series — and sits at the top of, rather than
+far outside, the documented 5–30× Hermes band. The anomaly was real and it was the debug
+build; removing it did not rescue the result, it just made the result trustworthy.
 
 ## The options, with what each costs
 
@@ -170,9 +191,28 @@ Task 2, Step 5. Record which branch was taken and why.
 
 | Median | Decision | Taken? |
 | --- | --- | --- |
-| under ~800 ms | Proceed as specified. No progress indicator needed on sign-in. | — |
-| ~800 ms – 2 s | Proceed, but Task 12's sign-in shows a progress indicator during verification. | — |
-| over ~2 s | **Stop and escalate.** Options are a native bcrypt binding or a cost-factor conversation with the ordinance in hand. Both are decisions for a human. | — |
+| under ~800 ms | Proceed as specified. No progress indicator needed on sign-in. | no |
+| ~800 ms – 2 s | Proceed, but Task 12's sign-in shows a progress indicator during verification. | no |
+| over ~2 s | **Stop and escalate.** Options are a native bcrypt binding or a cost-factor conversation with the ordinance in hand. Both are decisions for a human. | **YES — 22,265 ms** |
+
+**Ruling: option A(ii), a local Expo Module wrapping jBCrypt.**
+
+It is the only option that leaves spec D3 untouched. The server keeps producing
+`crypt(pin, gen_salt('bf', 12))`, the device verifies that exact hash, and the PIN's single
+mitigation — cost — is unchanged. Nothing about the security posture is renegotiated, which
+means no decision is required from CEEDO and no invariant moves.
+
+What it costs: a new task in the Phase 3b-i plan, before Task 12. Roughly fifty lines of
+Kotlin against the Expo Modules API plus a vendored `BCrypt.java`, and it is Android-only —
+acceptable, because parent spec §3 targets Android 13+ LGU-issued tablets and explicitly
+rules out BYOD.
+
+**The expectation that jBCrypt under ART lands in the low hundreds of milliseconds is an
+expectation, not a measurement.** It is the same class of claim as the 1.5–5 s estimate this
+document already records as wrong by 10–30×, and the same class as the 2–7 s prediction
+recorded above as wrong again. The new module's first deliverable is therefore its own
+number from this same probe screen, on this same device, before any sign-in code is written
+against it.
 
 ## Why Hermes is this slow, and one caveat on the 200x
 
