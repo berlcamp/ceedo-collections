@@ -16,15 +16,20 @@ afterAll(async () => {
 /**
  * The exact predicate term in run_surcharge's WHERE clause, as the function body spells it.
  *
- * Two things depend on this string byte for byte:
- *   - the index `charges_surcharge_due_idx` (migration 20260919000043), whose indexed
- *     expression must match it or the planner cannot use it;
- *   - the design's safety argument, which is that surcharge behaviour cannot change
- *     because the WHERE clause does not change.
+ * The first test here is not about surcharges at all. It is a drift guard on this string:
+ * it fails the moment someone edits the predicate. That matters because the whole reason the
+ * rewrite below was rejected is a property of THIS spelling of it — calendar-month addition,
+ * in this direction — and an edit that looks cosmetic can silently make the rejection
+ * argument stop applying.
  *
- * So the first test here is not about surcharges at all. It is a drift guard: it fails the
- * moment someone edits the predicate, which is the moment the index silently stops being a
- * no-op on behaviour.
+ * `scripts/surcharge-scan-measure.sql` also carries a copy of this predicate, and the
+ * measurement it produces is only about run_surcharge insofar as the two agree.
+ *
+ * An expression index over `(due_date + interval '1 month')::date` was briefly shipped
+ * (migration 20260919000043) and reverted: it was measured at ~4% in both the first-night and
+ * steady-state regimes, inside run-to-run variance, and it obliged a human to keep this
+ * literal and the index expression byte-identical forever for no measured return. See
+ * `docs/superpowers/measurements/2026-09-19-surcharge-scan.md`.
  */
 const PREDICATE = "v_date > (b.due_date + interval '1 month')::date";
 

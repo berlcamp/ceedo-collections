@@ -4,6 +4,19 @@
 -- Builds a synthetic ledger of a stated shape, prints that shape, EXPLAINs run_surcharge's
 -- candidate scan without the index and then with it, and rolls the whole thing back.
 --
+-- THE INDEX THIS CREATES IS NOT IN THE SCHEMA. It was shipped as migration
+-- 20260919000043 and then reverted, because it measured at ~4% in both the first-night and
+-- steady-state regimes -- inside run-to-run variance -- and cost a byte-identity obligation
+-- against run_surcharge's WHERE clause that a human had to maintain by hand. What this
+-- script creates is a hypothesis being tested inside a transaction, not something being
+-- re-applied. Keep it: the comparison is still the question anyone asks here.
+--
+-- MEASUREMENT ORDER IS A BIAS. This script runs BEFORE first and AFTER second, so the whole
+-- first-execution warm-up lands on the no-index side. At the steady-state shape that made a
+-- ~4% effect read as 29%. For any comparison that will decide something, interleave the two
+-- conditions against one ledger instead of trusting a single BEFORE/AFTER pair -- the
+-- write-up's "Follow-up" section shows the shape of that run.
+--
 -- §3: "Generate the volume; do not assume it is there." A `supabase db reset` returns the
 -- development database to zero, so a fresh clone measures nothing. It also requires the
 -- synthetic ledger be discarded, which is why every statement below runs inside one

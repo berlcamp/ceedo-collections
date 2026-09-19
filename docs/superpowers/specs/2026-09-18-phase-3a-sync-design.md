@@ -701,9 +701,12 @@ synthetic 200,000-charge ledger
 (`docs/superpowers/measurements/2026-09-19-surcharge-scan.md`), the month-overdue date test
 is not selective at all at one year's depth — 92.25% of charges match it — and the dominant
 cost is `charge_balances`'s per-row lateral joins, which run once for every one of those
-184,500 rows before settlement status is known. An expression index makes the date test seek
-(shipped as `charges_surcharge_due_idx`) but does not change how many rows reach the
-laterals, and was measured to be no faster than no index at all. Materialising the view would
+184,500 rows before settlement status is known. An expression index makes the date test seek,
+but does not change how many rows reach the laterals; it was tried, measured at ~4% in both
+the first-night and steady-state regimes — inside run-to-run variance — and reverted. Nor can
+the already-surcharged anti-join narrow the work: it is the outermost plan node, so it filters
+output rather than input, and every night after the first spends ~185,000 lateral evaluations
+to raise nothing. Materialising the view would
 address the laterals — and is unsafe in two independent ways. `post_collection` reads
 `charge_balances` twice — once through `unpaid_period_groups()` to compute the FIFO prefix,
 and again after taking its row locks — and that second, transactionally current read is the
