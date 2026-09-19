@@ -38,8 +38,9 @@ the app is written against.
 | 9 — the outbox and the sync loop | **done** — 24 engine tests + 4 over real HTTP; suite at 733 |
 | 10 — `expo-sqlite` driver, on-device run | **done** — ran on the tablet; E7 atomicity holds on `expo-sqlite` |
 | 11 — enrollment | **code done; step 8 outstanding** — needs the tablet and a native rebuild |
-| **12 — offline sign-in** | **NEXT.** |
-| 13–14 | not started |
+| 12 — offline sign-in | **code done; step 7 outstanding** — needs the tablet in airplane mode |
+| 13 — shift lifecycle and closeout | **done** — 7 tests; both §5.1 comparisons falsified separately |
+| **14 — the exit criterion** | **NEXT.** Entirely on the tablet. |
 
 **What Task 2 changed, and why it matters to everything after it.** `bcryptjs` under Hermes
 verifies a cost-12 hash in **22,265 ms** (release build) against a 2,000 ms threshold. The
@@ -97,6 +98,10 @@ spec E7 holds on `expo-sqlite`'s `withTransactionAsync`, not merely on `better-s
 hand-issued BEGIN/COMMIT, and the driver-exemption trap this phase was built to avoid is
 closed for the apply path. Tasks 11-13 build on an engine that has now been run on the
 hardware.
+
+**Tasks 12 and 13 share one commit.** `packages/sync-engine/src/index.ts` exports both
+`./signin` and `./shift`, so a commit carrying only the first leaves an intermediate tree
+whose typecheck fails on a missing module. The commit message covers both.
 
 **One structural deviation in Task 11.** The plan put the enrollment codec in
 `apps/web/lib/devices/`. It lives in `packages/shared/src/enrollment-payload.ts` instead:
@@ -4078,7 +4083,7 @@ Spec E10 and §4.4. PIN verification goes through the native module built in Tas
   - `recordPinFailure(driver, collectorId): Promise<number>`
   - `clearPinFailures(driver, collectorId): Promise<void>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/sync-engine/src/signin.test.ts`:
 
@@ -4236,7 +4241,7 @@ describe("the five-attempt lock", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run signin
@@ -4244,7 +4249,7 @@ pnpm --filter @ceedo/sync-engine exec vitest run signin
 
 Expected: FAIL — `Cannot find module './signin'`.
 
-- [ ] **Step 3: Write `signin.ts`**
+- [x] **Step 3: Write `signin.ts`**
 
 ```ts
 import type { SqliteDriver } from "./driver";
@@ -4325,7 +4330,7 @@ export {
 } from "./signin";
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run
@@ -4333,14 +4338,14 @@ pnpm --filter @ceedo/sync-engine exec vitest run
 
 Expected: PASS, all files.
 
-- [ ] **Step 5: Verify the E10 test is falsifiable**
+- [x] **Step 5: Verify the E10 test is falsifiable**
 
 Temporarily change `canSignIn`'s shift query to `where status <> 'closed'` and re-run.
 Expected: `"does NOT block on a closed_unsynced shift belonging to someone else"` FAILS and
 every other test in the file still PASSES. **Revert.** That is the whole reason spec E10 is
 written down as a decision rather than left to the implementer.
 
-- [ ] **Step 6: Write the session and the sign-in screen**
+- [x] **Step 6: Write the session and the sign-in screen**
 
 `apps/collector/src/auth/session.ts` holds the signed-in collector **in memory only**:
 
@@ -4428,14 +4433,15 @@ Measured at ~482 ms, which is under the 800 ms line, so a progress indicator is 
 required**. It is still perceptible; a subtle one is a reasonable design choice, not an
 obligation. `verifying` is kept in the signature either way so adding one costs nothing.
 
-- [ ] **Step 7: Exercise sign-in on the tablet**
+- [ ] **Step 7: Exercise sign-in on the tablet** — outstanding, needs the device in
+airplane mode. Checklist rows are written.
 
 With the tablet in **airplane mode**, sign in as a synced collector. Then: fail the PIN five
 times and confirm the lock message; sign in as a second collector and confirm the gate
 message while the first has a shift open. Append the results, and the observed verification
 latency, to the device smoke checklist.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/sync-engine apps/collector docs/superpowers/measurements/phase-3b-i-device-smoke.md
@@ -4472,7 +4478,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
   - `closeShift(driver, deps, { shiftId, declaredTotal }): Promise<CloseOutcome>`
   - `type CloseOutcome = { status: "closed" | "mismatch" | "closed_unsynced"; ... }`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/sync-engine/src/shift.test.ts` covering, at minimum, these five properties.
 Each needs a non-trivial fixture — a shift with **at least one** collection in it — for the
@@ -4627,7 +4633,7 @@ describe("the shift lifecycle", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run shift
@@ -4635,7 +4641,7 @@ pnpm --filter @ceedo/sync-engine exec vitest run shift
 
 Expected: FAIL — `Cannot find module './shift'`.
 
-- [ ] **Step 3: Write `shift.ts`**
+- [x] **Step 3: Write `shift.ts`**
 
 Implement the four exported functions. The rules that must hold, each traceable to a test
 above:
@@ -4652,7 +4658,7 @@ above:
 - A `closed` or `already_closed` result writes `status = 'closed'`, `declared_total`, and
   the device's own count and total.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run
@@ -4660,7 +4666,7 @@ pnpm --filter @ceedo/sync-engine exec vitest run
 
 Expected: PASS, all files.
 
-- [ ] **Step 5: Verify the closeout tests are falsifiable**
+- [x] **Step 5: Verify the closeout tests are falsifiable**
 
 Temporarily make `closeShift` write `status = 'closed'` on a `mismatch` result. Expected:
 `"leaves the shift OPEN on a records mismatch"` FAILS. **Revert.**
@@ -4670,7 +4676,7 @@ Expected: `"closes with a recorded variance when the cash is short"` FAILS. **Re
 two are the pair §5.1 warns about, and a test suite that cannot tell them apart is exactly
 how they get conflated.
 
-- [ ] **Step 6: Write the shift and closeout screens**
+- [x] **Step 6: Write the shift and closeout screens**
 
 `apps/collector/app/shift.tsx`: shows the open shift, its device count and total, a
 **Sync now** button, and a **Close out** button. The close button is disabled while any
@@ -4683,7 +4689,7 @@ still open and a supervisor is needed. On `closed`, show the variance **with its
 over and short are different problems. On `closed_unsynced`, say the shift is closed on this
 tablet and will reconcile at the next sync.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/sync-engine apps/collector
