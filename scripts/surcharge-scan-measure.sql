@@ -4,6 +4,24 @@
 -- Builds a synthetic ledger of a stated shape, prints that shape, EXPLAINs run_surcharge's
 -- candidate scan without the index and then with it, and rolls the whole thing back.
 --
+-- THE INDEX THIS CREATES IS NOT IN THE SCHEMA. It was shipped as migration
+-- 20260919000043 and then reverted, because its measured effect is at most ~4% in both the
+-- first-night and steady-state regimes -- inside run-to-run variance -- and a per-node
+-- decomposition of the interleaved run found no mechanism for even that: the charges scan
+-- and the Hash Join above it both ran SLOWER with the index, and the lateral subtree holding
+-- the whole difference reports bit-identical buffers in both conditions. Against nothing, it
+-- cost a byte-identity obligation against run_surcharge's WHERE clause that a human had to
+-- maintain by hand. What this script creates is a hypothesis being tested inside a
+-- transaction, not something being re-applied. Keep it: the comparison is still the question
+-- anyone asks here.
+--
+-- MEASUREMENT ORDER IS A BIAS. This script runs BEFORE first and AFTER second, so the whole
+-- first-execution warm-up lands on the no-index side. At the steady-state shape that made an
+-- at-most-4% effect read as 29%. For any comparison that will decide something, do not
+-- trust a single BEFORE/AFTER pair from this script: use
+-- scripts/surcharge-scan-alternating.sql, which interleaves the two conditions against one
+-- ledger inside one transaction.
+--
 -- §3: "Generate the volume; do not assume it is there." A `supabase db reset` returns the
 -- development database to zero, so a fresh clone measures nothing. It also requires the
 -- synthetic ledger be discarded, which is why every statement below runs inside one
@@ -23,6 +41,28 @@
 -- more than a month overdue -- which is exactly the selectivity the index under test lives
 -- or dies by. `settled_pct` is the share of each lease's oldest charges that a collection
 -- has settled, which is what the view's lateral joins have to chew through.
+--
+-- `steady_state` (0 or 1, default 0) decides WHICH LEDGER STATE is being measured, and it is
+-- the difference between a worst case and the case production actually runs against.
+--
+--   0 -- the first night run_surcharge has ever run against this ledger. No surcharge rows
+--        exist, so the `not exists (... charge_type = 'surcharge')` anti-join removes
+--        nothing and every month-overdue unsettled rental is still a candidate.
+--   1 -- a ledger that has already been surcharged once. run_surcharge itself is called
+--        (the real function, not an imitation of it), raising the surcharges a real nightly
+--        job would have raised, and the measurement is then taken on the run that follows.
+--
+--        THE BUSINESS DATE IS NOT ADVANCED. What gets measured is a second run of the SAME
+--        night, which is why `tonights_candidates` prints 0: re-running one night raises
+--        nothing, by idempotence. A real night two is not that. On it the business date
+--        moves forward and a further day's cohort of rentals crosses the month line -- one
+--        charge per lease, so ~500 on a 500-lease ledger. Read `steady_state=1` as "the
+--        anti-join is now answering against 4,500 existing surcharge rows instead of an
+--        empty set", which is the thing under measurement, and not as "night two raises
+--        nothing".
+--
+-- The original measurement only ever ran shape 0 and its write-up names that as the largest
+-- realism gap. This parameter is how that gap gets closed.
 
 \set ON_ERROR_STOP on
 \timing on
@@ -39,154 +79,37 @@
 \else
   \set settled_pct 90
 \endif
+\if :{?steady_state}
+\else
+  \set steady_state 0
+\endif
 
 \echo ''
 \echo '==================== surcharge scan measurement ===================='
-\echo 'leases      :' :leases
-\echo 'days        :' :days
-\echo 'settled_pct :' :settled_pct
+\echo 'leases       :' :leases
+\echo 'days         :' :days
+\echo 'settled_pct  :' :settled_pct
+\echo 'steady_state :' :steady_state
 \echo ''
 
 begin;
 
 -- psql does not interpolate variables inside dollar-quoted strings, so the parameters
 -- reach the DO block through a table rather than through :leases.
-create temporary table measure_params (leases int, days int, settled_pct int) on commit drop;
-insert into measure_params values (:leases, :days, :settled_pct);
+create temporary table measure_params (leases int, days int, settled_pct int, steady_state int)
+  on commit drop;
+insert into measure_params values (:leases, :days, :settled_pct, :steady_state);
 
 -- The BEFORE plan has to be measured without the index whether or not the migration that
 -- ships it has been applied, so that re-running this script after the fact still produces a
 -- real comparison rather than two identical plans. Undone by the ROLLBACK.
 drop index if exists ceedo_collections.charges_surcharge_due_idx;
 
-do $build$
-declare
-  v_leases      integer;
-  v_days        integer;
-  v_settled_pct integer;
-  v_settled     integer;
-  v_today       date := ceedo_collections.business_date();
-  v_fee_type    uuid;
-  v_form_type   uuid;
-  v_facility    uuid;
-  v_section     uuid;
-  v_auth_user   uuid := gen_random_uuid();
-  v_booklet     uuid;
-  v_device      uuid;
-  v_tag         text := 'MSR' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 8);
-begin
-  select leases, days, settled_pct into v_leases, v_days, v_settled_pct from measure_params;
-  -- How many of each lease's charges, oldest first, a collection has settled.
-  v_settled := (v_days * v_settled_pct) / 100;
-
-  select id into v_fee_type from ceedo_collections.fee_types where code = 'MKT_DAILY';
-  if v_fee_type is null then
-    insert into ceedo_collections.fee_types (code, name, accrues, surcharge_bps)
-    values ('MKT_DAILY', 'Market stall rental (daily)', true, 300)
-    returning id into v_fee_type;
-  end if;
-
-  select id into v_form_type from ceedo_collections.form_types where code = 'OR51';
-  if v_form_type is null then
-    insert into ceedo_collections.form_types (code, name)
-    values ('OR51', 'Official Receipt (Accountable Form 51)')
-    returning id into v_form_type;
-  end if;
-
-  -- 'market': sections and stalls exist only under a market facility (assert_market_facility).
-  insert into ceedo_collections.facilities (code, name, type)
-  values (v_tag, 'Measurement Market ' || v_tag, 'market')
-  returning id into v_facility;
-
-  insert into ceedo_collections.sections (facility_id, name, default_accrual_period)
-  values (v_facility, 'Measurement Section', 'daily')
-  returning id into v_section;
-
-  -- Stall numbers and tenant names carry the same ordinal so the two can be zipped into
-  -- leases by one join, without depending on the order INSERT ... RETURNING hands rows back.
-  insert into ceedo_collections.stalls (section_id, stall_no)
-  select v_section, lpad(n::text, 6, '0') from generate_series(1, v_leases) n;
-
-  insert into ceedo_collections.tenants (full_name)
-  select v_tag || '#' || lpad(n::text, 6, '0') from generate_series(1, v_leases) n;
-
-  -- Daily accrual: due_day is meaningless and stays null (leases_monthly_needs_due_day only
-  -- bites monthly leases).
-  insert into ceedo_collections.leases
-    (stall_id, tenant_id, start_date, rate_amount, accrual_period, due_day, status)
-  select st.id, tn.id, v_today - v_days, 120.00, 'daily', null, 'active'
-  from ceedo_collections.stalls st
-  join ceedo_collections.tenants tn on tn.full_name = v_tag || '#' || st.stall_no
-  where st.section_id = v_section;
-
-  -- One rental charge per lease per day. lease_periods() gives a daily period
-  -- period_start = period_end = due_date, so that is what is reproduced here.
-  insert into ceedo_collections.charges
-    (lease_id, fee_type_id, charge_type, period_start, period_end, due_date,
-     amount, surcharge_bps, source)
-  select l.id, v_fee_type, 'rental', d.day, d.day, d.day, 120.00, 0, 'accrual'
-  from ceedo_collections.leases l
-  join ceedo_collections.stalls st on st.id = l.stall_id and st.section_id = v_section
-  cross join lateral (
-    select (v_today - v_days + g)::date as day from generate_series(0, v_days - 1) g
-  ) d;
-
-  if v_settled > 0 then
-    -- Settlement goes through collections and allocations rather than condonations,
-    -- because it is the allocations lateral -- the one that joins collections and checks
-    -- for a cancellation -- that dominates charge_balances, and a ledger settled by
-    -- condonation would leave it empty and flatter the measurement.
-    insert into auth.users
-      (id, instance_id, aud, role, email, email_confirmed_at,
-       raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
-       confirmation_token, is_sso_user, is_anonymous)
-    values
-      (v_auth_user, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-       lower(v_tag) || '@measure.invalid', now(),
-       '{"provider": "google", "providers": ["google"]}'::jsonb, '{}'::jsonb, now(), now(),
-       '', false, false);
-
-    insert into ceedo_collections.app_users (id, employee_no, full_name, role, status)
-    values (v_auth_user, v_tag, 'Measurement Collector', 'collector', 'active');
-
-    insert into ceedo_collections.devices (label) values ('Measurement Tablet ' || v_tag)
-    returning id into v_device;
-
-    -- A private serial prefix: booklets_no_serial_overlap only compares ranges within one
-    -- (form_type, serial_prefix) pair, so this cannot collide with a fixture's booklet.
-    insert into ceedo_collections.booklets
-      (form_type_id, serial_prefix, start_no, end_no, received_date, status)
-    values (v_form_type, v_tag, 1, 1000000, v_today, 'in_use')
-    returning id into v_booklet;
-
-    -- One collection per lease, settling that lease's v_settled oldest charges. Invariant
-    -- #9's deferred trigger wants allocations plus lines to equal gross_amount, and there
-    -- are no lines, so gross is exactly 120.00 * v_settled.
-    insert into ceedo_collections.collections
-      (id, or_no, booklet_id, collector_id, device_id, collected_at, business_date,
-       fee_type_id, lease_id, gross_amount)
-    select gen_random_uuid(),
-           (row_number() over (order by l.id))::int,
-           v_booklet, v_auth_user, v_device, now(), v_today,
-           v_fee_type, l.id, (120.00 * v_settled)::numeric(14,2)
-    from ceedo_collections.leases l
-    join ceedo_collections.stalls st on st.id = l.stall_id and st.section_id = v_section;
-
-    insert into ceedo_collections.collection_allocations (collection_id, charge_id, amount)
-    select col.id, ranked.id, 120.00
-    from (
-      select c.id, c.lease_id,
-             row_number() over (partition by c.lease_id order by c.due_date) as rn
-      from ceedo_collections.charges c
-      join ceedo_collections.leases l on l.id = c.lease_id
-      join ceedo_collections.stalls st on st.id = l.stall_id and st.section_id = v_section
-    ) ranked
-    join ceedo_collections.collections col
-      on col.lease_id = ranked.lease_id and col.booklet_id = v_booklet
-    where ranked.rn <= v_settled;
-  end if;
-end;
-$build$;
+-- The ledger itself. Shared verbatim with scripts/surcharge-scan-alternating.sql, which is
+-- the interleaved harness the revert decision actually rests on -- both must build the same
+-- ledger or their logs are not comparable. `\ir` resolves relative to this file, so this
+-- works from any working directory.
+\ir surcharge-scan-build.sql
 
 -- §3: EXPLAIN (ANALYZE, BUFFERS) "with ANALYZE ceedo_collections.charges run after index
 -- creation". Run before as well: a plan chosen from default statistics on a table that just
@@ -225,7 +148,43 @@ select
      where b.charge_type = 'rental'
        and not b.is_settled
        and ceedo_collections.business_date() > (b.due_date + interval '1 month')::date)
-    as month_overdue_unsettled_rentals;
+    as month_overdue_unsettled_rentals,
+  -- What a run for TODAY would actually raise: run_surcharge's WHERE clause, all five
+  -- predicates of it. This is the same numerator/denominator discipline applied to
+  -- pct_of_indexed_rows_in_seek_range just below -- a column named for what the job
+  -- raises has to range over the job's own predicate set, or it silently counts rows the job
+  -- would skip. An earlier version carried only charge_type / is_settled / the date test and
+  -- the anti-join, omitting `f.surcharge_bps > 0` and the half-up rounding guard, and so
+  -- overstated the candidate count on any ledger with a zero-rate fee type or a charge small
+  -- enough that its surcharge rounds to nothing. On every shape published in
+  -- docs/superpowers/measurements/2026-09-19-surcharge-scan.md the fee type is MKT_DAILY at
+  -- 300 bps and every charge is 120.00, so both added predicates pass for every row and the
+  -- recorded figures are unaffected by this correction.
+  --
+  -- Because of those two extra predicates this column is NOT simply the column to its left
+  -- minus the already-surcharged parents; the gap between them is the anti-join's
+  -- selectivity plus whatever the rate and rounding guards remove.
+  --
+  -- On a database that `supabase db reset` has just returned to zero, steady_state=0 makes
+  -- this column equal month_overdue_unsettled_rentals: nothing has surcharged anything yet.
+  -- That equality is a property of the freshly-reset database, not of steady_state=0 -- run
+  -- this against a database the suite has already left rows in and the anti-join will remove
+  -- whatever those runs raised.
+  --
+  -- NOTE: this counts candidates for ceedo_collections.business_date() -- at steady_state=1,
+  -- the very night the build block has already run run_surcharge for. It is not a forecast
+  -- for the NEXT night, on which a further day's cohort of rentals crosses the month line.
+  (select count(*) from ceedo_collections.charge_balances b
+     join ceedo_collections.fee_types f on f.id = b.fee_type_id
+     where b.charge_type = 'rental'
+       and f.surcharge_bps > 0
+       and (round(b.amount * 100) * f.surcharge_bps + 5000) >= 10000
+       and not b.is_settled
+       and ceedo_collections.business_date() > (b.due_date + interval '1 month')::date
+       and not exists (
+         select 1 from ceedo_collections.charges s
+         where s.parent_charge_id = b.id and s.charge_type = 'surcharge'))
+    as tonights_candidates;
 
 -- The fraction that decides everything. This is not a fraction the planner ever sees: its
 -- row estimate for the charges scan is a flat one-third at every shape below, regardless of
