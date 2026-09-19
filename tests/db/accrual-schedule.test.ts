@@ -1,6 +1,18 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Client } from "pg";
 import { createLeaseFixture, POSTGRES_URL, resetCutover } from "../helpers/supabase";
+
+// These tests call run_nightly(), whose run_surcharge() leg scans charge_balances
+// SYSTEM-WIDE with no lease filter (design §9). They nominally finish in 0.5-1.2s against
+// Vitest's 5s default, but that margin is thin: the scan's cost grows with total ledger
+// size, not with the night's activity, so a machine under load or a database carrying
+// fixtures from a previous un-reset run pushes them over. Observed twice during Phase 3a —
+// four timeouts on one run, green on an immediate re-run with no code change.
+//
+// 20s is not a fix for the scan; design §9's materialised charge_balances is. It buys
+// headroom so an environmental blip does not read as a regression, and so a genuine
+// slowdown still fails rather than being masked by a number nobody chose deliberately.
+vi.setConfig({ testTimeout: 20_000 });
 
 let db: Client;
 
