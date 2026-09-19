@@ -161,20 +161,35 @@ describe("sync_pull first-sync budget", () => {
 
     // Prove the pull actually returned a world, so a fast empty answer cannot pass.
     //
-    // Both halves are asserted. A fixture that lost its collection history -- or a
+    // All three arrays are asserted. A fixture that lost its collection history -- or a
     // sync_pull that stopped sending one -- would otherwise leave this measuring the same
     // unpaid-only shape Phase 3a already measured, while claiming to have closed the gap.
-    const payload = rows[0].payload as Record<string, unknown[]>;
-    expect(Array.isArray(payload.charges)).toBe(true);
-    expect(payload.charges.length).toBeGreaterThan(300);
-    expect(payload.collections.length).toBeGreaterThan(300);
-    expect(payload.collection_allocations.length).toBeGreaterThan(300);
+    const payload = rows[0].payload as Record<string, unknown>;
+
+    // `count` rather than three direct index reads: tsconfig.base sets
+    // noUncheckedIndexedAccess, so `payload.charges.length` is a type error on a
+    // Record<string, unknown[]> index. Asserting the array-ness here makes the check the
+    // test actually wants -- "this key held an array" -- instead of a non-null assertion
+    // that would hide a missing key behind a runtime TypeError.
+    const count = (key: string): number => {
+      const value = payload[key];
+      expect(Array.isArray(value), `${key} should be an array in the pull envelope`).toBe(
+        true,
+      );
+      return (value as unknown[]).length;
+    };
+
+    const charges = count("charges");
+    const collections = count("collections");
+    const allocations = count("collection_allocations");
+
+    expect(charges).toBeGreaterThan(300);
+    expect(collections).toBeGreaterThan(300);
+    expect(allocations).toBeGreaterThan(300);
 
     console.log(
-      `first-sync: ${elapsed}ms | ${payload.charges.length} charges, ` +
-        `${payload.collections.length} collections, ` +
-        `${payload.collection_allocations.length} allocations | ` +
-        `${JSON.stringify(payload).length} bytes`,
+      `first-sync: ${elapsed}ms | ${charges} charges, ${collections} collections, ` +
+        `${allocations} allocations | ${JSON.stringify(payload).length} bytes`,
     );
     expect(elapsed).toBeLessThan(BUDGET_MS);
   }, 30_000);
