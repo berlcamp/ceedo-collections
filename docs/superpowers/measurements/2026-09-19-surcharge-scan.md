@@ -821,9 +821,17 @@ BEFORE-then-AFTER script cannot measure an effect smaller than its warm-up. The 
 form is now in the repo as `scripts/surcharge-scan-alternating.sql`, and anyone re-running
 this for a decision should start from it — and should fix the position-parity confound while
 they are there. Randomise the order, or run A/B/B/A, and use more than three rounds: six
-executions cannot separate a 4% effect from a 24% drift. None of that would change the
-outcome, because the index has no mechanism by which to win; it is the difference between
-"not demonstrated" and "demonstrated absent".
+executions cannot separate a 4% effect from a 24% drift.
+
+That re-run is unlikely to change the outcome, and the two halves of the reason carry
+different weight — which matters, because overstating evidence is the failure this document
+was twice rewritten to correct. **The I/O half is deterministic:** buffer counts are exact,
+not sampled, and the index adds 83 touches while removing none. No number of rounds changes
+that. **The CPU half is a consistent direction, not a proof:** both candidate nodes were
+slower with the index in three rounds out of three, which is six observations all pointing one
+way, but the differences (~9 ms and ~7 ms) are small against a 243 ms drift and three samples
+cannot exclude their reversing. Taken together that is strong enough to revert on and not
+strong enough to call the question closed for all time.
 
 **A realism caveat, because it inflates the figure that now directs future work.** The whole
 synthetic ledger is built inside the measuring transaction, so every tuple is uncommitted and
@@ -848,11 +856,14 @@ plan-shape gate before the steady state had been measured. The index was shipped
 - The effect in both regimes is **≤4%**, inside run-to-run variance and biased upward by the
   measurement order in both cases. The one measurement that looked decisive (29%) was an
   ordering artifact.
-- **There is no mechanism by which the index could win.** Decomposed per node across the
-  interleaved run, the two nodes it touches — the `charges` scan and the `Hash Join` above it
-  — were *slower* with it in all three rounds, and the whole apparent 141 ms sits in a lateral
-  subtree that runs `loops=184500` and reports bit-identical buffers in both conditions. On
-  I/O the index is 83 net buffer touches worse. This, not the timing spread, is why it goes.
+- **No mechanism by which the index could win survived inspection.** Decomposed per node
+  across the interleaved run, the two nodes it touches — the `charges` scan and the `Hash
+  Join` above it — were *slower* with it in three rounds out of three, and the whole apparent
+  141 ms sits in a lateral subtree that runs `loops=184500` and reports bit-identical buffers
+  in both conditions. On I/O the index is 83 net buffer touches worse, and that half is
+  deterministic rather than sampled. This, not the timing spread, is why it goes — see "That
+  re-run is unlikely to change the outcome" above for which half of it a larger sample could
+  still overturn.
 - The anti-join that might have narrowed the candidate set cannot pay for itself: it removes
   4,500 of the 184,500 rows reaching the laterals (2.4%) wherever it is placed, and pushing it
   to the scan would cost 41× the probes for the same result.
