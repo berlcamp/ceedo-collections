@@ -692,8 +692,25 @@ system-wide scan exceeds the default timeout.
 first concrete performance signal: 45,010 charges across 258 leases already exceeded a
 5-second test timeout, against §8.1's projection of ~200,000 rows a year. Phase 3a does not
 make it worse — nothing here is on the nightly path — but Phase 3b puts real devices behind
-it and the named upgrade path remains a materialised `charge_balances` with a scheduled
-refresh.
+it.
+
+**The upgrade path this section originally named — a materialised `charge_balances` with a
+scheduled refresh — was wrong, and is superseded by
+`docs/superpowers/specs/2026-09-19-surcharge-scan-cost-design.md`.** Measured at 83,257
+charges, the cost is a non-sargable date predicate, not the view's laterals: the month-overdue
+test lands in `Filter` rather than `Index Cond`, so every non-surcharge charge is read and
+discarded. Materialising the view is unsafe in two independent ways. `post_collection` reads
+`charge_balances` twice — once through `unpaid_period_groups()` to compute the FIFO prefix,
+and again after taking its row locks — and that second, transactionally current read is the
+entire mechanism producing `stale_allocations`; against a snapshot both reads return the same
+stale answer and the lock stops protecting anything. And a materialised view cannot be
+`security_invoker`, so per-reader RLS on the underlying tables would stop applying on a
+Supabase project whose `auth.users` is shared with unrelated systems. `condone_charge` and
+`sync_pull` need the same currency for the same reason.
+
+The reporting views — `aging_of_receivables`, `lease_balances`, `subsidiary_ledger` — remain
+the only place a snapshot would be safe, since they tolerate staleness and never touch
+settlement. None of them has been measured to need one.
 
 **First-sync payload size is unmeasured.** §6.1 estimates "a few megabytes," but that
 estimate predates D-mandated `collections` and allocations in the pull. A delinquent daily
