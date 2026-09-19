@@ -13,6 +13,9 @@
     "edge:contract": "node scripts/generate-edge-contract.mjs",
     "db:types": "{ echo '// AUTO-GENERATED FILE. DO NOT EDIT BY HAND.'; echo '// Run `pnpm db:types` to regenerate from the local Postgres schema (schema: ceedo_collections).'; supabase gen types typescript --local --schema ceedo_collections; } > packages/shared/src/db.types.ts"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3"]
+  },
   "devDependencies": {
     "turbo": "^2.3.0",
     "typescript": "^5.7.0",
