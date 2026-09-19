@@ -30,8 +30,8 @@ the app is written against.
 | 2 — Expo shell + Hermes bcrypt measurement | **done** — measured, and it invalidated a design assumption |
 | 2a — native bcrypt module | **done** — added mid-phase because of Task 2's result |
 | 3 — first-sync duration | **done** — measured, spec E9 confirmed |
-| **4 — `shift_id` on `collections`** | **NEXT.** Heaviest task in the plan: copies and edits two large PL/pgSQL functions |
-| 5 — Edge Function payload validation | not started |
+| 4 — `shift_id` on `collections` | **done** — migrations 0043 and 0044; four existing closeout fixtures rewritten |
+| **5 — Edge Function payload validation** | **NEXT.** |
 | 6–14 | not started |
 
 **What Task 2 changed, and why it matters to everything after it.** `bcryptjs` under Hermes
@@ -40,6 +40,28 @@ remedy is `apps/collector/modules/ceedo-bcrypt`, a local Expo module wrapping
 `at.favre.lib:bcrypt`, measured at **~482 ms — 47× faster**. Task 12 calls `verify()` from
 that module; an `import bcrypt from "bcryptjs"` on the sign-in path is a 22-second sign-in.
 Spec D3 is untouched: same cost-12 hash, same mitigation, nothing renegotiated.
+
+**What Task 4 changed in the tests it did not own.** `close_shift` counts by
+`collections.shift_id` now, so four existing tests that posted receipts BEFORE opening their
+shift were staging shifts that contain nothing: `db/close-shift.test.ts`,
+`db/sync-push.test.ts`, `http/functions.test.ts` and `http/round-trip.test.ts`. Each was
+fixed as a fixture — open the shift, then collect into it, which is the real sequence — and
+no assertion was weakened. `postCollectionAsOwner` gained a `shiftId` option; omitted still
+means `null`, so fixtures that do not care about shifts are unchanged.
+
+Three deviations from this plan's Task 4 text, all in the test file rather than the
+migrations:
+- Step 1's setup reopened shift A while shift B was still open, which
+  `shifts_one_open_per_device` refuses. B is closed first, then A reopened; the end state is
+  the one the plan describes.
+- Step 1 inserted `collections` rows directly. The `collections_balance` trigger refuses a
+  row with no parts, and a direct insert would have left the `post_collection` half of the
+  migration untested, so the test posts through `post_collection` and asserts against the
+  fixture's per-head rate rather than a written-in 100.00.
+- Step 5's E3 test called `resolve_exception_corrected` over the owner connection, where
+  `auth.uid()` is null and `has_role` refuses. It goes through an authenticated supervisor
+  client, as `db/resolve-exception.test.ts` already does, and files its exception through
+  `sync_push` rather than inserting the `sync_exceptions` row by hand.
 
 **Measurements taken so far**, each with what it invalidated:
 - `docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md`
@@ -760,7 +782,7 @@ E3 — a supervisor's correction must re-post the original `shift_id`.
 - Produces: `collections.shift_id uuid null`; `CollectionPayload` gains
   `shift_id: z.string().uuid().nullable().optional()`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/db/shift-scoped-closeout.test.ts`:
 
@@ -859,7 +881,7 @@ describe("closeout scoped by shift_id", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 ```bash
 API_URL=http://127.0.0.1:54321 \
@@ -871,7 +893,7 @@ pnpm --filter @ceedo/tests exec vitest run db/shift-scoped-closeout.test.ts
 
 Expected: FAIL — `column "shift_id" of relation "collections" does not exist`.
 
-- [ ] **Step 3: Write the migration**
+- [x] **Step 3: Write the migration**
 
 Create `supabase/migrations/20260919000043_collections_shift_id.sql`:
 
@@ -962,7 +984,7 @@ only the three edits listed. Then continue the same file:
 Again: copy the real function, make only that edit, and keep the `revoke`/`grant` pair at
 the end of the file for both functions.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 ```bash
 supabase db reset && \
@@ -975,7 +997,7 @@ pnpm --filter @ceedo/tests exec vitest run db/shift-scoped-closeout.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Write the failing test for E3 (a correction keeps its shift)**
+- [x] **Step 5: Write the failing test for E3 (a correction keeps its shift)**
 
 Append to `tests/db/shift-scoped-closeout.test.ts`:
 
@@ -1053,13 +1075,13 @@ describe("a correction preserves the original shift_id", () => {
 });
 ```
 
-- [ ] **Step 6: Run it to verify it fails**
+- [x] **Step 6: Run it to verify it fails**
 
 Same command as Step 4. Expected: FAIL — `shift_id` is `otherShiftId`, because
 `resolve_exception_corrected` merges the supervisor's payload over the device's and
 re-asserts only `id` and `device_id`.
 
-- [ ] **Step 7: Write the E3 migration**
+- [x] **Step 7: Write the E3 migration**
 
 Create `supabase/migrations/20260919000044_correction_preserves_shift.sql`:
 
@@ -1103,11 +1125,11 @@ Create `supabase/migrations/20260919000044_correction_preserves_shift.sql`:
 -- escalate_exception if they share the file, and the revoke/grant pairs at the end.
 ```
 
-- [ ] **Step 8: Run the tests to verify they pass**
+- [x] **Step 8: Run the tests to verify they pass**
 
 Same command as Step 4. Expected: PASS, both `describe` blocks.
 
-- [ ] **Step 9: Add `shift_id` to the wire contract**
+- [x] **Step 9: Add `shift_id` to the wire contract**
 
 In `packages/shared/src/sync-contract.ts`, inside `CollectionPayload`'s object literal, after
 the `lease_id` line, add:
@@ -1129,7 +1151,7 @@ the `lease_id` line, add:
 
 Then in `ShiftClosePayload`, no change — it already keys on the shift's own `id`.
 
-- [ ] **Step 10: Run the shared package's tests**
+- [x] **Step 10: Run the shared package's tests**
 
 ```bash
 pnpm --filter @ceedo/shared exec vitest run
@@ -1138,7 +1160,7 @@ pnpm --filter @ceedo/shared exec vitest run
 Expected: PASS. If `sync-contract.test.ts` has a `.strict()` assertion listing
 `CollectionPayload`'s keys, add `shift_id` to it.
 
-- [ ] **Step 11: Regenerate database types**
+- [x] **Step 11: Regenerate database types**
 
 ```bash
 pnpm db:types
@@ -1146,7 +1168,7 @@ pnpm db:types
 
 Expected: `packages/shared/src/db.types.ts` gains `shift_id` on `collections`.
 
-- [ ] **Step 12: Run the whole suite**
+- [x] **Step 12: Run the whole suite**
 
 ```bash
 supabase db reset && \
@@ -1163,7 +1185,7 @@ Expected: PASS. `close_shift`'s scoping changed, so `tests/db/close-shift.test.t
 assertion** — a closeout test that stops checking the total is the vacuous shape this
 project has shipped before.
 
-- [ ] **Step 13: Commit**
+- [x] **Step 13: Commit**
 
 ```bash
 git add supabase/migrations/20260919000043_collections_shift_id.sql \
