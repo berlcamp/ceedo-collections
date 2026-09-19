@@ -34,8 +34,9 @@ the app is written against.
 | 5 — Edge Function payload validation | **done** — 702 tests green; two wire answers changed, see below |
 | 6 — `packages/db-local` | **done** — 21 tables generated; `better-sqlite3` needed a pnpm build-script allowance |
 | 7 — `packages/sync-engine` (pull and apply) | **done** — 5 tests; E7 atomicity confirmed falsifiable |
-| **8 — reset, epoch, daily full re-sync** | **NEXT.** |
-| 9–14 | not started |
+| 8 — reset, epoch, daily full re-sync | **done** — 13 tests; E8 wipe confirmed falsifiable |
+| **9 — the outbox and the sync loop** | **NEXT.** |
+| 10–14 | not started |
 
 **What Task 2 changed, and why it matters to everything after it.** `bcryptjs` under Hermes
 verifies a cost-12 hash in **22,265 ms** (release build) against a 2,000 ms threshold. The
@@ -2397,7 +2398,7 @@ server-side.
   - `resetScopedData(driver: SqliteDriver, businessDate: string): Promise<void>`
   - `needsFullSync(state: SyncStateRow, serverEpoch: number | null, businessDate: string): boolean`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/sync-engine/src/reset.test.ts`:
 
@@ -2522,7 +2523,7 @@ describe("needsFullSync", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run reset
@@ -2530,7 +2531,7 @@ pnpm --filter @ceedo/sync-engine exec vitest run reset
 
 Expected: FAIL — `Cannot find module './reset'`.
 
-- [ ] **Step 3: Write `reset.ts`**
+- [x] **Step 3: Write `reset.ts`**
 
 ```ts
 import { PULLED_TABLES, DEVICE_AUTHORED_TABLES } from "@ceedo/db-local";
@@ -2606,7 +2607,7 @@ Add to `packages/sync-engine/src/index.ts`:
 export { resetScopedData, needsFullSync } from "./reset";
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run
@@ -2614,19 +2615,23 @@ pnpm --filter @ceedo/sync-engine exec vitest run
 
 Expected: PASS, 13 tests.
 
-- [ ] **Step 5: Verify the E8 test is falsifiable**
+- [x] **Step 5: Verify the E8 test is falsifiable**
 
 Temporarily add `"outbox"` to the loop in `resetScopedData` (iterate
 `[...PULLED_TABLES, "outbox"]`) and re-run. Expected: `"never touches device-authored
 state"` FAILS with `{ n: 0 }`. **Revert.**
 
-This check is the whole reason the test stages a non-empty outbox. Confirm by also
-temporarily deleting the three `insert into outbox/local_shifts/pin_attempts` lines from the
-fixture and re-running with the wipe still in place: the test now **passes** while the
-implementation destroys a collector's cash records. That is the tautology shape, seen
-directly.
+This check is the whole reason the test stages a non-empty outbox, and it was confirmed:
+with `"outbox"` in the loop the test fails with `{ n: 0 }`.
 
-- [ ] **Step 6: Commit**
+**The second half of this step does not reproduce, and the test is stronger than it
+assumed.** Deleting the three fixture inserts and re-running with the wipe still in place
+was supposed to show the test passing vacuously. It fails instead, because the assertion is
+`toEqual({ n: 1 })` — an exact count, which an empty fixture fails just as a wiped one does.
+The tautology shape the plan warns about needs a weaker assertion (`toBeGreaterThan(0)`, or
+no staged row at all); this one cannot take it.
+
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/sync-engine
