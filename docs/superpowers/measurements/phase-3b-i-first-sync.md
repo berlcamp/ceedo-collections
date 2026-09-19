@@ -33,12 +33,21 @@ collections are now part of the pull and those rows are wider than charge rows.
 
 ## Results
 
-| Run | Elapsed | charges | collections | allocations | Payload |
-| --- | --- | --- | --- | --- | --- |
-| 1 | **98 ms** | 731 | 730 | 730 | 882,585 B (862 KiB) |
-| 2 | **91 ms** | 731 | 730 | 730 | 882,585 B (862 KiB) |
+| Run | Context | Elapsed | charges | collections | allocations | Payload |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | file alone | **98 ms** | 731 | 730 | 730 | 882,585 B (862 KiB) |
+| 2 | file alone | **91 ms** | 731 | 730 | 730 | 882,585 B (862 KiB) |
+| 3 | full suite | **229 ms** | 731 | 730 | 730 | 888,288 B |
+| 4 | full suite | **74 ms** | 731 | 730 | 730 | 882,673 B |
 
 Each run against a freshly `supabase db reset` database.
+
+**Run 3 is the one worth noting.** At 229 ms it is roughly 2.5× the isolated runs, measured
+while the rest of the suite had already populated the shared database. That spread is the
+honest figure to carry forward: the number moves with what else is in the database, which
+is precisely the accumulation effect the Phase 3a handover documents for `run_surcharge`.
+Even so it is ~35× inside the production ceiling, so the conclusion does not change — but
+"98 ms" alone would have been a prettier number than the measurement supports.
 
 For comparison, the same fixture with **no** payment history (1,461 unpaid charges, zero
 collections) measured **45 ms** at 304,165 B — i.e. the payment history roughly doubled the
@@ -48,8 +57,8 @@ elapsed time and tripled the payload, which is the direction Phase 3a predicted.
 
 | Limit | Value | Measured | Margin |
 | --- | --- | --- | --- |
-| Production `statement_timeout` | 8,000 ms | 98 ms | ~82× |
-| Test budget (half the ceiling) | 4,000 ms | 98 ms | ~41× |
+| Production `statement_timeout` | 8,000 ms | 229 ms (worst) | ~35× |
+| Test budget (half the ceiling) | 4,000 ms | 229 ms (worst) | ~17× |
 | Design §9 payload alarm | 8 MiB | 862 KiB | ~9.5× |
 
 Phase 3a estimated this shape at 1.5–3 MB. The measured 862 KiB is below that estimate,
@@ -58,9 +67,10 @@ opposite would have mattered.
 
 ## Ruling on spec E9
 
-Plan Task 3, Step 4: **under ~2s, E9 stands as specified.** At 98 ms it stands with roughly
-twenty times the headroom the rule required, so the daily full re-sync runs in the ordinary
-foreground path and needs neither a background mode nor a blocking splash.
+Plan Task 3, Step 4: **under ~2s, E9 stands as specified.** Taking the worst observed run
+(229 ms) rather than the best, it stands with roughly nine times the headroom the rule
+required, so the daily full re-sync runs in the ordinary foreground path and needs neither
+a background mode nor a blocking splash.
 
 E9 is affordable only while a full sync is cheap. It currently is, by a very wide margin.
 `tests/db/first-sync-budget.test.ts` is the standing guard: if a future change pushes first
@@ -75,5 +85,8 @@ tablets start failing.
   is unmeasured and is named rather than assumed.
 - **Local Postgres in Docker on an Apple Silicon laptop**, not the hosted instance. Hosted
   latency adds network time on top, which is not in these figures.
-- **Cold cache.** Both runs followed a `db reset` and a fixture build, so the relevant pages
+- **Cold cache.** Every run followed a `db reset` and a fixture build, so the relevant pages
   were warm. A genuinely cold first sync would be slower by an unmeasured amount.
+- **A clean database.** The 2.5× spread between run 2 and run 3 shows the figure is
+  sensitive to what else is present. The suite resets before every run; a production
+  database that never resets does not.

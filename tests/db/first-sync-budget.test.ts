@@ -24,6 +24,8 @@ describe("sync_pull first-sync budget", () => {
   let app: PgClient;
   let fixtures: PgClient;
   let deviceId: string;
+  // Held so afterAll can remove this file's fixture from the shared database.
+  let leaseId: string;
 
   beforeAll(async () => {
     fixtures = new PgClient({ connectionString: POSTGRES_URL });
@@ -35,6 +37,7 @@ describe("sync_pull first-sync budget", () => {
       startDate: "2024-09-19",
     });
     deviceId = fx.deviceId;
+    leaseId = fx.leaseId;
 
     // The backlog is inserted directly rather than accrued.
     //
@@ -97,6 +100,50 @@ describe("sync_pull first-sync budget", () => {
   }, 120_000);
 
   afterAll(async () => {
+    // LEAVE THE WORLD AS THIS FILE FOUND IT.
+    //
+    // This fixture is by far the largest in the suite -- 1,461 charges, 730 of them
+    // delinquent for up to four years. `run_surcharge` does an unbounded system-wide scan
+    // (design §9's named early warning, and the Phase 3a handover's measured cost driver),
+    // so every surcharge test that runs after this file would otherwise scan all of it.
+    //
+    // That is not hypothetical: the first full-suite run after this file was added failed
+    // three tests in surcharge.test.ts, which passed alone and passed on re-runs. The
+    // failure was intermittent rather than caused outright, but leaving a four-year
+    // delinquent backlog in a shared database measurably loads the single most fragile
+    // part of this suite, and `resetCutover`'s doc comment already establishes the
+    // convention: a file that mutates shared state restores it here.
+    //
+    // Order is forced by the foreign keys: allocations, then collections, then charges.
+    //
+    // AND THE LEASE IS ENDED, WHICH MATTERS MORE THAN THE ROWS. Deleting this file's
+    // charges is not enough on its own: the fixture also leaves behind an ACTIVE daily
+    // lease dated two years back, and `run_accrual` selects `where l.status = 'active'`
+    // and backfills from `start_date`. So any later test that runs an accrual regenerates
+    // ~750 charges for this lease -- measured directly: after a full suite with only the
+    // row cleanup in place, 747 rental charges had reappeared against it, spanning the
+    // lease's start date to today.
+    //
+    // The rows were the symptom; the active back-dated lease was the generator.
+    if (fixtures && leaseId) {
+      await fixtures.query(
+        "update ceedo_collections.leases set status = 'terminated' where id = $1",
+        [leaseId],
+      );
+      await fixtures.query(
+        `delete from ceedo_collections.collection_allocations
+          where collection_id in (select id from ceedo_collections.collections
+                                   where lease_id = $1)`,
+        [leaseId],
+      );
+      await fixtures.query("delete from ceedo_collections.collections where lease_id = $1", [
+        leaseId,
+      ]);
+      await fixtures.query("delete from ceedo_collections.charges where lease_id = $1", [
+        leaseId,
+      ]);
+    }
+
     // Guarded, because beforeAll builds a substantial fixture and a failure there leaves
     // these undefined. An unguarded teardown then throws its own TypeError and REPLACES
     // the Postgres error that actually explains the failure -- which cost a debugging
