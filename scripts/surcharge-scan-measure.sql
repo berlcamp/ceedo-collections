@@ -23,6 +23,20 @@
 -- more than a month overdue -- which is exactly the selectivity the index under test lives
 -- or dies by. `settled_pct` is the share of each lease's oldest charges that a collection
 -- has settled, which is what the view's lateral joins have to chew through.
+--
+-- `steady_state` (0 or 1, default 0) decides WHICH NIGHT is being measured, and it is the
+-- difference between a worst case and the case production actually runs.
+--
+--   0 -- the first night run_surcharge has ever run against this ledger. No surcharge rows
+--        exist, so the `not exists (... charge_type = 'surcharge')` anti-join removes
+--        nothing and every month-overdue unsettled rental is still a candidate.
+--   1 -- the night AFTER. run_surcharge itself is called once (the real function, not an
+--        imitation of it), raising the surcharges a real nightly job would have raised, and
+--        the measurement is then taken on the NEXT run. That anti-join now removes almost
+--        every candidate, which is the steady state every night after the first.
+--
+-- The original measurement only ever ran shape 0 and its write-up names that as the largest
+-- realism gap. This parameter is how that gap gets closed.
 
 \set ON_ERROR_STOP on
 \timing on
@@ -39,20 +53,26 @@
 \else
   \set settled_pct 90
 \endif
+\if :{?steady_state}
+\else
+  \set steady_state 0
+\endif
 
 \echo ''
 \echo '==================== surcharge scan measurement ===================='
-\echo 'leases      :' :leases
-\echo 'days        :' :days
-\echo 'settled_pct :' :settled_pct
+\echo 'leases       :' :leases
+\echo 'days         :' :days
+\echo 'settled_pct  :' :settled_pct
+\echo 'steady_state :' :steady_state
 \echo ''
 
 begin;
 
 -- psql does not interpolate variables inside dollar-quoted strings, so the parameters
 -- reach the DO block through a table rather than through :leases.
-create temporary table measure_params (leases int, days int, settled_pct int) on commit drop;
-insert into measure_params values (:leases, :days, :settled_pct);
+create temporary table measure_params (leases int, days int, settled_pct int, steady_state int)
+  on commit drop;
+insert into measure_params values (:leases, :days, :settled_pct, :steady_state);
 
 -- The BEFORE plan has to be measured without the index whether or not the migration that
 -- ships it has been applied, so that re-running this script after the fact still produces a
@@ -61,10 +81,12 @@ drop index if exists ceedo_collections.charges_surcharge_due_idx;
 
 do $build$
 declare
-  v_leases      integer;
-  v_days        integer;
-  v_settled_pct integer;
-  v_settled     integer;
+  v_leases       integer;
+  v_days         integer;
+  v_settled_pct  integer;
+  v_settled      integer;
+  v_steady_state integer;
+  v_raised       integer;
   v_today       date := ceedo_collections.business_date();
   v_fee_type    uuid;
   v_form_type   uuid;
@@ -75,7 +97,9 @@ declare
   v_device      uuid;
   v_tag         text := 'MSR' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 8);
 begin
-  select leases, days, settled_pct into v_leases, v_days, v_settled_pct from measure_params;
+  select leases, days, settled_pct, steady_state
+    into v_leases, v_days, v_settled_pct, v_steady_state
+    from measure_params;
   -- How many of each lease's charges, oldest first, a collection has settled.
   v_settled := (v_days * v_settled_pct) / 100;
 
@@ -185,6 +209,16 @@ begin
       on col.lease_id = ranked.lease_id and col.booklet_id = v_booklet
     where ranked.rn <= v_settled;
   end if;
+
+  -- Steady state: run the REAL nightly job once, so the measurement below is taken on the
+  -- second night rather than the first. Calling run_surcharge itself rather than seeding
+  -- surcharge rows by hand is deliberate -- a hand-rolled imitation could raise a different
+  -- set than the function does, and then the anti-join being measured would be answering a
+  -- question the production job never asks.
+  if v_steady_state = 1 then
+    v_raised := ceedo_collections.run_surcharge(v_today);
+    raise notice 'steady_state: run_surcharge raised % surcharges on the first night', v_raised;
+  end if;
 end;
 $build$;
 
@@ -225,7 +259,19 @@ select
      where b.charge_type = 'rental'
        and not b.is_settled
        and ceedo_collections.business_date() > (b.due_date + interval '1 month')::date)
-    as month_overdue_unsettled_rentals;
+    as month_overdue_unsettled_rentals,
+  -- What tonight's run would actually raise: the same set as the column to the left, minus
+  -- the parents a previous night already surcharged. At steady_state=0 these two are equal
+  -- (nothing has run yet). At steady_state=1 this collapses to roughly one night's worth,
+  -- and the gap between the two columns IS the anti-join's selectivity.
+  (select count(*) from ceedo_collections.charge_balances b
+     where b.charge_type = 'rental'
+       and not b.is_settled
+       and ceedo_collections.business_date() > (b.due_date + interval '1 month')::date
+       and not exists (
+         select 1 from ceedo_collections.charges s
+         where s.parent_charge_id = b.id and s.charge_type = 'surcharge'))
+    as tonights_candidates;
 
 -- The fraction that decides everything. This is not a fraction the planner ever sees: its
 -- row estimate for the charges scan is a flat one-third at every shape below, regardless of

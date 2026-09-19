@@ -613,7 +613,115 @@ revisiting this index should start by resolving it: inspect `pg_stats` for the i
 expression column after the harness's ANALYZE and find out whether statistics were collected
 and ignored, or never collected.
 
+## Follow-up — the steady state, and a controlled re-timing
+
+Everything above this heading was written before the steady state was measured. This section
+closes the gap "Limits of what was measured" named as the obvious follow-up, and it changes
+the Decision. Nothing above has been edited; it is the record this section corrects.
+
+**Command:** `psql "$DB_URL" -v leases=500 -v days=400 -v settled_pct=90 -v steady_state=1
+-f scripts/surcharge-scan-measure.sql`
+
+`steady_state=1` calls the real `ceedo_collections.run_surcharge()` once against the seeded
+ledger — raising the surcharges a first nightly run would raise — and then measures the run
+after it. The function itself is called rather than surcharge rows being seeded by hand, so
+the anti-join under measurement is answering exactly the question production asks.
+
+| | Shape C, night one | Shape C, steady state |
+| --- | --- | --- |
+| leases | 500 | 500 |
+| charges total | 200,000 | 204,500 |
+| rental charges | 200,000 | 200,000 |
+| surcharge charges | 0 | 4,500 |
+| month-overdue rentals | 184,500 | 184,500 |
+| month-overdue unsettled rentals | 4,500 | 4,500 |
+| **tonight's candidates** | **4,500** | **0** |
+
+`run_surcharge` raised 4,500 surcharges on the first night. On the second night there is
+nothing left to raise.
+
+### The anti-join cannot help, because it runs last
+
+The hoped-for effect was that a highly selective "already surcharged" anti-join would shrink
+the candidate set before the expensive work. It does not, and the plan says why — the
+anti-join is the **outermost** node:
+
+```
+Nested Loop Anti Join  (actual time=1204.173..1204.196 rows=0 loops=1)
+  ->  Nested Loop Left Join  (actual time=9.922..1194.280 rows=4500 loops=1)
+        ->  Nested Loop Left Join  (actual time=0.566..954.952 rows=184500 loops=1)
+              ->  Seq Scan on charges c  (actual time=0.013..77.595 rows=184500 loops=1)
+  ->  Index Only Scan using charges_one_surcharge_per_parent on charges s  (loops=4500)
+```
+
+It receives 4,500 rows — already past the laterals and past `is_settled` — and emits 0. The
+laterals still execute `loops=184500`. The anti-join filters the *output*, not the input, and
+no index on `charges` can move it earlier: it depends on `b.id` from the view, so it cannot
+be evaluated until the view's row exists.
+
+**The steady state is therefore more expensive than night one, not less** (≈900–1200 ms
+against ≈820 ms): the surcharge rows enlarge the heap while the lateral work is unchanged.
+Every night after the first, this job does ~185,000 lateral evaluations to produce nothing.
+
+### The single-shot harness overstates the index, and by how much
+
+The steady-state run reported 1204.700 ms without the index and 851.035 ms with it — a 29%
+gap that would look like a strong result. It is not one. Buffers are effectively identical
+(2,019,362 hit / 0 read versus 2,019,280 hit / 165 read, 0.004% apart), so no additional work
+was avoided; and **this harness always runs BEFORE first**, which hands the entire
+first-execution warm-up to the no-index side.
+
+Measured properly — one steady-state ledger, one transaction, the two conditions interleaved
+A/B/A/B/A/B with the index created and dropped between, so drift hits both equally:
+
+| Round | No index | With index |
+| --- | --- | --- |
+| 1 | 1133.502 ms | 782.838 ms |
+| 2 | 955.042 ms | 902.397 ms |
+| 3 | 890.080 ms | 870.437 ms |
+
+The no-index series falls monotonically (1133 → 955 → 890), which is warm-up. The with-index
+series has no trend and its *fastest* run is its first. Discarding the warm-up round leaves
+≈922 ms against ≈886 ms: about 36 ms, ~4%, inside a spread of 65 ms and 32 ms respectively.
+
+That is the same ~4% seen at night one, and it is the honest size of the effect in both
+regimes. **The 29% was an artifact of measurement order.** Any residual advantage is
+consistent with the index storing `(due_date + interval '1 month')::date` precomputed, so the
+expression is never evaluated per row — a CPU saving that buffer counts cannot show and that
+this sample size cannot separate from noise.
+
+**This is a defect in the harness's design, not just in one reading of it.** A
+BEFORE-then-AFTER script cannot measure an effect smaller than its warm-up. Anyone re-running
+it for a decision should use the interleaved form.
+
 ## Decision
+
+**DO NOT SHIP — superseded.** The original decision below was SHIP, taken against §3's
+plan-shape gate before the steady state had been measured. The index was shipped as
+`20260919000043_surcharge_due_idx.sql` and has since been reverted. What changed:
+
+- The steady state — the case production runs every night after the first — is **more**
+  expensive than the case measured, and the index does not help it either.
+- The effect in both regimes is ~4%, inside run-to-run variance, and the one measurement that
+  looked decisive (29%) was an ordering artifact.
+- The anti-join that might have narrowed the candidate set provably cannot: it is the
+  outermost plan node and filters output, not input.
+- Against that, the index carried a permanent cost: a byte-identity obligation between
+  `run_surcharge`'s `WHERE` clause and the index expression, split across two files and kept
+  in step by hand, plus its presence in the schema standing as a claim that the nightly job's
+  scan problem had been addressed. It had not been. The scan is ~6% of this query; the
+  laterals are ~80%.
+
+§3's gate asked whether the planner would seek on the expression. It would, and it did. That
+turned out to be the wrong question — a proxy for "does this help" that diverges from it
+exactly here. The gate is the defect, and this document is the evidence.
+
+The measurement, the harness and the two corrected design documents are what this work
+delivers. §7 of the design said it plainly in advance: *"If it does not work, the finding is
+still worth having."*
+
+<details>
+<summary>The original SHIP decision, superseded but preserved</summary>
 
 **SHIP** — Shape C's AFTER plan shows `Index Scan using charges_surcharge_due_idx on charges c`
 with `Index Cond: (((due_date + '1 mon'::interval))::date < '2026-09-19'::date)`, not a
@@ -634,3 +742,29 @@ future Postgres — or a future ANALYZE that does collect usable expression stat
 cost this scan at its true selectivity and may well choose differently. A later task that
 revisits this index's value under a differently-correlated heap, or that wants to explain
 *why* it keeps winning, should treat that as open, not settled by this document.
+
+</details>
+
+## What the next person should look at
+
+Not the scan. At the gate shape the query pays ~185,000 lateral evaluations — one
+`collection_allocations` probe and one `charge_condonations` probe per month-overdue rental —
+to produce 4,500 rows on the first night and **zero** every night after. That is ~80% of the
+runtime and it is untouched by anything this work shipped.
+
+The directions that remain open, none of them measured:
+
+- **Narrow the input before `charge_balances` is joined at all.** The anti-join and
+  `is_settled` both filter output. A candidate set built from `charges` and
+  `collection_allocations` directly — or a per-lease pre-filter — would cut the lateral count
+  rather than the rows surviving it.
+- **The redundant conjunct** described under "An alternative nobody considered". It seeks on
+  the existing `charges_due_date_idx` and needs no new index, but it touches `run_surcharge`'s
+  `WHERE` clause and so needs the equivalence argument made properly.
+- **Materialising `charge_balances` is still not available**, for the two reasons in
+  `docs/superpowers/specs/2026-09-19-surcharge-scan-cost-design.md` §4 — it breaks
+  `post_collection`'s post-lock re-read, and a matview cannot be `security_invoker`. Those
+  hold regardless of anything measured here.
+
+Use `scripts/surcharge-scan-measure.sql` with `-v steady_state=1` as the baseline, and
+interleave the conditions rather than trusting its BEFORE/AFTER ordering.
