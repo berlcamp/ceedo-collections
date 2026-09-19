@@ -549,10 +549,14 @@ describe("sync_push — shifts", () => {
   it("reports a closeout mismatch without closing", async () => {
     const fx = await createSyncFixture(db);
     await accrue();
-    await push(fx, [collectionEntry(fx)]);
     const shiftId = randomUUID();
 
-    const results = await push(fx, [
+    // Open, then collect INTO the shift, then close -- in that order. Since migration 0043
+    // close_shift counts by collections.shift_id, and the collection's foreign key needs
+    // the shift to exist before it can name it. This is the real sequence; the earlier
+    // shape (collect first, open and close afterwards) could only ever produce a receipt
+    // belonging to no shift, which now counts towards no closeout at all.
+    await push(fx, [
       {
         type: "shift_open",
         payload: {
@@ -562,13 +566,17 @@ describe("sync_push — shifts", () => {
           opened_at: COLLECTED_AT,
         },
       },
+      collectionEntry(fx, { shift_id: shiftId }),
+    ]);
+
+    const results = await push(fx, [
       {
         type: "shift_close",
         payload: { id: shiftId, declared_total: "0.00", device_count: 0, device_total: "0.00" },
       },
     ]);
 
-    expect(results[1]).toMatchObject({ status: "mismatch", system_count: 1 });
+    expect(results[0]).toMatchObject({ status: "mismatch", system_count: 1 });
     const { rows } = await db.query(
       `select status from ceedo_collections.shifts where id = $1`,
       [shiftId],

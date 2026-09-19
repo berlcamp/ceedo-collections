@@ -631,6 +631,13 @@ export async function postCollectionAsOwner(
     lines?: { fee_type_id: string; rate_class?: string; quantity: number }[];
     payerRef?: string;
     notes?: string;
+    /**
+     * The device shift this receipt belongs to (migration 0043). Omitted means null, which
+     * is what a supervisor's web post and every pre-3b-i collection carry -- so a fixture
+     * that does not care about shifts keeps producing exactly the rows it produced before.
+     * A test about closeout must pass it, because close_shift now counts by this column.
+     */
+    shiftId?: string | null;
   } = {},
 ): Promise<string> {
   const groupRanks = opts.groupRanks ?? [1];
@@ -649,6 +656,7 @@ export async function postCollectionAsOwner(
     lease_id: opts.leaseId === undefined ? fixture.leaseId : opts.leaseId,
     payer_ref: opts.payerRef ?? null,
     notes: opts.notes ?? null,
+    shift_id: opts.shiftId ?? null,
     allocations: groupRanks.map((group_rank) => ({ group_rank })),
     lines: opts.lines ?? [],
   };

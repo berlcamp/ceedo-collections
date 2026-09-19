@@ -352,6 +352,22 @@ describe("closeout over HTTP", () => {
             opened_at: "2026-10-05T02:00:00+00:00",
           },
         },
+        // A receipt collected INTO this shift. Since migration 0043 close_shift counts by
+        // collections.shift_id, so the mismatch has to be staged with a collection that
+        // names this shift -- leaning on receipts left behind by the push tests above no
+        // longer works, because those belong to no shift and count towards no closeout.
+        //
+        // Cash-only, not a lease allocation: the tests above have already settled this
+        // lease's unpaid periods, so a group_rank 1 allocation here would be rejected as
+        // not-a-prefix and the shift would end up empty again.
+        collectionEntry({
+          or_no: 1330,
+          shift_id: shiftId,
+          lease_id: null,
+          fee_type_id: fx.perHeadFeeTypeId,
+          allocations: [],
+          lines: [{ fee_type_id: fx.perHeadFeeTypeId, rate_class: "hog", quantity: 1 }],
+        }),
       ],
     });
 
@@ -364,7 +380,8 @@ describe("closeout over HTTP", () => {
     });
 
     expect(res.status).toBe(200);
-    // Collections already exist for this collector from the push tests above.
+    // The device declares nothing; the server holds one receipt for this shift.
     expect(res.body.status).toBe("mismatch");
+    expect(Number(res.body.system_count)).toBe(1);
   });
 });
