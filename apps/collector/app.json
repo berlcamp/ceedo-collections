@@ -35,7 +35,13 @@
         }
       ],
       "expo-sqlite",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Used once, to scan the enrolment code that pairs this tablet with the office."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

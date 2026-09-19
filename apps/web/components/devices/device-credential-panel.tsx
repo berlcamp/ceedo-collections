@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import QRCode from "qrcode";
 import {
   issueCredential,
   revokeCredential,
   type IssueCredentialResult,
 } from "@/lib/devices/credential-actions";
+import { encodeEnrollment } from "@ceedo/shared";
 
 export interface DeviceOption {
   id: string;
@@ -29,6 +31,22 @@ export function DeviceCredentialPanel({ devices }: { devices: DeviceOption[] }) 
   const [revoking, setRevoking] = useState(false);
   const [issued, setIssued] = useState<IssueCredentialResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [qr, setQr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!issued?.credentialId || !issued.secret) {
+      setQr(null);
+      return;
+    }
+    // Rendered client-side from state that already holds the secret. It must never be sent
+    // anywhere to be turned into an image -- the whole point of `issue_device_credential`
+    // returning it once is that it exists in exactly one place for one moment.
+    QRCode.toDataURL(encodeEnrollment(issued.credentialId, issued.secret), {
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 256,
+    }).then(setQr, () => setQr(null));
+  }, [issued]);
 
   async function onIssue() {
     if (!deviceId) return;
@@ -130,6 +148,23 @@ export function DeviceCredentialPanel({ devices }: { devices: DeviceOption[] }) 
               <dd className="inline break-all font-mono">{issued.secret}</dd>
             </div>
           </dl>
+          {qr ? (
+            /* eslint-disable-next-line @next/next/no-img-element --
+               a data: URI built in this component's own state, which next/image would
+               route through the optimizer and, for a one-shot secret, off this page. */
+            <img
+              src={qr}
+              alt="Enrollment QR code"
+              width={256}
+              height={256}
+              className="mt-3 rounded bg-white p-2"
+            />
+          ) : (
+            <p className="mt-3 text-xs text-amber-900">
+              QR could not be rendered. Type the credential ID and secret into the tablet
+              instead — the values above are complete.
+            </p>
+          )}
         </div>
       ) : null}
     </div>

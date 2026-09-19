@@ -25,6 +25,10 @@ export default function Index() {
       <Link href="/engine-probe" style={styles.link}>
         The sync engine, on expo-sqlite →
       </Link>
+
+      <Link href="/enroll" style={styles.link}>
+        Enrol this tablet →
+      </Link>
     </View>
   );
 }

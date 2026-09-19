@@ -1,5 +1,6 @@
 export * from "./booklets";
 export * from "./charges";
+export * from "./enrollment-payload";
 export * from "./fifo";
 export * from "./money";
 export * from "./rates";

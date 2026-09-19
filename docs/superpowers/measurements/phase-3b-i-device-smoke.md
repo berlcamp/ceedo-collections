@@ -65,7 +65,23 @@ run answered.
 
 ## Task 11 — enrollment
 
-_(added when Task 11 lands)_
+Needs a native rebuild first: `expo-camera`, `expo-sqlite` and `expo-secure-store` are
+native modules, and Fast Refresh does not reload them. Also needs
+`EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_ANON_KEY` in the build's environment (see
+`apps/collector/.env.example`); without them the screen says so plainly rather than failing
+at the first sync.
+
+| Check | Expected | Observed |
+| --- | --- | --- |
+| Scan the QR from the admin's Device credential screen | "Enrolled and synced. This tablet is ready." | _not yet run_ |
+| Force-quit and reopen, then sync again | still enrolled — the Keystore kept it | _not yet run_ |
+| Re-issue a credential, then TYPE both values | same success message | _not yet run_ |
+| Type a secret with one character wrong | "That code did not scan cleanly…" immediately, no network call | _not yet run_ |
+
+The second row is the one an emulator makes easy to skip and it is the point of using
+`expo-secure-store` at all. The fourth is the reason the payload carries a checksum: without
+it a mistyped secret fails at the first sync with `unauthorized`, which is
+indistinguishable from a revoked credential or a server that is down.
 
 ## Task 12 — offline sign-in
 
