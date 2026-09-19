@@ -45,12 +45,16 @@ describe("authentication over HTTP", () => {
     expect(res.body).toEqual({ error: "unauthorized" });
   });
 
-  it("refuses an absent credential with 401", async () => {
+  it("refuses an absent credential with 400, naming the missing field", async () => {
+    // This asserted 401 until Task 5 put contract validation BEFORE authentication. A body
+    // with no credential_id is malformed, not unauthenticated, and saying so is what lets a
+    // device developer tell a typo from a revoked credential. The 401-comes-from-us-and-not
+    // -from-Kong point this test used to carry is pinned by the wrong-secret test above,
+    // which sends a well-formed body and asserts the body of the 401.
     const res = await callFunction("sync-pull", { cursor: 0 });
-    expect(res.status).toBe(401);
-    // The body, not just the status: Kong also answers 401, so a status-only assertion
-    // passes even when the Function is broken or absent.
-    expect(res.body).toEqual({ error: "unauthorized" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
+    expect(JSON.stringify(res.body.detail)).toMatch(/credential_id/);
   });
 
   it("refuses a GET with 405", async () => {
@@ -93,16 +97,19 @@ describe("authentication over HTTP", () => {
     // This endpoint is reached by an unauthenticated client over the public internet. A
     // Postgres error string names tables, columns and constraints.
     //
-    // This test used to send `entries: "not-an-array"`, which sync-push refuses at its own
-    // `Array.isArray` check and answers 400 — Postgres never ran, no error string ever
-    // existed, and the assertion below was true of a body that could not have leaked
-    // anything. It now drives a REAL Postgres failure: `close_shift`'s `p_shift_id` is a
-    // uuid, and PostgREST hands back `invalid input syntax for type uuid: "not-a-uuid"`.
-    // Confirmed by hand that this is what the RPC layer returns before the Function
-    // rewrites it.
+    // This test used to send `entries: "not-an-array"`, which sync-push refused at its own
+    // `Array.isArray` check — Postgres never ran, no error string ever existed, and the
+    // assertion below was true of a body that could not have leaked anything. It was then
+    // changed to send `shift_id: "not-a-uuid"`, which drove a real PostgREST uuid-syntax
+    // error; Task 5's contract validation now refuses THAT at the door, which would have
+    // put this test back in the same vacuous shape.
+    //
+    // So the error is driven one layer deeper: a well-formed uuid naming no shift passes
+    // validation, reaches close_shift, and raises `No such shift` — a genuine Postgres
+    // error string, redacted by the handler into the code below.
     const res = await callFunction("closeout", {
       ...creds(),
-      shift_id: "not-a-uuid",
+      shift_id: randomUUID(),
       declared_total: "0.00",
       device_count: 0,
       device_total: "0.00",
@@ -113,14 +120,17 @@ describe("authentication over HTTP", () => {
     // or a future handler can append a `detail` and still pass a negative match.
     expect(res.body).toEqual({ error: "closeout_failed" });
     expect(JSON.stringify(res.body)).not.toMatch(/ceedo_collections|relation|column|pg_/i);
-    expect(JSON.stringify(res.body)).not.toMatch(/uuid|syntax/i);
+    expect(JSON.stringify(res.body)).not.toMatch(/uuid|syntax|shift/i);
   });
 
-  it("still refuses a non-array entries field with 400", async () => {
-    // Kept from the old redaction test above, which is the only thing it ever proved.
+  it("still refuses a non-array entries field with 400, and now says which field", async () => {
+    // Kept from the old redaction test above, which is the only thing it ever proved. The
+    // bare `Array.isArray` check that answered this is gone; the schema answers it instead,
+    // and the difference is that the caller is told the field's name.
     const res = await callFunction("sync-push", { ...creds(), entries: "not-an-array" });
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({ error: "bad_request" });
+    expect(res.body.error).toBe("invalid_body");
+    expect(JSON.stringify(res.body.detail)).toMatch(/entries/);
   });
 });
 
@@ -183,14 +193,22 @@ describe("sync-push over HTTP", () => {
     expect(res.body[0]).toMatchObject({ index: 0, status: "accepted" });
   });
 
-  it("ignores a device_id in the payload and uses the credential's", async () => {
-    // Invariant 21, over the wire. The SQL test proves the function does this; this proves
-    // the transport does not reintroduce the payload's value on the way through.
+  it("refuses a payload carrying device_id rather than quietly overriding it", async () => {
+    // Invariant 21, over the wire -- and the answer CHANGED in Task 5. sync_push still
+    // overrides device_id from the authenticated credential, and tests/db/sync-push.test.ts
+    // ("takes device_id from the credential, never from the payload") still pins that; it is
+    // the guarantee, and it is untouched.
+    //
+    // What changed is what a client carrying one is told. CollectionPayload declares
+    // device_id `z.never()` -- "REFUSED rather than merely ignored", as the contract's own
+    // comment puts it -- so the request no longer reaches Postgres at all. Silently
+    // accepting a field the server intends to discard is how a confused client stays
+    // confused, and how a hostile one learns nothing.
     const other = await createSyncFixture(db);
     await db.query(`select ceedo_collections.run_accrual('2026-10-05'::date)`);
     const id = randomUUID();
 
-    await callFunction("sync-push", {
+    const res = await callFunction("sync-push", {
       ...creds(),
       entries: [
         {
@@ -211,11 +229,16 @@ describe("sync-push over HTTP", () => {
       ],
     });
 
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
+    expect(JSON.stringify(res.body.detail)).toMatch(/device_id/);
+
+    // And nothing was written: a refused body must not have reached the engine.
     const { rows } = await db.query(
-      `select device_id from ceedo_collections.collections where id = $1`,
+      `select count(*)::int as n from ceedo_collections.collections where id = $1`,
       [id],
     );
-    expect(rows[0]?.device_id).toBe(fx.deviceId);
+    expect(rows[0].n).toBe(0);
   });
 
   it("does not lose the whole round to one entry whose exception cannot be filed", async () => {

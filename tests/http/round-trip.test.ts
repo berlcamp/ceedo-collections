@@ -159,7 +159,12 @@ describe("a market round, end to end, without a tablet", () => {
       shift_id: shiftId,
       declared_total: (Number(wrong.body.system_total) - 5).toFixed(2),
       device_count: wrong.body.system_count,
-      device_total: wrong.body.system_total,
+      // .toFixed(2), because the server's figure comes back as a JSON NUMBER and the
+      // request contract requires a 2dp decimal STRING -- the asymmetry sync-contract.ts
+      // documents at `money`/`wireMoney`. This line used to feed the number straight back
+      // and the server tolerated it; since Task 5 validates request bodies it does not, and
+      // formatting money for the wire is the device's job anyway.
+      device_total: Number(wrong.body.system_total).toFixed(2),
     });
     expect(right.body.status).toBe("closed");
     expect(Number(right.body.variance)).toBeCloseTo(-5, 2);
