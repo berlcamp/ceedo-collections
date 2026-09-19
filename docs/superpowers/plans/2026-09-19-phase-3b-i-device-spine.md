@@ -36,7 +36,7 @@ the app is written against.
 | 7 — `packages/sync-engine` (pull and apply) | **done** — 5 tests; E7 atomicity confirmed falsifiable |
 | 8 — reset, epoch, daily full re-sync | **done** — 13 tests; E8 wipe confirmed falsifiable |
 | 9 — the outbox and the sync loop | **done** — 24 engine tests + 4 over real HTTP; suite at 733 |
-| 10 — `expo-sqlite` driver, on-device run | **code done; step 6 blocked** — the tablet run is the only thing outstanding |
+| 10 — `expo-sqlite` driver, on-device run | **done** — ran on the tablet; E7 atomicity holds on `expo-sqlite` |
 | **11 — enrollment** | **NEXT.** |
 | 12–14 | not started |
 
@@ -86,12 +86,16 @@ The generated Deno copy is `supabase/functions/_shared/contract.ts`. Never hand-
 `pnpm edge:contract`. `http/contract-validation.test.ts` fails when it is stale, and that
 failure was confirmed by hand rather than assumed.
 
-**What needs the tablet, and is therefore outstanding.** Tasks 10, 12 and 14 each end in a
-run on the physical device, and Task 11 has a camera step. Everything around those steps is
-built and green; the runs themselves are recorded in
-`docs/superpowers/measurements/phase-3b-i-device-smoke.md`, where every result column
-currently reads "not yet run". Task 10's code was verified as far as a laptop can: the
-Android bundle builds and carries the probe screen and all 21 `CREATE TABLE` statements.
+**What needs the tablet.** Tasks 10, 12 and 14 each end in a run on the physical device, and
+Task 11 has a camera step. Results live in
+`docs/superpowers/measurements/phase-3b-i-device-smoke.md`.
+
+**Task 10's run is done and it passed.** 1,500 rows applied, cursor at 1500, and — the one
+that could not be inferred from Node — the cursor held at 1500 through a failing apply. So
+spec E7 holds on `expo-sqlite`'s `withTransactionAsync`, not merely on `better-sqlite3`'s
+hand-issued BEGIN/COMMIT, and the driver-exemption trap this phase was built to avoid is
+closed for the apply path. Tasks 11-13 build on an engine that has now been run on the
+hardware.
 
 **Measurements taken so far**, each with what it invalidated:
 - `docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md`
@@ -3686,8 +3690,9 @@ Run it:
 cd apps/collector && pnpm sync-migrations
 ```
 
-- [ ] **Step 6: Run it on the physical tablet** — BLOCKED, needs the device. Everything
-else in this task is done and the checklist is waiting for these four numbers.
+- [x] **Step 6: Run it on the physical tablet** — run, and it passed: 1500 rows applied,
+cursor 1500, and the cursor held at 1500 through a failing apply. E7 holds on the driver
+that ships, not just on `better-sqlite3`.
 
 ```bash
 cd apps/collector && pnpm expo run:android --device

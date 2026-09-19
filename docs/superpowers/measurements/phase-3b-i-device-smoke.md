@@ -15,16 +15,37 @@ exemption, and nothing run on a laptop closes it.
 
 Open the app, tap **The sync engine, on expo-sqlite**, then the button.
 
+Run on the tablet, and **the engine passed on the real driver**:
+
 | Line | Expected | Observed |
 | --- | --- | --- |
-| `apply 1500 rows` | `1500 present` | _not yet run_ |
-| `cursor` | `1500` | _not yet run_ |
-| `atomicity` | `cursor held at 1500` | _not yet run_ |
-| `outbox pushable` | `1` | _not yet run_ |
+| `apply 1500 rows` | `1500 present` | `1500 present` ✓ |
+| `cursor` | `1500` | `1500` ✓ |
+| `atomicity` | `cursor held at 1500` | `cursor held at 1500` ✓ |
+| `outbox pushable` | `1` | line printed; count not transcribed |
 
-**A line reading `ATOMICITY FAILED` or `THREW` is a finding about the engine, not about the
-probe.** It means the Node driver is exempt from something `expo-sqlite` enforces, which is
-the entire reason this probe exists. Record it here and fix the engine.
+**What this settles, and it is the whole point of the task.** `expo-sqlite` is asynchronous
+and transacts through `withTransactionAsync`; `better-sqlite3` is synchronous and transacts
+through hand-issued BEGIN/COMMIT. The three results above are the three places that
+difference could have shown:
+
+- **1,500 rows landed**, so the 50-row chunking clears this device's
+  `SQLITE_MAX_VARIABLE_NUMBER` — an unchunked apply would have exceeded both the 999 and
+  32766 ceilings.
+- **The cursor advanced to 1500**, so apply and cursor commit together on the success path.
+- **The cursor held at 1500 through a failing apply**, which is spec E7 on the driver that
+  ships. This is the one that could not be inferred from Node: if `withTransactionAsync`
+  had swallowed the throw, or committed what had already been written before it, the cursor
+  would have moved to 9999 and every row in a failed batch would have been lost permanently
+  on every future crash. It did not.
+
+No `ATOMICITY FAILED`, no `THREW`. The Node driver is not exempt from anything `expo-sqlite`
+enforces, at least along these three paths.
+
+The fourth line printed but its count was not transcribed. It is the least load-bearing of
+the four — the outbox is covered by 11 Node tests and the engine reached that line without
+throwing, which is what proves `enqueue` and `pushable` run on this driver at all. Fill in
+the number on the next run.
 
 ### What was verified without the tablet
 
@@ -36,8 +57,9 @@ the entire reason this probe exists. Record it here and fix the engine.
   unreachable — with it on, the export fails to resolve `@expo/metro-runtime` from
   expo-router's own entry file.
 
-Neither of those is a substitute for the run above. A bundle that builds says nothing about
-how `withTransactionAsync` behaves when an apply throws.
+Neither of those was a substitute for the run above. A bundle that builds says nothing about
+how `withTransactionAsync` behaves when an apply throws — which is exactly the question the
+run answered.
 
 ---
 
