@@ -75,17 +75,26 @@ far past the 2 s threshold — but designing a remedy around a debug figure woul
 measuring the wrong thing twice in a row, which is the mistake this file already records
 once.
 
-Cheapest way to get it, with no release keystore needed:
+**Use a release build, not `expo start --no-dev --minify`.** The Metro route was tried
+first and is the worse option for two reasons:
+
+1. It still depends on the device reaching the dev server, and it failed in practice with
+   `java.io.IOException: Failed to download remote update` -- a networking problem
+   contributing nothing to the question being asked.
+2. It measures production-mode JS on a debug native shell, still loading a bundle over the
+   wire rather than the ahead-of-time `.hbc` that actually ships.
+
+A release build compiles the JS into the APK, needs no Metro at all, and is what runs in
+the field. It signs with the debug keystore out of the box -- `android/app/build.gradle`
+sets `release { signingConfig signingConfigs.debug }` -- so no keystore setup is required
+to take this measurement:
 
 ```bash
 cd apps/collector
-npx expo start --no-dev --minify
+npx expo run:android --device --variant release
 ```
 
-Reload the app against that server and re-run the probe. Fuller check, if a release
-keystore exists: `npx expo run:android --device --variant release`.
-
-### Run 2 — production-mode JS
+### Run 2 — release build
 
 | Sample | 1 | 2 | 3 | 4 | 5 | Median |
 | --- | --- | --- | --- | --- | --- | --- |
