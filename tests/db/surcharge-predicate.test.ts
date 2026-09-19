@@ -22,13 +22,17 @@ afterAll(async () => {
  * in this direction — and an edit that looks cosmetic can silently make the rejection
  * argument stop applying.
  *
- * `scripts/surcharge-scan-measure.sql` also carries a copy of this predicate, and the
- * measurement it produces is only about run_surcharge insofar as the two agree.
+ * `scripts/surcharge-scan-measure.sql` and `scripts/surcharge-scan-alternating.sql` also carry
+ * a copy of this predicate, and the measurements they produce are only about run_surcharge
+ * insofar as all three agree.
  *
  * An expression index over `(due_date + interval '1 month')::date` was briefly shipped
- * (migration 20260919000043) and reverted: it was measured at ~4% in both the first-night and
- * steady-state regimes, inside run-to-run variance, and it obliged a human to keep this
- * literal and the index expression byte-identical forever for no measured return. See
+ * (migration 20260919000043) and reverted: its effect is at most ~4% in both the first-night
+ * and steady-state regimes, inside run-to-run variance, and a per-node decomposition of an
+ * interleaved run found the two nodes it touches both ran SLOWER with it. It obliged a human
+ * to keep this literal and the index expression byte-identical forever for no measured
+ * return. With that index went the plan test that guarded it, which is why this file is now
+ * the only thing pinning the spelling. See
  * `docs/superpowers/measurements/2026-09-19-surcharge-scan.md`.
  */
 const PREDICATE = "v_date > (b.due_date + interval '1 month')::date";
@@ -74,7 +78,7 @@ const EXPECTED_DISAGREEMENTS = [
 ];
 
 describe("run_surcharge's month-overdue predicate", () => {
-  it("still reads exactly as the index and the design assume", async () => {
+  it("still reads exactly as the design assumes", async () => {
     const { rows } = await db.query(
       "select pg_get_functiondef(p.oid) as def" +
         "  from pg_proc p" +

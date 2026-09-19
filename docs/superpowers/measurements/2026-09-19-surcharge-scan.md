@@ -619,6 +619,14 @@ Everything above this heading was written before the steady state was measured. 
 closes the gap "Limits of what was measured" named as the obvious follow-up, and it changes
 the Decision. Nothing above has been edited; it is the record this section corrects.
 
+Two pointers in it are stale and are corrected here rather than in place. The seeding INSERT
+cited as `scripts/surcharge-scan-measure.sql:130-132` and the settlement-through-collections
+block cited as `:135-138` were already off by about thirty lines when they were written, and
+have since moved file: the harness's build block now lives in
+`scripts/surcharge-scan-build.sql`, shared verbatim with
+`scripts/surcharge-scan-alternating.sql` so the two harnesses cannot build different ledgers.
+Look there for the `insert into ceedo_collections.charges` and the `if v_settled > 0` branch.
+
 **Command:** `psql "$DB_URL" -v leases=500 -v days=400 -v settled_pct=90 -v steady_state=1
 -f scripts/surcharge-scan-measure.sql`
 
@@ -626,6 +634,15 @@ the Decision. Nothing above has been edited; it is the record this section corre
 ledger — raising the surcharges a first nightly run would raise — and then measures the run
 after it. The function itself is called rather than surcharge rows being seeded by hand, so
 the anti-join under measurement is answering exactly the question production asks.
+
+Two raw logs are cited in this section. `.superpowers/sdd/laterals/shape-c-steady.txt` is the
+single-shot BEFORE/AFTER harness run at `steady_state=1`, and
+`.superpowers/sdd/laterals/alternating-out.txt` is the interleaved run
+(`scripts/surcharge-scan-alternating.sql`). **They do not measure the same AFTER plan.** In
+`shape-c-steady.txt` the planner chose a `Bitmap Heap Scan on charges` driven by a `Bitmap
+Index Scan on charges_surcharge_due_idx`; in `alternating-out.txt` it chose a plain `Index
+Scan using charges_surcharge_due_idx`. The 29% below and the alternating figures below are
+therefore not two readings of one comparison, and should not be subtracted from one another.
 
 | | Shape C, night one | Shape C, steady state |
 | --- | --- | --- |
@@ -637,10 +654,30 @@ the anti-join under measurement is answering exactly the question production ask
 | month-overdue unsettled rentals | 4,500 | 4,500 |
 | **tonight's candidates** | **4,500** | **0** |
 
-`run_surcharge` raised 4,500 surcharges on the first night. On the second night there is
-nothing left to raise.
+`run_surcharge` raised 4,500 surcharges on the first night, and the **0** in the right-hand
+column is what a second run of **that same night** would raise.
 
-### The anti-join cannot help, because it runs last
+**The 0 is not "night two raises nothing".** The harness calls `run_surcharge(v_today)` and
+then measures `v_today` again — the business date is never advanced
+(`scripts/surcharge-scan-build.sql`, the `steady_state` branch). So the measured fact is that
+re-running one night finds no candidate it has not already surcharged, which is the
+idempotence `run_surcharge` is built for. It is not a statement about the next calendar night.
+
+On a real night two the business date moves forward and a day's cohort of rentals crosses the
+month line. On this ledger that is one charge per lease — **~500 charges** — of which the
+still-unsettled ones become candidates. So the production fact is *~500 rows raised for
+~369,000 lateral probes*, not zero rows for 369,000 probes. Stated separately because they are
+different claims; the qualitative point is unchanged and if anything sharper, because the job's
+cost is set by the 184,500 month-overdue rows it walks and not by the handful it acts on.
+
+Both commit messages of this work carry claims this section corrects. `c8cc9c1` says the
+steady state "does ~185,000 lateral evaluations to raise nothing at all", that "the steady
+state is therefore dearer than the first night", and that no index can move the anti-join
+earlier because "it depends on b.id from the view"; `c5ac9e5` repeats the unqualified
+night-one ~4% and the ~6% scan share. Commit messages are history and are not being rewritten
+— this document is the correction of record.
+
+### The anti-join cannot help, because it is not selective enough to be worth moving
 
 The hoped-for effect was that a highly selective "already surcharged" anti-join would shrink
 the candidate set before the expensive work. It does not, and the plan says why — the
@@ -655,24 +692,72 @@ Nested Loop Anti Join  (actual time=1204.173..1204.196 rows=0 loops=1)
 ```
 
 It receives 4,500 rows — already past the laterals and past `is_settled` — and emits 0. The
-laterals still execute `loops=184500`. The anti-join filters the *output*, not the input, and
-no index on `charges` can move it earlier: it depends on `b.id` from the view, so it cannot
-be evaluated until the view's row exists.
+laterals still execute `loops=184500`. The anti-join filters the *output*, not the input.
 
-**The steady state is therefore more expensive than night one, not less** (≈900–1200 ms
-against ≈820 ms): the surcharge rows enlarge the heap while the lateral work is unchanged.
-Every night after the first, this job does ~185,000 lateral evaluations to produce nothing.
+**The reason no index can fix that is arithmetic, not dependency order.** An earlier version
+of this section said the anti-join "depends on `b.id` from the view, so it cannot be evaluated
+until the view's row exists". That is wrong. `charge_balances` selects `c.id` straight through
+(`supabase/migrations/20260918000019_charge_balances.sql`), so `b.id` **is** `charges.id`, and
+it is available at the scan — the view's own laterals key on `c.id` and could not run
+otherwise. Postgres is perfectly able to evaluate `not exists (… parent_charge_id = c.id)`
+against the scan output if that is cheaper.
+
+It is not cheaper, and that is the real finding. At the steady state the anti-join removes
+**4,500 of the 184,500** rows that reach the laterals — **2.4%** — and it removes exactly
+those 4,500 wherever it is placed. What changes with placement is what it costs:
+
+| Anti-join placed… | probes into `charges_one_surcharge_per_parent` | rows removed |
+| --- | --- | --- |
+| at the `charges` scan (pushed down — hypothetical) | 184,500, one per scanned row | 4,500 |
+| where the planner put it (outermost — measured) | 4,500 (`loops=4500` in the plan) | 4,500 |
+
+Pushing it down is **41× the probes for an identical result**. The planner's placement is
+optimal, and an index that let it seek earlier would be buying the right to do more work. The
+already-surcharged anti-join is simply not a selective filter on this ledger.
+
+**The steady state costs a little more than night one, and the measured part of that is
+13,581 buffers.** Total buffer traffic goes from 2,005,781 at night one to 2,019,362 at the
+steady state — **0.67%** more — and the plans account for every one of those buffers:
+
+| | night one | steady state | Δ |
+| --- | --- | --- | --- |
+| anti-join subtree on `charges_one_surcharge_per_parent` | 1 (a `Materialize` over one empty `loops=1` scan) | 13,500 (`loops=4500`) | **+13,499** |
+| `charges` scan (4,500 more rows in the heap) | 3,279 | 3,361 | **+82** |
+| everything else, laterals included | 2,002,501 | 2,002,501 | **0** |
+| total | 2,005,781 | 2,019,362 | **+13,581** |
+
+So the extra cost is the anti-join doing real work at last, not the heap growing: the lateral
+work is unchanged at `loops=184500` and to the buffer. That delta is the measurement, and it
+is the claim this document stands behind.
+
+An earlier version of this paragraph also compared wall clocks across the two regimes
+(≈900–1200 ms against ≈820 ms, an 8–47% gap), and offered "the surcharge rows enlarge the
+heap" as the mechanism. **That comparison is withdrawn.** It set two single-shot runs from
+different sessions against each other — precisely the methodology the next subsection shows to
+be invalid — and the mechanism is off by two orders of magnitude: the heap growth is the +82
+row of the table above, 0.004% of the buffers, against a claimed 8–47% of the time. Even the
+full 0.67% delta cannot carry a difference that size. The alternating run's no-index condition
+spans 890.080–1133.502 ms *within one transaction on one ledger*, which is wider than the gap
+being explained. Nothing here supports a wall-clock claim about night one versus the steady
+state.
+
+What the steady state does do is spend the same ~369,000 lateral probes — one into the
+allocations lateral and one into the condonations lateral for each of 184,500 month-overdue
+rentals — while only 4,500 rows survive `is_settled` and none survive the anti-join.
 
 ### The single-shot harness overstates the index, and by how much
 
 The steady-state run reported 1204.700 ms without the index and 851.035 ms with it — a 29%
 gap that would look like a strong result. It is not one. Buffers are effectively identical
-(2,019,362 hit / 0 read versus 2,019,280 hit / 165 read, 0.004% apart), so no additional work
-was avoided; and **this harness always runs BEFORE first**, which hands the entire
-first-execution warm-up to the no-index side.
+(2,019,362 hit / 0 read versus 2,019,280 hit / 165 read — in fact **83 more** buffer touches
+with the index, the two totals 0.004% apart), so no additional work was avoided; and **this
+harness always runs BEFORE first**, which hands the entire first-execution warm-up to the
+no-index side.
 
 Measured properly — one steady-state ledger, one transaction, the two conditions interleaved
-A/B/A/B/A/B with the index created and dropped between, so drift hits both equally:
+A/B/A/B/A/B with the index created and dropped between, so drift hits both equally
+(`scripts/surcharge-scan-alternating.sql`; raw log
+`.superpowers/sdd/laterals/alternating-out.txt`):
 
 | Round | No index | With index |
 | --- | --- | --- |
@@ -680,19 +765,75 @@ A/B/A/B/A/B with the index created and dropped between, so drift hits both equal
 | 2 | 955.042 ms | 902.397 ms |
 | 3 | 890.080 ms | 870.437 ms |
 
-The no-index series falls monotonically (1133 → 955 → 890), which is warm-up. The with-index
-series has no trend and its *fastest* run is its first. Discarding the warm-up round leaves
-≈922 ms against ≈886 ms: about 36 ms, ~4%, inside a spread of 65 ms and 32 ms respectively.
+Means: 992.87 ms without, 851.89 ms with — an apparent 141 ms advantage. **That advantage did
+not come from the index, and the node decomposition of the same six plans is what says so.**
 
-That is the same ~4% seen at night one, and it is the honest size of the effect in both
-regimes. **The 29% was an artifact of measurement order.** Any residual advantage is
-consistent with the index storing `(due_date + interval '1 month')::date` precomputed, so the
-expression is never evaluated per row — a CPU saving that buffer counts cannot show and that
-this sample size cannot separate from noise.
+| Node (`loops`) | No index, R1 / R2 / R3 | mean | With index, R1 / R2 / R3 | mean | Δ |
+| --- | --- | --- | --- | --- | --- |
+| `charges` scan | 44.127 / 42.770 / 34.119 | **40.34 ms** | 48.895 / 54.315 / 45.602 | **49.60 ms** | **+9.26 ms** |
+| `Hash Join` above it | 108.563 / 106.906 / 95.527 | **103.67 ms** | 106.536 / 117.060 / 108.423 | **110.67 ms** | **+7.00 ms** |
+| lateral `Nested Loop Left Join` (`loops=184500`) | 928.011 / 767.040 / 706.250 | **800.43 ms** | 627.462 / 725.515 / 692.975 | **682.00 ms** | **−118.43 ms** |
+| Execution Time | 1133.502 / 955.042 / 890.080 | **992.87 ms** | 782.838 / 902.397 / 870.437 | **851.89 ms** | **−140.98 ms** |
+
+(Cumulative `actual time` per node, read off the six plans in
+`.superpowers/sdd/laterals/alternating-out.txt`. The `charges` scan is a `Seq Scan` in the
+no-index condition and an `Index Scan using charges_surcharge_due_idx` in the with-index one;
+every other node is structurally identical between the two.)
+
+The index touches exactly two nodes, and **both are slower with it, in every round.** The
+`charges` scan — the one node where storing `(due_date + interval '1 month')::date`
+precomputed could possibly show up as a CPU saving — is 23% slower (40.34 → 49.60 ms). The
+`Hash Join` immediately above it is 7% slower (103.67 → 110.67 ms). The entire 141 ms sits in
+the lateral `Nested Loop Left Join`: a node that runs `loops=184500` in both conditions and
+reports **bit-identical buffers in all six runs** (`shared hit=1633500` for the allocations
+lateral, `shared hit=369000` for the condonations lateral). An index on `charges` cannot speed
+up a node performing the same number of probes against the same pages of
+`collection_allocations`, `collections` and `charge_condonations`.
+
+So no mechanism survives. **There is no I/O mechanism:** the index *adds* 83 net buffer
+touches at this shape and removes none. **There is no CPU mechanism:** the only two nodes
+where a precomputed expression could save CPU are the two that got slower. The 141 ms is
+session drift landing on the lateral subtree, and the drift is easily large enough to produce
+it — the no-index condition alone spans 890.080–1133.502 ms, a **243 ms** range, and across
+all six executions the spread is 782.838–1133.502 ms. The lateral subtree reports no `read`
+component in any of the six.
+
+**"Warm-up" was a label, not an explanation, and the ordering is still confounded.** The
+no-index series does fall monotonically (1133.502 → 955.042 → 890.080). But all three no-index
+runs report `Buffers: shared hit=2019362` with no `read` component at all: every page was
+already in shared buffers, so there is no I/O for a warm-up to warm, and the 243 ms decline is
+CPU-side drift of an unidentified kind. The with-index series, meanwhile, does not merely lack
+a trend — it *rises* (782.838 → 902.397 → 870.437), which is the opposite of warm-up. And
+strict A/B/A/B/A/B ties condition to position parity: no-index holds every odd execution and
+with-index every even one. This run diagnosed one ordering bias and replaced it with a
+different one.
+
+Discarding the first round leaves ≈922 ms against ≈886 ms: about 36 ms, ~4%, inside a spread
+of 65 ms and 32 ms respectively. That is an **upper bound** on a residual advantage, not a
+measurement of one — and the decomposition above says the advantage is not the index's.
+
+Night one's figure was **≤4%, and biased upward by the same ordering**: 820.989 ms → 790.965 ms
+came from this same BEFORE-first harness, so it is an upper bound too, not an independent
+confirmation. **The 29% was an artifact of measurement order.**
 
 **This is a defect in the harness's design, not just in one reading of it.** A
-BEFORE-then-AFTER script cannot measure an effect smaller than its warm-up. Anyone re-running
-it for a decision should use the interleaved form.
+BEFORE-then-AFTER script cannot measure an effect smaller than its warm-up. The interleaved
+form is now in the repo as `scripts/surcharge-scan-alternating.sql`, and anyone re-running
+this for a decision should start from it — and should fix the position-parity confound while
+they are there. Randomise the order, or run A/B/B/A, and use more than three rounds: six
+executions cannot separate a 4% effect from a 24% drift. None of that would change the
+outcome, because the index has no mechanism by which to win; it is the difference between
+"not demonstrated" and "demonstrated absent".
+
+**A realism caveat, because it inflates the figure that now directs future work.** The whole
+synthetic ledger is built inside the measuring transaction, so every tuple is uncommitted and
+no page has ever been vacuumed. The visibility map is therefore empty, and the `Index Only
+Scan using collections_pkey` inside the allocations lateral reports `Heap Fetches: 180000` and
+`shared hit=540000` — about **27%** of the 2,019,362 buffers the whole query touches. A
+vacuumed production `collections` table would answer most of those from the index alone. This
+falls on both conditions identically, so it does not touch the revert. It does inflate the
+"the laterals are ~80%" figure below, and anyone sizing that work should re-measure against a
+committed, vacuumed ledger before trusting the 80%.
 
 ## Decision
 
@@ -700,23 +841,41 @@ it for a decision should use the interleaved form.
 plan-shape gate before the steady state had been measured. The index was shipped as
 `20260919000043_surcharge_due_idx.sql` and has since been reverted. What changed:
 
-- The steady state — the case production runs every night after the first — is **more**
-  expensive than the case measured, and the index does not help it either.
-- The effect in both regimes is ~4%, inside run-to-run variance, and the one measurement that
-  looked decisive (29%) was an ordering artifact.
-- The anti-join that might have narrowed the candidate set provably cannot: it is the
-  outermost plan node and filters output, not input.
+- The steady state — the case production runs every night after the first — is not cheaper
+  than the case measured. It carries 13,581 more buffer touches (0.67%), 13,499 of them the
+  anti-join finally having something to probe, for the same `loops=184500` of lateral work
+  down to the buffer. The index does not help it either.
+- The effect in both regimes is **≤4%**, inside run-to-run variance and biased upward by the
+  measurement order in both cases. The one measurement that looked decisive (29%) was an
+  ordering artifact.
+- **There is no mechanism by which the index could win.** Decomposed per node across the
+  interleaved run, the two nodes it touches — the `charges` scan and the `Hash Join` above it
+  — were *slower* with it in all three rounds, and the whole apparent 141 ms sits in a lateral
+  subtree that runs `loops=184500` and reports bit-identical buffers in both conditions. On
+  I/O the index is 83 net buffer touches worse. This, not the timing spread, is why it goes.
+- The anti-join that might have narrowed the candidate set cannot pay for itself: it removes
+  4,500 of the 184,500 rows reaching the laterals (2.4%) wherever it is placed, and pushing it
+  to the scan would cost 41× the probes for the same result.
 - Against that, the index carried a permanent cost: a byte-identity obligation between
   `run_surcharge`'s `WHERE` clause and the index expression, split across two files and kept
   in step by hand, plus its presence in the schema standing as a claim that the nightly job's
-  scan problem had been addressed. It had not been. The scan is ~6% of this query; the
+  scan problem had been addressed. It had not been. On the interleaved run the `charges` scan
+  is **3.8–4.5%** of this query (44.127/1133.502, 42.770/955.042, 34.119/890.080); the
   laterals are ~80%.
 
 §3's gate asked whether the planner would seek on the expression. It would, and it did. That
 turned out to be the wrong question — a proxy for "does this help" that diverges from it
 exactly here. The gate is the defect, and this document is the evidence.
 
-The measurement, the harness and the two corrected design documents are what this work
+**A note on how the revert was done.** The index was removed by deleting its migration file,
+`20260919000043_surcharge_due_idx.sql`. That takes it out of the migration set but not out of
+any database that already applied it: a developer who ran that migration before the revert
+still has `charges_surcharge_due_idx` until their next `pnpm db:reset`. Harmless here — there
+is no deployed environment, and the suite resets the local database before every run — but an
+absent migration file is not the same thing as an absent index, and on a deployed schema this
+would have needed a `drop index` migration instead.
+
+The measurement, the harnesses and the two corrected design documents are what this work
 delivers. §7 of the design said it plainly in advance: *"If it does not work, the finding is
 still worth having."*
 
@@ -747,17 +906,30 @@ revisits this index's value under a differently-correlated heap, or that wants t
 
 ## What the next person should look at
 
-Not the scan. At the gate shape the query pays ~185,000 lateral evaluations — one
-`collection_allocations` probe and one `charge_condonations` probe per month-overdue rental —
-to produce 4,500 rows on the first night and **zero** every night after. That is ~80% of the
-runtime and it is untouched by anything this work shipped.
+Not the scan — on the interleaved run it is **3.8–4.5%** of execution time, so there is nothing
+there to win. At the gate shape the query pays **~369,000 lateral probes** — one
+`collection_allocations` probe and one `charge_condonations` probe for each of 184,500
+month-overdue rentals — to produce 4,500 rows on the first night and roughly a day's cohort
+(~500 on this ledger) every night after. That is ~80% of the runtime, subject to the realism
+caveat above, and it is untouched by anything this work shipped.
 
 The directions that remain open, none of them measured:
 
-- **Narrow the input before `charge_balances` is joined at all.** The anti-join and
-  `is_settled` both filter output. A candidate set built from `charges` and
-  `collection_allocations` directly — or a per-lease pre-filter — would cut the lateral count
-  rather than the rows surviving it.
+- **`is_settled` is the predicate worth pushing down, and nothing else is close.** It removes
+  **180,000 of the 184,500** rows that reach it — **97.6%** — visible as `Rows Removed by
+  Filter: 180000` on the outer `Nested Loop Left Join` in every plan above. And most of it is
+  computable without `charge_balances` at all: `amount - allocated > 0`, taken from
+  `collection_allocations` joined to `collections` and `collection_cancellations`, is a
+  *superset* of the true candidate set, because condonations can only reduce `outstanding`
+  further. So a pre-filter built by joining `charges` to those three directly — or a per-lease
+  pre-filter — would cut the lateral count rather than the rows surviving it, and the
+  condonations lateral would then run against the ~4,500 rows that survive instead of all
+  184,500. **This is the lead.**
+- **The already-surcharged anti-join is not the lead, and is recorded here so nobody spends a
+  day on it.** It removes 4,500 of 184,500 — **2.4%** — wherever it sits, and moving it to the
+  scan would cost 41× the probes for the same result (see "The anti-join cannot help"). Its
+  earlier billing alongside `is_settled` in this list was misdirection; the two differ by a
+  factor of 40 in what they remove.
 - **The redundant conjunct** described under "An alternative nobody considered". It seeks on
   the existing `charges_due_date_idx` and needs no new index, but it touches `run_surcharge`'s
   `WHERE` clause and so needs the equivalence argument made properly.
@@ -766,5 +938,6 @@ The directions that remain open, none of them measured:
   `post_collection`'s post-lock re-read, and a matview cannot be `security_invoker`. Those
   hold regardless of anything measured here.
 
-Use `scripts/surcharge-scan-measure.sql` with `-v steady_state=1` as the baseline, and
-interleave the conditions rather than trusting its BEFORE/AFTER ordering.
+Use `scripts/surcharge-scan-measure.sql` with `-v steady_state=1` to establish a shape, and
+`scripts/surcharge-scan-alternating.sql` to time anything — never the BEFORE/AFTER ordering of
+the former, and not fewer rounds than the question needs.

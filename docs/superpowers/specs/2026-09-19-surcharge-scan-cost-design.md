@@ -1,7 +1,9 @@
 # CEEDO Collections — Surcharge Scan Cost Design
 
 **Date:** 2026-09-19
-**Status:** Approved for planning
+**Status:** Partly superseded by its own measurement — §2's index shipped and was reverted the
+same day, and §6's plan test with it. §1, §2, §6 and §7 carry "Measured:" notes; §4, §5 and §8
+stand. Evidence: `docs/superpowers/measurements/2026-09-19-surcharge-scan.md`.
 **Scope:** Make the nightly surcharge job scale, and correct the upgrade path the Phase 3a
 design named for it.
 **Parent spec:** `docs/superpowers/specs/2026-09-17-ceedo-collections-design.md`
@@ -83,6 +85,21 @@ nothing.
 
 **Nothing else changes.** No view is materialised, no reader is repointed, no function body
 is touched.
+
+**Measured: this index shipped and was reverted the same day.** It went out as migration
+`20260919000043_surcharge_due_idx.sql`; that file no longer exists and
+`charges_surcharge_due_idx` is not in the schema. It did pass §3's gate — the planner seeks on
+the expression at all three shapes. But its measured effect is at most ~4% in both the
+first-night and steady-state regimes, inside run-to-run variance and biased upward by the
+harness's BEFORE-first ordering in both readings; and a per-node decomposition of an
+interleaved A/B/A/B/A/B run found no mechanism for even that. The two nodes the index touches
+— the `charges` scan and the `Hash Join` above it — were *slower* with it in all three rounds,
+the whole apparent difference sat in a lateral subtree that runs `loops=184500` with
+bit-identical buffers in both conditions, and on I/O the index is 83 net buffer touches worse.
+Against nothing, the byte-identity obligation above was a standing maintenance cost. See
+`docs/superpowers/measurements/2026-09-19-surcharge-scan.md`. This section is left as written:
+it is the design record that measurement corrects, the same way §8 below corrects Phase 3a's
+§9.
 
 ---
 
@@ -223,6 +240,15 @@ backfill.
 - **No behavioural test changes.** The `where` clause does not change, so the existing
   surcharge suite is the regression test. If any of it moves, something is wrong.
 
+**Measured: the plan test was written, then deleted along with the index.** It asserted
+`Index Cond` on `charges_surcharge_due_idx` in `run_surcharge`'s plan and was removed by the
+revert (`c5ac9e5`), because with no index in the schema it guards nothing and can only fail
+for the wrong reasons. The reasoning above is not withdrawn — a plan test was the right test
+*for an index that shipped*. The equivalence test survives as
+`tests/db/surcharge-predicate.test.ts`, and with the plan test gone it is now the only thing
+pinning §5's finding and the exact spelling of the predicate. See
+`docs/superpowers/measurements/2026-09-19-surcharge-scan.md`.
+
 ---
 
 ## 7. Risks and limits
@@ -236,6 +262,13 @@ unsettled rentals instead of all charges. A ledger with a large genuinely-delinq
 population still does real work each night, by design: the job must consider every unpaid
 rental charge. What changes is that a paid-up ledger stops paying for its own history.
 
+**Measured: that is not what the index did, and a paid-up ledger goes on paying.** Cost does
+not track overdue unsettled rentals, because settlement is a property of `charge_balances`'s
+laterals: they run for all 184,500 month-overdue rows before `is_settled` is known, and only
+4,500 survive it. The index changed how those 184,500 rows were *fetched*, not how many there
+were. The scan it improved is 3.8–4.5% of the query; the laterals are ~80%. See
+`docs/superpowers/measurements/2026-09-19-surcharge-scan.md`.
+
 **The reporting views are untouched and unmeasured.** `aging_of_receivables`,
 `lease_balances` and `subsidiary_ledger` each read `charge_balances` (verified against
 `pg_views`; `delinquency_list` reads the other two rather than the balance view directly). Nobody has reported them as slow
@@ -247,6 +280,12 @@ never touch settlement — if they are ever measured to need it.
 handover records them: `run_surcharge`'s cost growing across un-reset runs (which this
 index should reduce but not eliminate), and PostgREST's 1000-row default breaking
 `membership-gate` on a fourth consecutive un-reset run.
+
+**Measured: the index did not reduce the first ceiling either, and it is now gone.**
+`run_surcharge`'s cost across un-reset runs tracks how many month-overdue rows reach
+`charge_balances`'s laterals, which the index left unchanged. Both ceilings stand exactly
+where Phase 3a's handover left them. See
+`docs/superpowers/measurements/2026-09-19-surcharge-scan.md`.
 
 ---
 

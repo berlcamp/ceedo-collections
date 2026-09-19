@@ -702,11 +702,18 @@ synthetic 200,000-charge ledger
 is not selective at all at one year's depth — 92.25% of charges match it — and the dominant
 cost is `charge_balances`'s per-row lateral joins, which run once for every one of those
 184,500 rows before settlement status is known. An expression index makes the date test seek,
-but does not change how many rows reach the laterals; it was tried, measured at ~4% in both
-the first-night and steady-state regimes — inside run-to-run variance — and reverted. Nor can
-the already-surcharged anti-join narrow the work: it is the outermost plan node, so it filters
-output rather than input, and every night after the first spends ~185,000 lateral evaluations
-to raise nothing. Materialising the view would
+but does not change how many rows reach the laterals; it was tried, measured at **at most ~4%**
+in both the first-night and steady-state regimes — inside run-to-run variance, and with a
+per-node decomposition showing the two nodes it touches both ran *slower* with it — and
+reverted. Nor can the already-surcharged anti-join narrow the work: it removes 4,500 of the
+184,500 rows reaching the laterals (2.4%) wherever the planner places it, so pushing it down
+would cost 41× the index probes for the same result. Every night the job pays **~369,000
+lateral probes** — one into each of two laterals for each of 184,500 month-overdue rentals —
+to raise, after the first night, only the day's cohort that has newly crossed the month line
+(~500 charges on a 500-lease ledger). The predicate that would actually cut that work is
+`is_settled`, which removes 180,000 of the 184,500 (97.6%) and whose allocations half —
+a superset of the true candidate set, since condonations only reduce `outstanding` further —
+is computable from `collection_allocations` without the view. Materialising the view would
 address the laterals — and is unsafe in two independent ways. `post_collection` reads
 `charge_balances` twice — once through `unpaid_period_groups()` to compute the FIFO prefix,
 and again after taking its row locks — and that second, transactionally current read is the
