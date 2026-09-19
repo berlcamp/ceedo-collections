@@ -1,0 +1,28 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'ph.ceedo.collector.bcrypt'
+version = '0.1.0'
+
+android {
+  namespace "ph.ceedo.collector.bcrypt"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  // Apache 2.0, actively maintained, ~574 stars. Parses Modular Crypt Format itself and
+  // handles the 2x / null-byte edge cases that hand-vendored jBCrypt is known for.
+  //
+  // Pinned exactly rather than with a range: this is the code path that authenticates every
+  // collector on every shift, and a Gradle version range would let a build pick up a
+  // different implementation without anyone deciding to.
+  implementation 'at.favre.lib:bcrypt:0.10.2'
+}

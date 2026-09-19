@@ -1,23 +1,29 @@
 import { useState } from "react";
 import { Button, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import bcrypt from "bcryptjs";
+// Relative, not the `@/modules/...` alias the Expo docs show: this project already maps
+// `@/*` to `./src/*`, so that alias would resolve to src/modules/ and silently miss.
+import { verify as nativeVerify, costOf, EXPECTED_COST } from "../../modules/ceedo-bcrypt";
 
 /**
- * A THROWAWAY screen with one job: how long does bcrypt cost-12 verification take under
- * Hermes, on the real tablet?
+ * Measures bcrypt cost-12 verification on the real tablet, native against JavaScript.
  *
- * WHY THIS IS MEASURED BEFORE THE SIGN-IN SCREEN EXISTS. Spec §4.4 records what was already
- * measured on the development machine: native C bcrypt at cost 12 is ~184ms and bcryptjs on
- * V8 is ~233ms -- only ~1.27x apart. So the common claim that JavaScript bcrypt needs a
- * native module is NOT supported by measurement, and the design does not assume one.
+ * WHAT THIS ALREADY SETTLED. `bcryptjs` under Hermes measured a median of 22,265 ms in a
+ * release build (5 samples, 0.2% spread) against a 2,000 ms threshold. Hermes has no JIT and
+ * bcrypt is ~4,096 rounds of pure integer arithmetic, so there is no JavaScript fix -- that
+ * figure IS the minified, ahead-of-time-compiled result, and Hermes has no WebAssembly
+ * either. Hence `modules/ceedo-bcrypt`, which does the same work in Java under ART.
  *
- * Hermes is the open variable. It has no JIT, and a tablet CPU is slower again than the
- * machine those numbers came from. If verification lands past ~2s the sign-in design changes
- * -- a native binding, or a cost-factor conversation -- and that is a decision for whoever
- * holds the number, not something to discover after the screens are built.
+ * It keeps BOTH paths on purpose. The native number alone would be a claim; the two side by
+ * side on one device in one run are a comparison, and the ratio is the thing worth carrying
+ * into the handover.
  *
- * Delete this screen in Task 12 once the number is recorded in
- * docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md.
+ * WHY THIS SCREEN STAYS after Task 12, rather than being deleted as originally planned: it
+ * is the only thing that will catch a future Expo SDK upgrade silently unlinking the native
+ * module and sending sign-in back down the 22-second path. It reports "NATIVE UNAVAILABLE"
+ * rather than quietly falling through, which is the whole point.
+ *
+ * Measurements: docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md
  */
 
 /**
@@ -46,35 +52,66 @@ export default function BcryptProbe() {
   const engine = engineName();
   const onHermes = engine === "Hermes";
 
-  function run() {
-    setRunning(true);
+  /**
+   * Times `verify` over SAMPLES runs and returns the samples plus the median.
+   *
+   * Always verifies the CORRECT pin, so the full key schedule runs to completion. bcrypt
+   * costs the same for a wrong password by design, but measuring the success path removes
+   * any doubt that an early exit was being timed. A failed verification aborts rather than
+   * reporting a number, because a fast wrong answer is worse than no answer.
+   */
+  function time(verify: () => boolean): { samples: number[]; median: number } | null {
     const samples: number[] = [];
-
     for (let i = 0; i < SAMPLES; i++) {
       const started = Date.now();
-      // The CORRECT pin, so the full key schedule runs to completion. A wrong PIN costs the
-      // same in bcrypt by design, but measuring the success path removes any doubt about
-      // whether an early exit was being timed.
-      const ok = bcrypt.compareSync(PIN, HASH);
+      const ok = verify();
       samples.push(Date.now() - started);
+      if (!ok) return null;
+    }
+    const sorted = [...samples].sort((a, b) => a - b);
+    return { samples, median: sorted[Math.floor(SAMPLES / 2)] ?? 0 };
+  }
 
-      if (!ok) {
-        setLines(["HASH MISMATCH — the probe is wrong, not the timing."]);
-        setRunning(false);
-        return;
+  function run() {
+    setRunning(true);
+    const out: string[] = [`engine:  ${engine}`];
+
+    // NATIVE FIRST, because it is the one that decides whether this phase can proceed.
+    // If the module is not linked, that is the finding -- and it must be reported as
+    // "not linked", never silently fall through to the JS path and report its number as
+    // though the native module had produced it.
+    let native: ReturnType<typeof time> = null;
+    try {
+      const cost = costOf(HASH);
+      out.push(`hash cost: ${cost}${cost === EXPECTED_COST ? "" : ` (EXPECTED ${EXPECTED_COST})`}`);
+      native = time(() => nativeVerify(PIN, HASH));
+      if (native === null) {
+        out.push("NATIVE: verification returned false for the correct PIN — module is wrong.");
+      } else {
+        out.push(`native:  ${native.samples.join(", ")} ms`);
+        out.push(`  median: ${native.median} ms`);
       }
+    } catch (error) {
+      out.push(`NATIVE UNAVAILABLE: ${String(error)}`);
+      out.push("(A native module needs a rebuild — Fast Refresh does not reload Kotlin.)");
     }
 
-    const sorted = [...samples].sort((a, b) => a - b);
-    const median = sorted[Math.floor(SAMPLES / 2)] ?? 0;
+    const js = time(() => bcrypt.compareSync(PIN, HASH));
+    if (js === null) {
+      out.push("JS: HASH MISMATCH — the probe is wrong, not the timing.");
+    } else {
+      out.push(`bcryptjs: ${js.samples.join(", ")} ms`);
+      out.push(`  median: ${js.median} ms`);
+    }
 
-    setLines([
-      `engine:  ${engine}`,
-      `samples: ${samples.join(", ")} ms`,
-      `median:  ${median} ms`,
-      "",
-      verdict(median),
-    ]);
+    if (native && js) {
+      out.push("", `speedup: ${(js.median / native.median).toFixed(0)}x`);
+    }
+    if (native) {
+      out.push("", verdict(native.median));
+    }
+
+    setLines(out);
     setRunning(false);
   }
 
@@ -90,12 +127,13 @@ export default function BcryptProbe() {
       </View>
 
       <Text style={styles.body}>
-        Verifies a cost-12 bcrypt hash {SAMPLES} times and reports the median. The hash is a
-        real `set_collector_pin()` output.
+        Verifies a cost-12 bcrypt hash {SAMPLES} times with the NATIVE module and {SAMPLES}
+        times with bcryptjs, and reports both medians. The hash is a real
+        `set_collector_pin()` output.
       </Text>
 
       <Button
-        title={running ? "Running…" : `Run ${SAMPLES} verifications`}
+        title={running ? "Running…" : "Run native vs bcryptjs"}
         onPress={run}
         disabled={running}
       />
@@ -125,8 +163,9 @@ function verdict(median: number): string {
     return "800ms–2s — proceed, but Task 12's sign-in must show a progress indicator.";
   }
   return (
-    "OVER 2s — STOP AND ESCALATE. The options are a native bcrypt binding or a " +
-    "cost-factor conversation, and both are decisions for a human."
+    "OVER 2s — STOP AND ESCALATE. The native module was supposed to be the answer to this, " +
+    "so if NATIVE is over 2s the remaining options all change the security posture " +
+    "(cost factor, or a different KDF) and are decisions for a human, not this plan."
   );
 }
 

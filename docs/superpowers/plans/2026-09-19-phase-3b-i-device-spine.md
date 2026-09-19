@@ -433,6 +433,111 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ---
 
+## Task 2a: Native bcrypt, because Hermes cannot do it
+
+**Added mid-phase, after Task 2's measurement.** Not in the original plan — it exists because
+Task 2 returned a number that invalidated an assumption the plan rested on.
+
+`bcryptjs` under Hermes measured **22,265 ms** median in a release build (5 samples, 0.2%
+spread) against a 2,000 ms threshold and an 800 ms goal. Hermes has no JIT; bcrypt at cost 12
+is ~4,096 Blowfish key expansions of pure 32-bit integer arithmetic. There is no JavaScript
+fix — that figure is already the minified, ahead-of-time-compiled release result, and Hermes
+has no WebAssembly.
+
+**Files:**
+- Create: `apps/collector/modules/ceedo-bcrypt/` (local Expo module, Android only)
+- Modify: `apps/collector/src/app/bcrypt-probe.tsx` (measure native against JS)
+- Modify: `docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md`
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: `verify(pin: string, hash: string): boolean`, `costOf(hash: string): number`,
+  `meetsExpectedCost(hash: string): boolean`, `EXPECTED_COST = 12` — from
+  `apps/collector/modules/ceedo-bcrypt`. Task 12's sign-in uses `verify` in place of
+  `bcrypt.compareSync`.
+
+**Why a local module and not a package.** Every published native bcrypt for React Native was
+checked against live npm and GitHub. The best candidate has 0 stars, ~2 downloads/week and a
+Nitro version skew; the next is two years dead with an unanswered "does not register on
+Android" bug at RN 0.80; another still declares `jcenter()`. Depending on any of them for the
+code path that authenticates every collector on every shift is a worse risk than fifty lines
+of Kotlin. `expo-crypto` has no KDF at all, and `react-native-quick-crypto` — the one healthy
+package in the space — has no bcrypt.
+
+**Why `at.favre.lib:bcrypt` and not vendored jBCrypt.** jBCrypt has not been released since
+2010; vendoring means owning 800 lines of crypto and its known quirks. `at.favre.lib:bcrypt`
+is Apache 2.0, maintained, tested, parses Modular Crypt Format itself, and handles the
+`2x`/null-byte edge cases. Pinned exactly — a version range in this dependency would let a
+build change the authenticator without anyone deciding to.
+
+**This task keeps spec D3 intact.** The server still produces
+`crypt(pin, gen_salt('bf', 12))`; the device verifies that same hash; cost stays 12. No
+security posture is renegotiated, nothing is needed from CEEDO, and no invariant moves. That
+is the entire reason this option was chosen over lowering the cost factor.
+
+- [x] **Step 1: Scaffold the local module**
+
+```bash
+cd apps/collector
+npx create-expo-module@latest ceedo-bcrypt --local --name CeedoBcrypt \
+  --description "Native bcrypt verification for offline collector PIN sign-in" \
+  --package ph.ceedo.collector.bcrypt --license Apache-2.0 \
+  --platform android --features Function
+```
+
+- [x] **Step 2: Add the bcrypt dependency**
+
+In `modules/ceedo-bcrypt/android/build.gradle`, after the `android { }` block:
+
+```gradle
+dependencies {
+  implementation 'at.favre.lib:bcrypt:0.10.2'
+}
+```
+
+- [x] **Step 3: Implement `verify` and `costOf` in Kotlin**
+
+`verify` returns false rather than throwing for empty or malformed input, so a collector with
+a null `pin_hash` reaches sign-in's own "PIN not set" message instead of a crash — §6.3
+records why that distinction matters in the field. `costOf` exists so the device can assert
+what the server gave it rather than trust it, because spec D3 makes cost the PIN's only
+mitigation and a server that silently started issuing cost 6 would be invisible everywhere
+else.
+
+- [x] **Step 4: TypeScript surface, and a web stub that throws**
+
+The web stub throws rather than returning false. A false is indistinguishable from a wrong
+PIN and would let a web build present a working-looking sign-in that refuses every correct
+PIN — a silent wrong answer, which this project treats as worse than a loud failure.
+
+- [x] **Step 5: Measure native against JS in the same probe run**
+
+Both paths stay in `bcrypt-probe.tsx`. The native number alone is a claim; the two side by
+side on one device in one run are a comparison. The probe reports `NATIVE UNAVAILABLE`
+rather than falling through to JS, so an unlinked module can never be mistaken for a fast
+one.
+
+- [ ] **Step 6: Rebuild and measure on the device**
+
+```bash
+cd apps/collector
+npx expo run:android --device --variant release
+```
+
+**A native module needs a full rebuild — Fast Refresh does not reload Kotlin.**
+
+Record both medians and the speedup in
+`docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md`.
+
+**The expectation is low hundreds of milliseconds. It is an expectation, not a measurement** —
+the same class of claim as this phase's 1.5–5 s estimate (wrong by 10–30×) and its 2–7 s
+release-build prediction (wrong again). If native comes back over 2 s, stop: every remaining
+option changes the security posture and belongs to a human.
+
+- [ ] **Step 7: Commit**
+
+---
+
 ## Task 3: Measure `sync_pull` first-sync duration under the real 8s ceiling
 
 Phase 3a's Task 16 measured the first-sync **payload** (~634 KiB against an 8 MiB alarm) and
