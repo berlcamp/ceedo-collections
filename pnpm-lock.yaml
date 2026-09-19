@@ -214,16 +214,28 @@ importers:
 
   tests:
     dependencies:
+      '@ceedo/db-local':
+        specifier: workspace:*
+        version: link:../packages/db-local
       '@ceedo/shared':
         specifier: workspace:*
         version: link:../packages/shared
+      '@ceedo/sync-engine':
+        specifier: workspace:*
+        version: link:../packages/sync-engine
     devDependencies:
       '@supabase/supabase-js':
         specifier: ^2.48.0
         version: 2.116.0
+      '@types/better-sqlite3':
+        specifier: ^7.6.0
+        version: 7.6.13
       '@types/pg':
         specifier: ^8.11.0
         version: 8.23.1
+      better-sqlite3:
+        specifier: ^11.0.0
+        version: 11.10.0
       pg:
         specifier: ^8.13.0
         version: 8.23.0
@@ -7339,9 +7351,7 @@ snapshots:
       metro-runtime: 0.84.6
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 
