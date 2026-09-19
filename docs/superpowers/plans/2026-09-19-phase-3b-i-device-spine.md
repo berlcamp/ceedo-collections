@@ -35,8 +35,9 @@ the app is written against.
 | 6 — `packages/db-local` | **done** — 21 tables generated; `better-sqlite3` needed a pnpm build-script allowance |
 | 7 — `packages/sync-engine` (pull and apply) | **done** — 5 tests; E7 atomicity confirmed falsifiable |
 | 8 — reset, epoch, daily full re-sync | **done** — 13 tests; E8 wipe confirmed falsifiable |
-| **9 — the outbox and the sync loop** | **NEXT.** |
-| 10–14 | not started |
+| 9 — the outbox and the sync loop | **done** — 24 engine tests + 4 over real HTTP; suite at 733 |
+| **10 — `expo-sqlite` driver, on-device run** | **NEXT.** Needs the tablet. |
+| 11–14 | not started |
 
 **What Task 2 changed, and why it matters to everything after it.** `bcryptjs` under Hermes
 verifies a cost-12 hash in **22,265 ms** (release build) against a 2,000 ms threshold. The
@@ -2675,7 +2676,7 @@ Spec E11 and parent §6.4. This is the task where the engine becomes a whole rou
   - `applyResults(driver, rows: OutboxRow[], results: PushResult[]): Promise<void>`
   - `sync(deps: { driver; transport; credentialId; secret; businessDate }): Promise<SyncOutcome>`
 
-- [ ] **Step 1: Write the failing outbox test**
+- [x] **Step 1: Write the failing outbox test**
 
 Create `packages/sync-engine/src/outbox.test.ts`:
 
@@ -2831,7 +2832,7 @@ describe("the outbox", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run outbox
@@ -2839,7 +2840,7 @@ pnpm --filter @ceedo/sync-engine exec vitest run outbox
 
 Expected: FAIL — `Cannot find module './outbox'`.
 
-- [ ] **Step 3: Write `outbox.ts`**
+- [x] **Step 3: Write `outbox.ts`**
 
 ```ts
 import type { PushResult } from "@ceedo/shared";
@@ -3002,7 +3003,7 @@ export async function applyResults(
 }
 ```
 
-- [ ] **Step 4: Run the outbox tests to verify they pass**
+- [x] **Step 4: Run the outbox tests to verify they pass**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run outbox
@@ -3010,12 +3011,12 @@ pnpm --filter @ceedo/sync-engine exec vitest run outbox
 
 Expected: PASS, 8 tests.
 
-- [ ] **Step 5: Verify the E11 test is falsifiable**
+- [x] **Step 5: Verify the E11 test is falsifiable**
 
 Temporarily change `pushable`'s `where` clause to `state = 'pending'` and re-run. Expected:
 `"re-pushes in_flight entries rather than skipping them"` FAILS with `[]`. **Revert.**
 
-- [ ] **Step 6: Add outbox retention**
+- [x] **Step 6: Add outbox retention**
 
 Spec §5.3 and parent §6.4: `acked` entries are purged after 30 days, `rejected` entries are
 retained until resolved. Append to `outbox.ts`:
@@ -3099,7 +3100,7 @@ Add `purgeAcked` to the `outbox.ts` export line in `packages/sync-engine/src/ind
 import it in the test file alongside the others. Run
 `pnpm --filter @ceedo/sync-engine exec vitest run outbox` and expect PASS, 11 tests.
 
-- [ ] **Step 7: Write the sync loop**
+- [x] **Step 7: Write the sync loop**
 
 Create `packages/sync-engine/src/sync.ts`:
 
@@ -3226,7 +3227,7 @@ export { enqueue, pushable, markInFlight, applyResults, type OutboxRow } from ".
 export { sync, SyncError, type SyncDeps, type SyncOutcome } from "./sync";
 ```
 
-- [ ] **Step 8: Write the round-trip test over real HTTP**
+- [x] **Step 8: Write the round-trip test over real HTTP**
 
 Add to `tests/package.json` `devDependencies`: `"better-sqlite3": "^11.0.0"` and
 `"@types/better-sqlite3": "^7.6.0"`. Add to `dependencies`:
@@ -3395,7 +3396,7 @@ describe("the device engine, end to end", () => {
 });
 ```
 
-- [ ] **Step 9: Run it**
+- [x] **Step 9: Run it**
 
 ```bash
 supabase db reset && \
@@ -3409,7 +3410,7 @@ pnpm --filter @ceedo/tests exec vitest run device/round-trip.test.ts
 Expected: PASS, 4 tests. If the migration replay path is wrong, resolve it relative to
 `tests/` — the suite's working directory — rather than hardcoding an absolute path.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add packages/sync-engine tests/device tests/package.json pnpm-lock.yaml
