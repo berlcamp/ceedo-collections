@@ -779,3 +779,9 @@ export async function waitForLockWait(
     await new Promise((r) => setTimeout(r, 20));
   }
 }
+
+/**
+ * Re-exported so a test file needs one import for connections. The implementation lives in
+ * its own file because its doc comment is the explanation of an entire bug class.
+ */
+export { authenticatorClient } from "./authenticator";

@@ -4580,7 +4580,7 @@ checklist nobody runs.**
 
 | Task | Step | Mutation | Test that must fail |
 | --- | --- | --- | --- |
-| 1 | 6 | Connect on `POSTGRES_URL` | Four of the six exemption tests |
+| 1 | 6 | Connect on `POSTGRES_URL` | Five of the six (measured). Only the RLS test survives — `set role` genuinely does reproduce that one, which is the thesis in miniature |
 | 5 | 10 | Add a blank line to the generated contract | The staleness test |
 | 7 | 8 | Advance the cursor in its own transaction, first | `"leaves the cursor untouched when the apply fails partway"` |
 | 8 | 5 | Add `outbox` to the reset loop | `"never touches device-authored state"` |
