@@ -37,8 +37,9 @@ the app is written against.
 | 8 — reset, epoch, daily full re-sync | **done** — 13 tests; E8 wipe confirmed falsifiable |
 | 9 — the outbox and the sync loop | **done** — 24 engine tests + 4 over real HTTP; suite at 733 |
 | 10 — `expo-sqlite` driver, on-device run | **done** — ran on the tablet; E7 atomicity holds on `expo-sqlite` |
-| **11 — enrollment** | **NEXT.** |
-| 12–14 | not started |
+| 11 — enrollment | **code done; step 8 outstanding** — needs the tablet and a native rebuild |
+| **12 — offline sign-in** | **NEXT.** |
+| 13–14 | not started |
 
 **What Task 2 changed, and why it matters to everything after it.** `bcryptjs` under Hermes
 verifies a cost-12 hash in **22,265 ms** (release build) against a 2,000 ms threshold. The
@@ -96,6 +97,12 @@ spec E7 holds on `expo-sqlite`'s `withTransactionAsync`, not merely on `better-s
 hand-issued BEGIN/COMMIT, and the driver-exemption trap this phase was built to avoid is
 closed for the apply path. Tasks 11-13 build on an engine that has now been run on the
 hardware.
+
+**One structural deviation in Task 11.** The plan put the enrollment codec in
+`apps/web/lib/devices/`. It lives in `packages/shared/src/enrollment-payload.ts` instead:
+the web encodes and the tablet decodes, they are separate bundles that cannot import across
+each other, and a copy in each would be two definitions of one format whose divergence shows
+up as a tablet that will not enrol with nothing saying why.
 
 **Measurements taken so far**, each with what it invalidated:
 - `docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md`
@@ -3755,7 +3762,7 @@ Spec E6. The credential reaches Keystore-backed storage and nowhere else.
   - `saveCredential(c): Promise<void>`, `loadCredential(): Promise<Credential | null>`,
     `clearCredential(): Promise<void>`
 
-- [ ] **Step 1: Write the failing test for the payload codec**
+- [x] **Step 1: Write the failing test for the payload codec**
 
 Create `apps/web/lib/devices/enrollment-payload.test.ts`:
 
@@ -3796,7 +3803,7 @@ describe("the enrollment payload", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 ```bash
 pnpm --filter @ceedo/web exec vitest run lib/devices/enrollment-payload.test.ts
@@ -3804,7 +3811,7 @@ pnpm --filter @ceedo/web exec vitest run lib/devices/enrollment-payload.test.ts
 
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Write the codec**
+- [x] **Step 3: Write the codec**
 
 Create `apps/web/lib/devices/enrollment-payload.ts`:
 
@@ -3853,7 +3860,7 @@ export function decodeEnrollment(
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 ```bash
 pnpm --filter @ceedo/web exec vitest run lib/devices/enrollment-payload.test.ts
@@ -3861,7 +3868,7 @@ pnpm --filter @ceedo/web exec vitest run lib/devices/enrollment-payload.test.ts
 
 Expected: PASS, 3 tests.
 
-- [ ] **Step 5: Render the QR on the web**
+- [x] **Step 5: Render the QR on the web**
 
 ```bash
 pnpm --filter @ceedo/web add qrcode
@@ -3918,7 +3925,7 @@ And in the rendered block, after the `</dl>`:
           )}
 ```
 
-- [ ] **Step 6: Write the device credential store**
+- [x] **Step 6: Write the device credential store**
 
 Create `apps/collector/src/auth/credential-store.ts`:
 
@@ -3973,7 +3980,7 @@ export async function clearCredential(): Promise<void> {
 }
 ```
 
-- [ ] **Step 7: Write the enrollment screen**
+- [x] **Step 7: Write the enrollment screen**
 
 Create `apps/collector/app/enroll.tsx` with two paths: a `CameraView` from `expo-camera`
 with `barcodeScannerSettings={{ barcodeTypes: ["qr"] }}`, and a `TextInput` pair for manual
@@ -4010,7 +4017,9 @@ The mandatory behaviour, and the reason each line is there:
   }
 ```
 
-- [ ] **Step 8: Run the enrollment end to end on the tablet**
+- [ ] **Step 8: Run the enrollment end to end on the tablet** — outstanding, needs the
+device and a native rebuild (`expo-camera`, `expo-secure-store` and `expo-sqlite` are
+native modules). The checklist rows are written and waiting.
 
 Issue a credential from the web admin screen, scan it with the tablet, and confirm the
 device reports "Enrolled and synced". Then **force-quit and reopen the app** and confirm
@@ -4023,7 +4032,7 @@ is not a fallback.
 
 Append both results to `docs/superpowers/measurements/phase-3b-i-device-smoke.md`.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add apps/web apps/collector docs/superpowers/measurements/phase-3b-i-device-smoke.md
