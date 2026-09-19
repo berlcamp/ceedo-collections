@@ -10,3 +10,17 @@ export {
   type OutboxRow,
 } from "./outbox";
 export { sync, SyncError, type SyncDeps, type SyncOutcome } from "./sync";
+export {
+  openShift,
+  deviceTotals,
+  closeShift,
+  type ShiftDeps,
+  type DeviceTotals,
+  type CloseOutcome,
+} from "./shift";
+export {
+  canSignIn,
+  recordPinFailure,
+  clearPinFailures,
+  type SignInBlock,
+} from "./signin";

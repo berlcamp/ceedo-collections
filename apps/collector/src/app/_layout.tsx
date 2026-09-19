@@ -19,6 +19,9 @@ export default function RootLayout() {
       <Stack.Screen name="bcrypt-probe" options={{ title: "bcrypt under Hermes" }} />
       <Stack.Screen name="engine-probe" options={{ title: "Engine on expo-sqlite" }} />
       <Stack.Screen name="enroll" options={{ title: "Enrol this tablet" }} />
+      <Stack.Screen name="sign-in" options={{ title: "Sign in" }} />
+      <Stack.Screen name="shift" options={{ title: "Shift" }} />
+      <Stack.Screen name="closeout" options={{ title: "Close out" }} />
     </Stack>
   );
 }

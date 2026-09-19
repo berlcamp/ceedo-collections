@@ -6,6 +6,7 @@ import {
   fromPesos,
   multiply,
   parsePesoInput,
+  toDecimalString,
   sum,
 } from "./money.js";
 
@@ -98,5 +99,26 @@ describe("parsePesoInput", () => {
 
   it("rejects unparseable input", () => {
     expect(() => parsePesoInput("abc")).toThrow(/amount/);
+  });
+});
+
+describe("toDecimalString", () => {
+  it("renders the wire form, with no sign and no separators", () => {
+    expect(toDecimalString(fromCentavos(22550))).toBe("225.50");
+    expect(toDecimalString(fromCentavos(0))).toBe("0.00");
+    expect(toDecimalString(fromCentavos(5))).toBe("0.05");
+    expect(toDecimalString(fromCentavos(123456789))).toBe("1234567.89");
+  });
+
+  it("keeps the sign on a negative variance, because over and short differ", () => {
+    expect(toDecimalString(fromCentavos(-5000))).toBe("-50.00");
+    expect(toDecimalString(fromCentavos(-5))).toBe("-0.05");
+  });
+
+  it("produces exactly what the wire contract's `money` accepts", () => {
+    const money = /^-?\d+\.\d{2}$/;
+    for (const cents of [0, 1, 99, 100, 101, -1, -99, -100, 999999999]) {
+      expect(toDecimalString(fromCentavos(cents))).toMatch(money);
+    }
   });
 });

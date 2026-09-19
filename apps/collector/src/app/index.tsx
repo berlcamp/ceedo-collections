@@ -29,6 +29,10 @@ export default function Index() {
       <Link href="/enroll" style={styles.link}>
         Enrol this tablet →
       </Link>
+
+      <Link href="/sign-in" style={styles.link}>
+        Sign in →
+      </Link>
     </View>
   );
 }

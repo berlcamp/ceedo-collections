@@ -85,8 +85,36 @@ indistinguishable from a revoked credential or a server that is down.
 
 ## Task 12 — offline sign-in
 
-_(added when Task 12 lands)_
+Run the whole of this section with the tablet in **airplane mode**. Sign-in is offline by
+design: the collector list and the PIN hashes both arrive by pull and are verified locally.
+
+| Check | Expected | Observed |
+| --- | --- | --- |
+| Sign in as a synced collector | reaches the shift screen | _not yet run_ |
+| Time that verification | ~482 ms (Task 2a's figure), and under 2 s regardless | _not yet run_ |
+| Fail the PIN four times | "2 attempts left…", then "1 attempt left…" | _not yet run_ |
+| Fail it a fifth time | "Locked after five incorrect PINs." | _not yet run_ |
+| Force-quit, reopen, try again | still locked — the counter is in SQLite, not memory | _not yet run_ |
+| With a shift open, sign in as a SECOND collector | "Another collector's shift is still open…" | _not yet run_ |
+
+The fifth row is the point of keeping `pin_attempts` in SQLite: a lock that resets when the
+app restarts is not a lock, and force-quitting an app is not a skill a thief has to acquire.
+
+If the verification time comes back in seconds rather than milliseconds, the native module
+is not linked in this build — rebuild, do not work around it. `bcryptjs` under Hermes
+measured 22,265 ms for the same call.
 
 ## Task 13 — the shift and closeout
 
-_(added when Task 13 lands)_
+| Check | Expected | Observed |
+| --- | --- | --- |
+| Open a shift, then sync | the `shift_open` entry pushes and the queue empties | _not yet run_ |
+| Close out with the drawer matching | "Shift closed", variance ₱0.00 — balanced | _not yet run_ |
+| Close out ₱50 short | still closes; variance ₱-50.00 — short | _not yet run_ |
+| Close out in **airplane mode** | "Closed on this tablet", and the next collector can sign in | _not yet run_ |
+| Leave airplane mode and sync | the queued `shift_close` settles | _not yet run_ |
+
+Rows three and four are the two the whole design turns on. A short drawer must still close —
+blocking would give a collector who is short a direct incentive to adjust the declaration
+until it matched. And a closeout with no signal must let the collector go home, or "blocking
+a collector over bad signal" (parent §3) arrives by a different road.
