@@ -1,10 +1,10 @@
 # bcrypt cost 12, under Hermes, on the tablet
 
-**Status: NOT YET MEASURED.** This file exists so the number has somewhere to go, and so
-nobody mistakes its absence for a measurement that came back fine. Task 12 (offline sign-in)
-reads the Results section below and must not start until it holds real figures.
+**Status: MEASURED — and it fails the threshold by more than an order of magnitude.**
+Median **47.0 seconds** in a debug build. Task 2's decision table calls this
+"stop and escalate". Task 12 (offline sign-in) is BLOCKED until this is resolved.
 
-**Date:** —
+**Date:** 2026-09-19
 **Task:** Phase 3b-i plan, Task 2
 **Probe:** `apps/collector/src/app/bcrypt-probe.tsx`
 
@@ -43,13 +43,82 @@ is there because the build artefact and the execution engine are different claim
 
 ## Results
 
+### Run 1 — debug build (`expo run:android --device`)
+
+| Sample | 1 | 2 | 3 | 4 | 5 | Median |
+| --- | --- | --- | --- | --- | --- | --- |
+| ms | 36,356 | 45,526 | 47,360 | 47,008 | 49,963 | **47,008** |
+
+- **Engine reported by the probe:** Hermes ✓
+- **Build variant:** debug — see the caveat below, which is why this is labelled "Run 1"
+  rather than "the answer".
+
+**47 seconds to verify one PIN.** For comparison, on the development machine the same
+`bcryptjs` code against the same hash took 233 ms under V8. That is a ~200× penalty, which
+decomposes plausibly as roughly 30–60× for a no-JIT interpreter against a JIT on a tight
+integer loop, times 3–4× for a tablet CPU against an M-series.
+
+**The design estimate was 1.5–5 s and it was wrong by 10–30×.** Recording that plainly,
+because the estimate's reasoning — "JS bcrypt is only 1.27× slower than C, so the engine is
+the only open variable" — was sound about C-versus-JS and useless about JIT-versus-
+interpreter. The 1.27× figure measured the wrong axis.
+
+### The caveat that must be ruled out first
+
+`expo run:android --device` builds the **debug** variant and serves JS from Metro with
+`__DEV__` true. That is not what ships. Dev-mode React Native carries per-operation
+overhead, and the bundle is not the ahead-of-time `.hbc` the release build uses.
+
+A production-mode measurement is therefore required before treating 47 s as *the* number.
+It will not rescue the situation on its own — even a 10× improvement leaves ~4.7 s, still
+far past the 2 s threshold — but designing a remedy around a debug figure would be
+measuring the wrong thing twice in a row, which is the mistake this file already records
+once.
+
+Cheapest way to get it, with no release keystore needed:
+
+```bash
+cd apps/collector
+npx expo start --no-dev --minify
+```
+
+Reload the app against that server and re-run the probe. Fuller check, if a release
+keystore exists: `npx expo run:android --device --variant release`.
+
+### Run 2 — production-mode JS
+
 | Sample | 1 | 2 | 3 | 4 | 5 | Median |
 | --- | --- | --- | --- | --- | --- | --- |
 | ms | — | — | — | — | — | **—** |
 
-- **Device model:** —
-- **Android version:** —
-- **Engine reported by the probe:** —
+## The options, with what each costs
+
+None of these is free, and the choice is a security-posture decision rather than a
+performance tweak — see "Context for whoever reads this later" at the end.
+
+**A — a native bcrypt binding.** Keeps spec D3's security property exactly as written: the
+same cost-12 hash, verified in native code in a few hundred milliseconds. The project is
+already building a custom dev client (`expo run:android`), and this phase already pulls in
+`expo-sqlite`, `expo-secure-store` and `expo-camera`, so native modules cost no new
+infrastructure here. The risk is supply: it needs a maintained JSI/turbo-module bcrypt that
+works on current Expo, and that must be verified rather than assumed.
+
+**B — lower the cost factor.** Each step down halves the work: cost 12 → 8 is ~16× (≈3 s,
+still too slow), → 7 is ~32× (≈1.5 s), → 6 is ~64× (≈730 ms). But cost is the *only*
+mitigation the PIN has. At cost 12, exhausting 10^6 PINs takes an attacker days; at cost 6
+it is well under an hour on a decent machine. This is a real reduction in the one control
+behind PIN attribution, and it needs deciding as such.
+
+**C — a different KDF with native support.** For example PBKDF2-SHA256 through a native
+module, which is fast on-device and tunable against attackers. But `set_collector_pin`
+would have to stop producing bcrypt hashes, and `pgcrypto` has no PBKDF2 — so this reaches
+back into the server and into migration `0027`. Larger change, and it re-opens a decision
+spec D3 already made.
+
+**D — do not verify the PIN with a slow KDF at all.** Treat the synced hash as an
+attribution check rather than a cracking-resistant secret. Honest about what §11.5 already
+says — *"the PIN is not the security boundary, the booklet is"* — but it contradicts D3's
+explicit reasoning that cost is the only mitigation, so it cannot be adopted quietly.
 
 ## Decision
 
