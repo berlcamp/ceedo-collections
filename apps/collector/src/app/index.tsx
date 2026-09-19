@@ -21,6 +21,10 @@ export default function Index() {
       <Link href="/bcrypt-probe" style={styles.link}>
         bcrypt cost 12, under Hermes →
       </Link>
+
+      <Link href="/engine-probe" style={styles.link}>
+        The sync engine, on expo-sqlite →
+      </Link>
     </View>
   );
 }

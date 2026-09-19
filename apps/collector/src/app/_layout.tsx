@@ -17,6 +17,7 @@ export default function RootLayout() {
     >
       <Stack.Screen name="index" options={{ title: "CEEDO Collector" }} />
       <Stack.Screen name="bcrypt-probe" options={{ title: "bcrypt under Hermes" }} />
+      <Stack.Screen name="engine-probe" options={{ title: "Engine on expo-sqlite" }} />
     </Stack>
   );
 }
