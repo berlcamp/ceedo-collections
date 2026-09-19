@@ -4,6 +4,9 @@
 **Gate for:** `docs/superpowers/specs/2026-09-19-surcharge-scan-cost-design.md` §3
 **Harness:** `scripts/surcharge-scan-measure.sql`
 **Postgres:** `PostgreSQL 17.6 on aarch64-unknown-linux-gnu, compiled by gcc (GCC) 15.2.0, 64-bit`
+(queried directly against the same local server with `select version();`. The harness now
+prints this itself, in the SHAPE block, so future runs carry their own provenance; the three
+raw logs this document cites predate that addition and do not contain it.)
 
 Every figure below came from one of three runs of the harness against a freshly
 `supabase db reset` database. Raw output is reproducible by re-running the commands in the
@@ -453,12 +456,104 @@ Index size: 1440 kB. Heap size: 26 MB.
 
 ## What the numbers say
 
-The `pct_of_indexed_rows_in_seek_range` figure rises with ledger depth exactly as expected: 31.11% at 45 days (Shape A), 92.25% at 400 days (Shapes B and C — both use `days=400`, so both land on the same overdue fraction despite the tenfold difference in row count between them). At Shape A's selectivity the planner's preference for `charges_surcharge_due_idx` over a sequential scan is unsurprising: the index only needs to visit roughly a third of the partial index's entries, and the scan cost drops from 819.00 to 308.29 in the planner's own units.
+The `pct_of_indexed_rows_in_seek_range` figure rises with ledger depth exactly as expected:
+31.11% at 45 days (Shape A), 92.25% at 400 days (Shapes B and C — both use `days=400`, so
+both land on the same overdue fraction despite the tenfold difference in row count between
+them).
 
-The design's stated concern was that Shapes B and C, at 92.25% overdue, would tip the other way — an index scan over 92% of a table's rows should ordinarily lose to a sequential scan, because visiting almost every row through a B-tree costs more than reading the heap in physical order. That did not happen here. In both Shape B and Shape C the AFTER plan still chose `Index Scan using charges_surcharge_due_idx`, and the estimated total plan cost dropped slightly (Shape C: 260834.38 → 256229.01; Shape B: 107442.06 → 105507.35), with a matching small drop in real execution time and in shared-buffer hits. The reason is visible in the BEFORE plan's own `Seq Scan on charges` buffer count: at Shape C it reads only 3279 shared buffers to answer the query, essentially the same 3025 (hit) + 165 (read) buffers the AFTER index scan touches. The synthetic ledger's `charges` rows are inserted lease-by-lease, day-by-day — the same order a nightly accrual job inserts them in production — so `due_date` is strongly correlated with physical row order in the heap. An index scan ordered by `(due_date + '1 mon'::interval)::date` therefore visits heap pages in almost the same sequence a full table scan would, so the index scan is not paying the "random heap access" penalty that would normally make a 92%-selective index scan lose to a sequential scan. Because it is not paying that penalty, the extra cost of a B-tree traversal on top of that near-sequential heap access is what determines the (small) winner, and the index wins it in both directions across all three shapes and both true selectivity regimes tested (31% and 92%).
+**The design's premise is contradicted by this measurement, not confirmed by it.** §1's table
+classifies `v_date > (due_date + interval '1 month')::date` as **"very"** selective, and
+argues that if this predicate could seek, "the nightly job's cost would track *overdue
+unsettled rentals*, which is a small and slowly-growing set, rather than *every charge ever
+raised*." At the gate shape, 184,500 of 200,000 charges (92.25%) satisfy the date test —
+that is the opposite of very selective, on a ledger only one year deep, which is what §8.1
+projects as the near-term steady state. And the cost does not track *unsettled* rentals
+either: whether a charge is settled is a property of `charge_balances`'s lateral joins, not
+of `charges` itself, so those laterals must run for every row that clears the date test
+before settlement status is known. At Shape C the `charges` scan yields 184,500 rows with or
+without the index, the lateral that computes `alloc.allocated` runs 184,500 times either way
+(`loops=184500` on the `Aggregate` node under the `Nested Loop Left Join`, in both the BEFORE
+and AFTER plans), and only 4,500 of those rows survive the `is_settled` filter that comes
+*after* the laterals have already paid their cost. The job's expensive part scales with
+*month-overdue rentals*, settled or not — not with the small, slowly-growing set §1
+described. Shipping the index does not restore that premise; it changes how the 184,500 rows
+are fetched, not how many of them there are or how many lateral evaluations follow.
 
-This result does not contradict the general principle that a 92%-selective seek range should be uncompetitive against a sequential scan — it shows that principle's precondition (an uncorrelated heap) does not hold for this table under this insert pattern, and that insert pattern (append oldest-charge-first via nightly accrual) is also how `run_surcharge` itself is expected to receive rows in production. Every AFTER plan across all three shapes shows `Index Cond` on the `charges` scan, not `Filter` — including Shape C, the gate.
+**The planner's row estimate never reflects this 92.25% either.** At every shape, the
+`charges` scan's row estimate is exactly one-third of the row count passing the
+`charge_type` filter — 7,500 of 22,500 (Shape A), 28,000 of 84,000 (Shape B), 66,667 of
+200,000 (Shape C) — identical in the BEFORE and AFTER plans, and identical to Postgres's
+`DEFAULT_INEQ_SEL` constant (1/3) for an inequality with no usable statistics. This holds
+even though `analyze ceedo_collections.charges` runs immediately after `create index
+charges_surcharge_due_idx`, which should let Postgres collect statistics on the indexed
+expression. At the gate shape the estimate (66,667) is off by 2.8× against the actual
+(184,500). So Shape C's AFTER plan did not choose the index *because* it knew the seek range
+was 92.25% and costed accordingly — it costed a flat 33% seek range at every shape, and
+happened to prefer the index anyway. The gate condition (`Index Cond` in the AFTER plan) is
+what §3 asks for and it was met, but "the planner chose the index knowing it covered 92% of
+the table" is not a claim this measurement supports.
+
+**Why the index won anyway, precisely stated.** The harness's own seeding query
+(`scripts/surcharge-scan-measure.sql:130-132`) inserts charges with
+`from ceedo_collections.leases l ... cross join lateral (select ... from generate_series(...)) d`
+— and the lateral subquery `d` does not reference `l` at all. With no correlation to hoist,
+Postgres is free to execute that cross join in whichever order it costs cheapest, and the
+buffer evidence shows it did *not* run lease-by-lease: at Shape A, the AFTER plan's `Index
+Scan using charges_surcharge_due_idx` shows `Buffers: shared hit=115 read=8`. The `hit=115`
+figure alone is 115/369 ≈ 31.2% of the heap's total pages (369, from the BEFORE plan's `Seq
+Scan on charges` buffer count) to retrieve the oldest 31.11% of dates — a match to within one
+page. (The extra `read=8` is consistent with a handful of cold index-page reads, not heap
+pages, and does not change that fraction.) A match this tight between a scan's own buffer
+count and the known overdue fraction only happens if the heap pages holding overdue rows are
+contiguous and separable from the rest of the heap — i.e. the heap is laid out as a
+contiguous run of pages by `due_date`, meaning the seeding INSERT executed in date-major order
+(all leases for day 0, then all leases for day 1, ...), not lease-major order (which would
+scatter each day's rows across the whole heap instead of clustering them).
+That date-major heap layout is what lets an index scan over 92% of the rows cost about the
+same as a sequential scan — it is not paying for out-of-order heap access, because the heap
+is already close to sorted by the indexed expression. This is a real property of the ledger
+the harness built, but it is a side effect of how Postgres chose to execute an uncorrelated
+lateral join in *this* run, not something the harness's SQL pins down or guarantees. A
+different join order for that same INSERT — a different Postgres version, a different row
+count, a different planner mood — would produce a different heap layout and could change
+this measurement's outcome. The gate result rests on this correlation existing in the
+seeded data, and the harness does not make it happen on purpose.
+
+**The timing and buffer deltas are not a demonstrated improvement.** Each condition
+(BEFORE, AFTER) was run exactly once, so a difference between two single runs is not evidence
+of a causal effect by itself. At the gate shape, the `Nested Loop Left Join` that joins the
+`charges` scan to the per-charge allocation lateral shows a *cumulative actual time* of
+653.759 ms (BEFORE) vs 631.319 ms (AFTER) — a 22.4 ms difference — even though the `Aggregate`
+node beneath it (the allocation lateral itself) reports identical buffer traffic
+(`Buffers: shared hit=1633500`) and an identical per-loop time (`0.003 ms × 184500 loops`) in
+both runs. That 22.4 ms alone is most of the plan's entire 30.0 ms execution-time delta
+(820.989 ms → 790.965 ms), which means most of the apparent "speedup" is timing noise inside
+a subtree that should not differ between the two conditions at all, not a measured effect of
+the index. Total shared-buffer traffic at Shape C changes from 2,005,781 (all hits) to
+2,005,527 hits + 165 reads = 2,005,692 — 89 fewer buffer touches out of just over two
+million, about 0.004%. The honest claim from this data is that the index **is not slower**
+at any shape measured, and that its effect on buffer traffic at the gate shape is
+indistinguishable from noise given a single run per condition — not that it measurably
+speeds anything up.
+
+Every AFTER plan across all three shapes shows `Index Cond` on the `charges` scan, not
+`Filter` — including Shape C, the gate. That plan-shape fact is real, reproducible from the
+pasted plans above, and independent of the timing-noise question: `Index Cond` vs `Filter`
+is read directly off the plan text, not measured with a stopwatch.
 
 ## Decision
 
-**SHIP** — Shape C's AFTER plan shows `Index Scan using charges_surcharge_due_idx on charges c` with `Index Cond: (((due_date + '1 mon'::interval))::date < '2026-09-19'::date)`, not a `Filter:` line, which is the gate condition §3 sets. The planner chose the index over a sequential scan at all three measured shapes, including the 92.25%-overdue one-year projection that was expected to be the hardest case for it.
+**SHIP** — Shape C's AFTER plan shows `Index Scan using charges_surcharge_due_idx on charges c`
+with `Index Cond: (((due_date + '1 mon'::interval))::date < '2026-09-19'::date)`, not a
+`Filter:` line, which is the gate condition §3 sets, and that condition held at all three
+shapes. This SHIP does **not** rest on the design's stated rationale for the index: §1's
+classification of the date predicate as "very" selective, and its expectation that cost
+would track *overdue unsettled rentals* rather than *every charge ever raised*, are both
+contradicted at the gate shape (92.25% of the table matches the date test; the expensive
+laterals run against all 184,500 month-overdue rows, settled or not, before settlement status
+is even known). The index ships because the planner picked it under a real ANALYZE, on a real
+schema, at all three measured shapes — not because the selectivity story that motivated it
+turned out to be true, and not because a measured speed advantage was demonstrated (see "The
+timing and buffer deltas" above). A later task that revisits this index's value under a
+differently-correlated heap, or that wants to explain *why* it keeps winning, should treat
+that as open, not settled by this document.

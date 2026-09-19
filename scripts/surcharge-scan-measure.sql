@@ -200,6 +200,11 @@ analyze ceedo_collections.fee_types;
 \echo ''
 \echo '==================== SHAPE ===================='
 
+-- Provenance for the write-up's "Postgres:" line: pin the exact server this shape was
+-- measured against in the same raw log the plans came from, instead of asking a reader to
+-- trust a value typed in separately.
+select version();
+
 -- §3: '"83k charges" means nothing without knowing how many leases, how many settled, and
 -- how many overdue produced it.' This block is that sentence, as numbers.
 select
@@ -222,8 +227,12 @@ select
        and ceedo_collections.business_date() > (b.due_date + interval '1 month')::date)
     as month_overdue_unsettled_rentals;
 
--- The fraction that decides everything. An index whose seek range covers most of the table
--- loses to a sequential scan, and this is that fraction.
+-- The fraction that decides everything. This is not a fraction the planner ever sees: its
+-- row estimate for the charges scan is a flat one-third at every shape below, regardless of
+-- what this number actually is (see the write-up's "What the numbers say"). It is, however,
+-- the fraction a human deciding whether to ship the index needs -- and, empirically on this
+-- harness's date-correlated heap, a seek range this large did not stop the planner from
+-- choosing the index anyway.
 select round(
          100.0 * (select count(*) from ceedo_collections.charges
                     where charge_type = 'rental'
