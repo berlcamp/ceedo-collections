@@ -32,8 +32,9 @@ the app is written against.
 | 3 — first-sync duration | **done** — measured, spec E9 confirmed |
 | 4 — `shift_id` on `collections` | **done** — migrations 0043 and 0044; four existing closeout fixtures rewritten |
 | 5 — Edge Function payload validation | **done** — 702 tests green; two wire answers changed, see below |
-| **6 — `packages/db-local`** | **NEXT.** |
-| 7–14 | not started |
+| 6 — `packages/db-local` | **done** — 21 tables generated; `better-sqlite3` needed a pnpm build-script allowance |
+| **7 — `packages/sync-engine`** | **NEXT.** |
+| 8–14 | not started |
 
 **What Task 2 changed, and why it matters to everything after it.** `bcryptjs` under Hermes
 verifies a cost-12 hash in **22,265 ms** (release build) against a 2,000 ms threshold. The
@@ -1635,7 +1636,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
   plus the 17 mirrored pull tables; and `PULLED_TABLES: readonly string[]`, the list a
   reset empties.
 
-- [ ] **Step 1: Create the package**
+- [x] **Step 1: Create the package**
 
 ```bash
 mkdir -p packages/db-local/src
@@ -1696,7 +1697,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Create `packages/db-local/src/schema.test.ts`:
 
@@ -1744,7 +1745,7 @@ describe("the device schema's two halves", () => {
 });
 ```
 
-- [ ] **Step 3: Run it to verify it fails**
+- [x] **Step 3: Run it to verify it fails**
 
 ```bash
 pnpm --filter @ceedo/db-local exec vitest run
@@ -1752,7 +1753,7 @@ pnpm --filter @ceedo/db-local exec vitest run
 
 Expected: FAIL — `Cannot find module './schema'`.
 
-- [ ] **Step 4: Write the device-authored tables**
+- [x] **Step 4: Write the device-authored tables**
 
 Create `packages/db-local/src/schema.ts`, beginning with the four tables the device writes
 itself. These are novel and every column is load-bearing, so they are given in full:
@@ -1865,7 +1866,7 @@ export const DEVICE_AUTHORED_TABLES = [
 ] as const;
 ```
 
-- [ ] **Step 5: Write the mirrored tables**
+- [x] **Step 5: Write the mirrored tables**
 
 Append to `schema.ts` one `sqliteTable` per pulled array. **Derive the columns from
 `packages/shared/src/db.types.ts`**, which `pnpm db:types` generates from the live Postgres
@@ -1921,7 +1922,7 @@ And `packages/db-local/src/index.ts`:
 export * from "./schema";
 ```
 
-- [ ] **Step 6: Run the test to verify it passes**
+- [x] **Step 6: Run the test to verify it passes**
 
 ```bash
 pnpm install && pnpm --filter @ceedo/db-local exec vitest run
@@ -1929,7 +1930,7 @@ pnpm install && pnpm --filter @ceedo/db-local exec vitest run
 
 Expected: PASS, 3 tests.
 
-- [ ] **Step 7: Generate the migrations**
+- [x] **Step 7: Generate the migrations**
 
 ```bash
 pnpm --filter @ceedo/db-local exec drizzle-kit generate
@@ -1938,7 +1939,7 @@ pnpm --filter @ceedo/db-local exec drizzle-kit generate
 Expected: `packages/db-local/drizzle/0000_*.sql` plus `drizzle/meta/`. Read the generated
 SQL and confirm it creates all 21 tables.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/db-local pnpm-lock.yaml
