@@ -31,8 +31,9 @@ the app is written against.
 | 2a — native bcrypt module | **done** — added mid-phase because of Task 2's result |
 | 3 — first-sync duration | **done** — measured, spec E9 confirmed |
 | 4 — `shift_id` on `collections` | **done** — migrations 0043 and 0044; four existing closeout fixtures rewritten |
-| **5 — Edge Function payload validation** | **NEXT.** |
-| 6–14 | not started |
+| 5 — Edge Function payload validation | **done** — 702 tests green; two wire answers changed, see below |
+| **6 — `packages/db-local`** | **NEXT.** |
+| 7–14 | not started |
 
 **What Task 2 changed, and why it matters to everything after it.** `bcryptjs` under Hermes
 verifies a cost-12 hash in **22,265 ms** (release build) against a 2,000 ms threshold. The
@@ -62,6 +63,23 @@ migrations:
   `auth.uid()` is null and `has_role` refuses. It goes through an authenticated supervisor
   client, as `db/resolve-exception.test.ts` already does, and files its exception through
   `sync_push` rather than inserting the `sync_exceptions` row by hand.
+
+**What Task 5 changed on the wire.** Validation runs before authentication, which moves two
+answers a client may already depend on:
+- A body with no `credential_id`/`secret` is now `400 invalid_body`, not `401 unauthorized`.
+  A well-formed body with a wrong credential is still `401` — `http/functions.test.ts` pins
+  both.
+- A collection payload carrying `device_id` is now refused with `400`, where it used to be
+  accepted and silently overridden. `sync_push` still overrides it from the credential and
+  `db/sync-push.test.ts` still pins that; what changed is only what a client carrying one is
+  told. The same applies to `gross_amount`.
+- `closeout` request money must be a 2dp decimal **string**. `round-trip.test.ts` was feeding
+  the server's own `system_total` — a JSON number — straight back, which the server used to
+  tolerate.
+
+The generated Deno copy is `supabase/functions/_shared/contract.ts`. Never hand-edit it; run
+`pnpm edge:contract`. `http/contract-validation.test.ts` fails when it is stale, and that
+failure was confirmed by hand rather than assumed.
 
 **Measurements taken so far**, each with what it invalidated:
 - `docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md`
@@ -1228,7 +1246,7 @@ Edge Functions, so the server accepts arbitrary JSON and a malformed payload ret
   `packages/shared/src/sync-contract.ts` (Task 4 added `shift_id` to `CollectionPayload`).
 - Produces: `validateBody<T>(schema, body): { ok: true; value: T } | { ok: false; response: Response }`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/http/contract-validation.test.ts`:
 
@@ -1318,7 +1336,7 @@ describe("Edge Functions validate their bodies", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 ```bash
 supabase start && \
@@ -1332,7 +1350,7 @@ pnpm --filter @ceedo/tests exec vitest run http/contract-validation.test.ts
 Expected: FAIL — the first three get 401 (authentication runs first and there is no
 validation), not 400.
 
-- [ ] **Step 3: Write the generator**
+- [x] **Step 3: Write the generator**
 
 Create `scripts/generate-edge-contract.mjs`:
 
@@ -1406,7 +1424,7 @@ writeFileSync(TARGET, HEADER + source);
 console.log(`Wrote ${TARGET}`);
 ```
 
-- [ ] **Step 4: Generate the copy and wire up the npm script**
+- [x] **Step 4: Generate the copy and wire up the npm script**
 
 ```bash
 node scripts/generate-edge-contract.mjs
@@ -1421,7 +1439,7 @@ Add to the root `package.json` `"scripts"`:
 Open the generated `supabase/functions/_shared/contract.ts` and read it. If the two rewrites
 left anything Deno cannot resolve, fix **the generator**, never the generated file.
 
-- [ ] **Step 5: Write the validator**
+- [x] **Step 5: Write the validator**
 
 Create `supabase/functions/_shared/validate.ts`:
 
@@ -1469,7 +1487,7 @@ export function validateBody<T>(
 export { fail };
 ```
 
-- [ ] **Step 6: Wire the three handlers**
+- [x] **Step 6: Wire the three handlers**
 
 `supabase/functions/sync-push/index.ts` becomes:
 
@@ -1512,7 +1530,7 @@ body-handling and the RPC argument source. **The `Array.isArray(body.entries)` c
 `sync-push` is now dead and must be deleted** — leaving it means a malformed `entries` still
 returns the old bare `bad_request` and the new test's field-naming assertion never runs.
 
-- [ ] **Step 7: Add zod to the Deno import map**
+- [x] **Step 7: Add zod to the Deno import map**
 
 `supabase/functions/deno.json` becomes:
 
@@ -1525,7 +1543,7 @@ returns the old bare `bad_request` and the new test's field-naming assertion nev
 }
 ```
 
-- [ ] **Step 8: Write the staleness test**
+- [x] **Step 8: Write the staleness test**
 
 Append to `tests/http/contract-validation.test.ts`:
 
@@ -1550,7 +1568,7 @@ describe("the generated Deno contract copy", () => {
 Note the working directory: this test runs from `tests/`, so adjust the relative paths to
 `../supabase/...` and `../scripts/...` if the first run fails on a missing file.
 
-- [ ] **Step 9: Run the tests to verify they pass**
+- [x] **Step 9: Run the tests to verify they pass**
 
 ```bash
 supabase stop && supabase start && \
@@ -1564,13 +1582,13 @@ pnpm --filter @ceedo/tests exec vitest run http/contract-validation.test.ts
 Expected: PASS, 6 tests. Edge Functions are served from disk by `supabase start`, so a
 restart is what picks up the handler changes.
 
-- [ ] **Step 10: Verify the staleness test is falsifiable**
+- [x] **Step 10: Verify the staleness test is falsifiable**
 
 Add a stray blank line to `supabase/functions/_shared/contract.ts` and re-run. Expected:
 the staleness test FAILS. Regenerate with `pnpm edge:contract` to restore it. A drift
 detector that cannot detect drift is the whole point of this task, unmet.
 
-- [ ] **Step 11: Run the full HTTP suite**
+- [x] **Step 11: Run the full HTTP suite**
 
 ```bash
 API_URL=http://127.0.0.1:54321 \
@@ -1584,7 +1602,7 @@ Expected: PASS. `round-trip.test.ts` now pushes through a validating handler —
 its payloads were relying on the server's former tolerance, and **the payloads are what is
 wrong**, not the schema.
 
-- [ ] **Step 12: Commit**
+- [x] **Step 12: Commit**
 
 ```bash
 git add scripts/generate-edge-contract.mjs supabase/functions package.json \
