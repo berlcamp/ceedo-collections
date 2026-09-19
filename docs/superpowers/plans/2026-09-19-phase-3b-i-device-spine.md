@@ -33,8 +33,9 @@ the app is written against.
 | 4 — `shift_id` on `collections` | **done** — migrations 0043 and 0044; four existing closeout fixtures rewritten |
 | 5 — Edge Function payload validation | **done** — 702 tests green; two wire answers changed, see below |
 | 6 — `packages/db-local` | **done** — 21 tables generated; `better-sqlite3` needed a pnpm build-script allowance |
-| **7 — `packages/sync-engine`** | **NEXT.** |
-| 8–14 | not started |
+| 7 — `packages/sync-engine` (pull and apply) | **done** — 5 tests; E7 atomicity confirmed falsifiable |
+| **8 — reset, epoch, daily full re-sync** | **NEXT.** |
+| 9–14 | not started |
 
 **What Task 2 changed, and why it matters to everything after it.** `bcryptjs` under Hermes
 verifies a cost-12 hash in **22,265 ms** (release build) against a 2,000 ms threshold. The
@@ -1979,7 +1980,7 @@ advance commit together.
   - `readSyncState(driver: SqliteDriver): Promise<{ cursor: number; epoch: number; lastFullSyncDate: string | null }>`
   - `betterSqliteDriver(db: Database): SqliteDriver` (test-only)
 
-- [ ] **Step 1: Create the package**
+- [x] **Step 1: Create the package**
 
 ```bash
 mkdir -p packages/sync-engine/src/testing
@@ -2015,7 +2016,7 @@ mkdir -p packages/sync-engine/src/testing
 
 `packages/sync-engine/tsconfig.json`: identical to `packages/db-local/tsconfig.json`.
 
-- [ ] **Step 2: Write the interfaces**
+- [x] **Step 2: Write the interfaces**
 
 Create `packages/sync-engine/src/driver.ts`:
 
@@ -2054,7 +2055,7 @@ export interface Transport {
 }
 ```
 
-- [ ] **Step 3: Write the failing test**
+- [x] **Step 3: Write the failing test**
 
 Create `packages/sync-engine/src/apply.test.ts`:
 
@@ -2177,7 +2178,7 @@ describe("applyPull", () => {
 });
 ```
 
-- [ ] **Step 4: Run it to verify it fails**
+- [x] **Step 4: Run it to verify it fails**
 
 ```bash
 pnpm install && pnpm --filter @ceedo/sync-engine exec vitest run
@@ -2185,7 +2186,7 @@ pnpm install && pnpm --filter @ceedo/sync-engine exec vitest run
 
 Expected: FAIL — `Cannot find module './apply'`.
 
-- [ ] **Step 5: Write the Node driver**
+- [x] **Step 5: Write the Node driver**
 
 Create `packages/sync-engine/src/testing/better-sqlite-driver.ts`:
 
@@ -2228,7 +2229,7 @@ export function betterSqliteDriver(db: Database.Database): SqliteDriver {
 }
 ```
 
-- [ ] **Step 6: Write `apply.ts`**
+- [x] **Step 6: Write `apply.ts`**
 
 Create `packages/sync-engine/src/apply.ts`:
 
@@ -2339,7 +2340,7 @@ export type { SqliteDriver, Transport } from "./driver";
 export { applyPull, readSyncState, type SyncStateRow } from "./apply";
 ```
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [x] **Step 7: Run the tests to verify they pass**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run
@@ -2347,7 +2348,7 @@ pnpm --filter @ceedo/sync-engine exec vitest run
 
 Expected: PASS, 5 tests.
 
-- [ ] **Step 8: Verify the E7 test is falsifiable**
+- [x] **Step 8: Verify the E7 test is falsifiable**
 
 Temporarily change `applyPull` to advance the cursor in its own `driver.transaction` call
 *before* the row loop, and re-run. Expected: `"leaves the cursor untouched when the apply
@@ -2355,7 +2356,7 @@ fails partway"` FAILS, reading 99. **Revert.** This is the single assertion stan
 the design and permanent silent row loss, and a version of it that passes either way is
 worth nothing.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add packages/sync-engine pnpm-lock.yaml
