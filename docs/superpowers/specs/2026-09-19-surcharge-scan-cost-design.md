@@ -85,8 +85,15 @@ design showed the planner *selecting* an index of this shape and still filtering
 than range-scanning. That probe ran without `ANALYZE`, so it proves nothing either way —
 but it is exactly why the measurement is a gate and not a formality.
 
-1. `EXPLAIN (ANALYZE, BUFFERS)` on `run_surcharge`'s query at the current ~83k charges,
-   before and after, with `ANALYZE ceedo_collections.charges` run after index creation.
+1. `EXPLAIN (ANALYZE, BUFFERS)` on `run_surcharge`'s query before and after, with
+   `ANALYZE ceedo_collections.charges` run after index creation.
+
+   **Generate the volume; do not assume it is there.** The 83,257-charge figure in §1 came
+   from a development database that had accumulated fixtures across many un-reset test
+   runs. `supabase db reset` returns it to zero, so a fresh clone measures nothing. The
+   first step of any measurement is building a known ledger — and stating its shape
+   alongside the numbers, because "83k charges" means nothing without knowing how many
+   leases, how many settled, and how many overdue produced it.
 2. The same against a synthetic ledger at **~200,000 charges** — §8.1's one-year
    projection. Generated, measured, then discarded; it must not be left in the suite's
    database.
