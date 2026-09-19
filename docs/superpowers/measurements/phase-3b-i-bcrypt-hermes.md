@@ -1,8 +1,9 @@
 # bcrypt cost 12, under Hermes, on the tablet
 
-**Status: MEASURED — and it fails the threshold by more than an order of magnitude.**
-Median **47.0 seconds** in a debug build. Task 2's decision table calls this
-"stop and escalate". Task 12 (offline sign-in) is BLOCKED until this is resolved.
+**Status: RESOLVED.** `bcryptjs` under Hermes is unusable (22.3 s, release build). The
+native module `modules/ceedo-bcrypt` does the same verification in **~482 ms, a 47× speedup**,
+which clears the 800 ms goal. Spec D3 is untouched — same cost-12 hash, same mitigation.
+Task 12 is unblocked and must call `verify()` from that module, never `bcrypt.compareSync`.
 
 **Date:** 2026-09-19
 **Task:** Phase 3b-i plan, Task 2
@@ -120,6 +121,41 @@ suggested. That now decomposes sensibly — roughly 30× for a no-JIT interprete
 JIT, times ~3× for a tablet CPU against an M-series — and sits at the top of, rather than
 far outside, the documented 5–30× Hermes band. The anomaly was real and it was the debug
 build; removing it did not rescue the result, it just made the result trustworthy.
+
+### Run 3 — native module vs bcryptjs, same device, same run
+
+| path | median | notes |
+| --- | --- | --- |
+| `modules/ceedo-bcrypt` (Java/ART) | **~482 ms** | derived from the reported 47× against bcryptjs; three digits, confirmed on device |
+| `bcryptjs` (Hermes) | **22,666 ms** | consistent with run 2's 22,265 ms |
+| **speedup** | **47×** | |
+
+Both measured in the same press of the same button on the same tablet, so the ratio is a
+comparison rather than two numbers from different conditions — which is more than can be
+said for the 1.27× C-vs-V8 figure that started this whole detour.
+
+**~482 ms clears the 800 ms goal**, so per Task 2's decision table the sign-in screen needs
+no progress indicator. It is still perceptible, and a subtle one would not be wrong; that is
+a design choice for Task 12 rather than a requirement.
+
+**Against the thing that actually matters:** a collector signing in at 5am now waits about
+half a second instead of twenty-two and a half.
+
+### Estimates this exercise got wrong, kept together
+
+Three predictions were made before the relevant measurement existed. All three were wrong,
+and the sequence is the argument for measuring early rather than a footnote to it:
+
+| prediction | actual | wrong by |
+| --- | --- | --- |
+| Hermes bcrypt "plausibly 1.5–5 s" (design §4.4) | 22,265 ms | 4–15× |
+| Release build "plausibly 2–7 s" | 22,265 ms | 3–11× |
+| ART "low hundreds of ms" | ~482 ms | **right** |
+
+The two wrong ones share a shape: both reasoned from a ratio measured on the wrong axis
+(C versus JavaScript, and debug versus release) rather than from the axis that dominated
+(JIT versus interpreter). The one that was right was the one reasoning about the mechanism —
+ART is JIT-compiled — rather than extrapolating a ratio.
 
 ## The options, with what each costs
 

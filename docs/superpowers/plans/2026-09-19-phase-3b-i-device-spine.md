@@ -517,7 +517,7 @@ side on one device in one run are a comparison. The probe reports `NATIVE UNAVAI
 rather than falling through to JS, so an unlinked module can never be mistaken for a fast
 one.
 
-- [ ] **Step 6: Rebuild and measure on the device**
+- [x] **Step 6: Rebuild and measure on the device** — DONE: ~482 ms native vs 22,666 ms bcryptjs, 47x.
 
 ```bash
 cd apps/collector
@@ -534,7 +534,7 @@ the same class of claim as this phase's 1.5–5 s estimate (wrong by 10–30×) 
 release-build prediction (wrong again). If native comes back over 2 s, stop: every remaining
 option changes the security posture and belongs to a human.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ---
 
@@ -3953,9 +3953,9 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ## Task 12: Offline sign-in, the five-attempt lock, and the shift gate
 
-Spec E10 and §4.4. **Read `docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md`
-before starting** — Task 2's recorded number decides whether Step 6's progress indicator is
-required.
+Spec E10 and §4.4. PIN verification goes through the native module built in Task 2a
+(~482 ms); `bcryptjs` on this path is a 22-second sign-in. Full measurements:
+`docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md`.
 
 **Files:**
 - Create: `packages/sync-engine/src/signin.ts` + `src/signin.test.ts`
@@ -3964,7 +3964,8 @@ required.
 - Modify: `packages/sync-engine/src/index.ts`
 
 **Interfaces:**
-- Consumes: `SqliteDriver` (Task 7).
+- Consumes: `SqliteDriver` (Task 7); `verify(pin, hash)` from
+  `apps/collector/modules/ceedo-bcrypt` (Task 2a) — **not** `bcryptjs`.
 - Produces:
   - `canSignIn(driver, collectorId): Promise<{ ok: true } | { ok: false; reason: SignInBlock }>`
   - `type SignInBlock = "locked" | "no_pin" | "never_synced" | "other_shift_open"`
@@ -4272,9 +4273,11 @@ table, a 6-digit PIN field, and this order of operations —
     }
     setVerifying(true);
     const collector = collectors.find((c) => c.id === collectorId)!;
-    // Synchronous and CPU-bound. See MESSAGES below and the Hermes measurement for why
-    // this is wrapped in a visible state rather than run bare.
-    const ok = bcrypt.compareSync(pin, collector.pin_hash!);
+    // NATIVE, never bcrypt.compareSync. Measured on the target tablet in a release build:
+    // bcryptjs under Hermes takes 22,666 ms for this call and the native module takes
+    // ~482 ms -- a 47x difference, and the whole reason Task 2a exists. An import of
+    // `bcryptjs` on this path is a 22-second sign-in.
+    const ok = nativeVerify(pin, collector.pin_hash!);
     setVerifying(false);
 
     if (!ok) {
@@ -4310,8 +4313,14 @@ const MESSAGES: Record<SignInBlock, string> = {
 };
 ```
 
-If Task 2's measurement put Hermes bcrypt over ~800ms, `verifying` must render a visible
-indicator; the screen must not appear frozen while the key schedule runs.
+Import it as
+`import { verify as nativeVerify } from "../../modules/ceedo-bcrypt";` (relative, not the
+`@/modules/...` alias the Expo docs show -- this project maps `@/*` to `./src/*`, so that
+alias resolves to `src/modules/` and silently misses).
+
+Measured at ~482 ms, which is under the 800 ms line, so a progress indicator is **not
+required**. It is still perceptible; a subtle one is a reasonable design choice, not an
+obligation. `verifying` is kept in the signature either way so adding one costs nothing.
 
 - [ ] **Step 7: Exercise sign-in on the tablet**
 
