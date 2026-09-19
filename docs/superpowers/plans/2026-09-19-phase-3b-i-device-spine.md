@@ -36,8 +36,9 @@ the app is written against.
 | 7 — `packages/sync-engine` (pull and apply) | **done** — 5 tests; E7 atomicity confirmed falsifiable |
 | 8 — reset, epoch, daily full re-sync | **done** — 13 tests; E8 wipe confirmed falsifiable |
 | 9 — the outbox and the sync loop | **done** — 24 engine tests + 4 over real HTTP; suite at 733 |
-| **10 — `expo-sqlite` driver, on-device run** | **NEXT.** Needs the tablet. |
-| 11–14 | not started |
+| 10 — `expo-sqlite` driver, on-device run | **code done; step 6 blocked** — the tablet run is the only thing outstanding |
+| **11 — enrollment** | **NEXT.** |
+| 12–14 | not started |
 
 **What Task 2 changed, and why it matters to everything after it.** `bcryptjs` under Hermes
 verifies a cost-12 hash in **22,265 ms** (release build) against a 2,000 ms threshold. The
@@ -84,6 +85,13 @@ answers a client may already depend on:
 The generated Deno copy is `supabase/functions/_shared/contract.ts`. Never hand-edit it; run
 `pnpm edge:contract`. `http/contract-validation.test.ts` fails when it is stale, and that
 failure was confirmed by hand rather than assumed.
+
+**What needs the tablet, and is therefore outstanding.** Tasks 10, 12 and 14 each end in a
+run on the physical device, and Task 11 has a camera step. Everything around those steps is
+built and green; the runs themselves are recorded in
+`docs/superpowers/measurements/phase-3b-i-device-smoke.md`, where every result column
+currently reads "not yet run". Task 10's code was verified as far as a laptop can: the
+Android bundle builds and carries the probe screen and all 21 `CREATE TABLE` statements.
 
 **Measurements taken so far**, each with what it invalidated:
 - `docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md`
@@ -3449,7 +3457,7 @@ here proved the engine against `better-sqlite3`. This task runs the **same engin
 - Consumes: `SqliteDriver` (Task 7); `applyPull`, `sync`, `enqueue` (Tasks 7–9).
 - Produces: `expoSqliteDriver(db: SQLiteDatabase): SqliteDriver`; `openDeviceDb(): Promise<SQLiteDatabase>`.
 
-- [ ] **Step 1: Install the device dependencies**
+- [x] **Step 1: Install the device dependencies**
 
 ```bash
 cd apps/collector
@@ -3458,7 +3466,7 @@ pnpm add @ceedo/shared@workspace:* @ceedo/db-local@workspace:* @ceedo/sync-engin
 pnpm add -D babel-plugin-inline-import
 ```
 
-- [ ] **Step 2: Configure metro and babel for bundled migrations**
+- [x] **Step 2: Configure metro and babel for bundled migrations**
 
 `apps/collector/babel.config.js`:
 
@@ -3501,7 +3509,7 @@ config.resolver.sourceExts.push("sql");
 module.exports = config;
 ```
 
-- [ ] **Step 3: Write the `expo-sqlite` driver**
+- [x] **Step 3: Write the `expo-sqlite` driver**
 
 Create `apps/collector/src/db/driver.ts`:
 
@@ -3561,7 +3569,7 @@ export function openDeviceDb(): SQLiteDatabase {
 }
 ```
 
-- [ ] **Step 4: Write the on-device probe screen**
+- [x] **Step 4: Write the on-device probe screen**
 
 Create `apps/collector/app/engine-probe.tsx`:
 
@@ -3663,7 +3671,7 @@ export default function EngineProbe() {
 }
 ```
 
-- [ ] **Step 5: Copy the generated migrations into the app**
+- [x] **Step 5: Copy the generated migrations into the app**
 
 drizzle-kit's `driver: 'expo'` output lives in `packages/db-local/drizzle`. The app imports
 it from `apps/collector/drizzle`. Add to `apps/collector/package.json` `"scripts"`:
@@ -3678,7 +3686,8 @@ Run it:
 cd apps/collector && pnpm sync-migrations
 ```
 
-- [ ] **Step 6: Run it on the physical tablet**
+- [ ] **Step 6: Run it on the physical tablet** — BLOCKED, needs the device. Everything
+else in this task is done and the checklist is waiting for these four numbers.
 
 ```bash
 cd apps/collector && pnpm expo run:android --device
@@ -3697,12 +3706,12 @@ outbox pushable: 1
 it means the Node driver is exempt from something `expo-sqlite` enforces, which is exactly
 what this task exists to detect. Record it and fix the engine, not the probe.
 
-- [ ] **Step 7: Start the device smoke checklist**
+- [x] **Step 7: Start the device smoke checklist**
 
 Create `docs/superpowers/measurements/phase-3b-i-device-smoke.md` with the device model,
 Android version, and a table with this run's four results. Tasks 11–13 append to it.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add apps/collector docs/superpowers/measurements/phase-3b-i-device-smoke.md
