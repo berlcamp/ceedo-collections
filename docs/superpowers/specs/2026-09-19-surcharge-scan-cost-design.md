@@ -51,6 +51,14 @@ shows it. The lateral joins are evaluated per surviving row. So if the date pred
 seek, the nightly job's cost would track *overdue unsettled rentals*, which is a small and
 slowly-growing set, rather than *every charge ever raised*.
 
+**Measured: this classification did not survive §3's measurement.** See
+`docs/superpowers/measurements/2026-09-19-surcharge-scan.md`. At a one-year, 200,000-charge
+ledger the date test matches 92.25% of charges, so it is not "very" selective; and cost does
+not track *overdue unsettled rentals*, because settlement is a property of the laterals, which
+must run for all 184,500 month-overdue rows before that is known. The paragraphs above are
+left as written — they are the design record this measurement corrects, the same way §8 below
+corrects Phase 3a's §9.
+
 ---
 
 ## 2. What this ships
