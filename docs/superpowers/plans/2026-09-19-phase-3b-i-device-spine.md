@@ -19,6 +19,41 @@ the app is written against.
 
 **Spec:** `docs/superpowers/specs/2026-09-19-phase-3b-device-spine-design.md`
 
+## Execution status — read this first
+
+**Branch:** `phase-3b-i-device-spine` (branched from `main`). Suite green at **694 tests /
+61 files**; `pnpm typecheck` clean. Working tree clean as of the last commit below.
+
+| Task | State |
+| --- | --- |
+| 1 — `authenticator` harness | **done** — 6 tests, all five exemptions pinned |
+| 2 — Expo shell + Hermes bcrypt measurement | **done** — measured, and it invalidated a design assumption |
+| 2a — native bcrypt module | **done** — added mid-phase because of Task 2's result |
+| 3 — first-sync duration | **done** — measured, spec E9 confirmed |
+| **4 — `shift_id` on `collections`** | **NEXT.** Heaviest task in the plan: copies and edits two large PL/pgSQL functions |
+| 5 — Edge Function payload validation | not started |
+| 6–14 | not started |
+
+**What Task 2 changed, and why it matters to everything after it.** `bcryptjs` under Hermes
+verifies a cost-12 hash in **22,265 ms** (release build) against a 2,000 ms threshold. The
+remedy is `apps/collector/modules/ceedo-bcrypt`, a local Expo module wrapping
+`at.favre.lib:bcrypt`, measured at **~482 ms — 47× faster**. Task 12 calls `verify()` from
+that module; an `import bcrypt from "bcryptjs"` on the sign-in path is a 22-second sign-in.
+Spec D3 is untouched: same cost-12 hash, same mitigation, nothing renegotiated.
+
+**Measurements taken so far**, each with what it invalidated:
+- `docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md`
+- `docs/superpowers/measurements/phase-3b-i-first-sync.md`
+
+**Known follow-ups not yet done:**
+- The Android package identifier is still Expo's placeholder `com.anonymous.collector`. Must
+  not ship. Changing it forces a rebuild, so it was deferred rather than done mid-measurement.
+- The exact `native:` sample line from the Task 2a probe run was reported as "3 digits" with
+  a 47× speedup; ~482 ms is derived from that ratio, not transcribed. Replace with the real
+  figure when convenient.
+
+---
+
 ## Global Constraints
 
 - **Run `supabase db reset` before the suite, every time.** Phase 3a measured 178,167
@@ -112,7 +147,7 @@ Everything server-side in this phase is tested on it, so it comes first.
 - Produces: `authenticatorClient(): Promise<PgClient>` — a connected `pg.Client` whose
   session is `authenticator` and whose current role is `ceedo_app`. Caller must `end()` it.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/db/role-exemptions.test.ts`:
 
@@ -198,7 +233,7 @@ describe("the exemptions a postgres test connection enjoys", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 ```bash
 API_URL=http://127.0.0.1:54321 \
@@ -210,7 +245,7 @@ pnpm --filter @ceedo/tests exec vitest run db/role-exemptions.test.ts
 
 Expected: FAIL — `Cannot find module '../helpers/authenticator'`.
 
-- [ ] **Step 3: Write the helper**
+- [x] **Step 3: Write the helper**
 
 Create `tests/helpers/authenticator.ts`:
 
@@ -256,7 +291,7 @@ export async function authenticatorClient(): Promise<PgClient> {
 }
 ```
 
-- [ ] **Step 4: Re-export from the main helper**
+- [x] **Step 4: Re-export from the main helper**
 
 Append to `tests/helpers/supabase.ts`:
 
@@ -268,7 +303,7 @@ Append to `tests/helpers/supabase.ts`:
 export { authenticatorClient } from "./authenticator";
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 ```bash
 API_URL=http://127.0.0.1:54321 \
@@ -280,14 +315,14 @@ pnpm --filter @ceedo/tests exec vitest run db/role-exemptions.test.ts
 
 Expected: PASS, 6 tests.
 
-- [ ] **Step 6: Verify the test is falsifiable**
+- [x] **Step 6: Verify the test is falsifiable**
 
 Temporarily change `authenticatorClient` to connect on `POSTGRES_URL` instead and re-run.
 Expected: the `session_user`, both timeout tests, the `pg_sleep(9)` test and the
 `pg_safeupdate` test all FAIL. **Revert the change.** A harness that passes on the wrong
 connection proves nothing, and this is the one check that tells the two apart.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add tests/helpers/authenticator.ts tests/db/role-exemptions.test.ts tests/helpers/supabase.ts
@@ -322,7 +357,7 @@ this happens now rather than after the screens exist.
 - Produces: a runnable Expo app at `apps/collector`, and a recorded number that Task 12
   depends on.
 
-- [ ] **Step 1: Scaffold the Expo app**
+- [x] **Step 1: Scaffold the Expo app**
 
 ```bash
 cd apps
@@ -335,7 +370,7 @@ pnpm add -D @types/bcryptjs
 Then set the package name so the workspace picks it up. Edit `apps/collector/package.json`
 so `"name"` is `"@ceedo/collector"` and add `"private": true`.
 
-- [ ] **Step 2: Write the probe screen**
+- [x] **Step 2: Write the probe screen**
 
 Create `apps/collector/app/bcrypt-probe.tsx`:
 
@@ -385,7 +420,7 @@ export default function BcryptProbe() {
 }
 ```
 
-- [ ] **Step 3: Confirm Hermes is the engine**
+- [x] **Step 3: Confirm Hermes is the engine**
 
 A measurement taken on JSC would be meaningless. Add to the probe screen, above the button:
 
@@ -398,7 +433,7 @@ A measurement taken on JSC would be meaningless. Add to the probe screen, above 
 Run the app on the tablet and confirm it reads `Hermes`. If it does not, stop and fix the
 Expo configuration before taking any timing.
 
-- [ ] **Step 4: Run it on the physical tablet and record the number**
+- [x] **Step 4: Run it on the physical tablet and record the number**
 
 ```bash
 cd apps/collector && pnpm expo run:android --device
@@ -407,7 +442,7 @@ cd apps/collector && pnpm expo run:android --device
 Create `docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md` with: the device model,
 Android version, the five samples, the median, and the engine confirmation from Step 3.
 
-- [ ] **Step 5: Decide, and record the decision in the same file**
+- [x] **Step 5: Decide, and record the decision in the same file**
 
 | Median | Decision |
 | --- | --- |
@@ -417,7 +452,7 @@ Android version, the five samples, the median, and the engine confirmation from 
 
 Write which branch was taken and why. Task 12 reads this file.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/collector docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md
@@ -555,7 +590,7 @@ gates spec E9: a daily full re-sync is only affordable while a full sync is chea
 - Produces: a recorded duration, and a regression test that fails if first sync ever
   crosses half the production ceiling.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/db/first-sync-budget.test.ts`:
 
@@ -650,7 +685,7 @@ describe("sync_pull first-sync budget", () => {
 });
 ```
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 ```bash
 supabase db reset && \
@@ -673,14 +708,14 @@ payload measurement was. Spec §3.4 requires collection and allocation history t
 if Step 3's recorded number is close to the budget, extend the fixture with
 `postCollectionAsOwner` (`tests/helpers/supabase.ts:615`) before ruling on E9 in Step 4.
 
-- [ ] **Step 3: Record the measurement**
+- [x] **Step 3: Record the measurement**
 
 Create `docs/superpowers/measurements/phase-3b-i-first-sync.md` with the elapsed time, the
 charge count, the payload size, and — stated explicitly — whether collection and allocation
 history was present in the fixture. Phase 3a's measurement was honest about this gap and
 this one must be too.
 
-- [ ] **Step 4: Rule on spec E9 in the same file**
+- [x] **Step 4: Rule on spec E9 in the same file**
 
 E9 makes a full re-sync run on the first sync of each business date. Write down whether the
 measured duration supports that:
@@ -691,7 +726,7 @@ measured duration supports that:
 - **Over 4s:** E9 must be revisited. Escalate — tombstone rows become the better trade and
   that is a spec change, not an implementation choice.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/db/first-sync-budget.test.ts docs/superpowers/measurements/phase-3b-i-first-sync.md
