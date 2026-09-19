@@ -499,16 +499,21 @@ the table" is not a claim this measurement supports.
 — and the lateral subquery `d` does not reference `l` at all. With no correlation to hoist,
 Postgres is free to execute that cross join in whichever order it costs cheapest, and the
 buffer evidence shows it did *not* run lease-by-lease: at Shape A, the AFTER plan's `Index
-Scan using charges_surcharge_due_idx` shows `Buffers: shared hit=115 read=8`. The `hit=115`
-figure alone is 115/369 ≈ 31.2% of the heap's total pages (369, from the BEFORE plan's `Seq
-Scan on charges` buffer count) to retrieve the oldest 31.11% of dates — a match to within one
-page. (The extra `read=8` is consistent with a handful of cold index-page reads, not heap
-pages, and does not change that fraction.) A match this tight between a scan's own buffer
-count and the known overdue fraction only happens if the heap pages holding overdue rows are
-contiguous and separable from the rest of the heap — i.e. the heap is laid out as a
-contiguous run of pages by `due_date`, meaning the seeding INSERT executed in date-major order
-(all leases for day 0, then all leases for day 1, ...), not lease-major order (which would
-scatter each day's rows across the whole heap instead of clustering them).
+Scan using charges_surcharge_due_idx` shows `Buffers: shared hit=115 read=8`, against the
+BEFORE plan's `Seq Scan on charges` showing `hit=369` for a full pass over the heap. So the
+index scan paid roughly a third of a full heap pass to retrieve the oldest 31.11% of dates.
+That is a same-ballpark comparison, not an exact one, and it should not be read as a match to
+within a page: a scan node's buffer count includes the index pages it descends as well as the
+heap pages it fetches, and this index is 176 kB — about 22 pages — on its own, so the
+heap-only component of `hit=115` is smaller than 115 by an amount this plan does not report.
+What survives the imprecision is the order of magnitude: retrieving 31.11% of the rows cost on
+the order of 31% of a full heap pass, nothing like the many-times-a-full-pass cost that random
+heap access across a third of the table would incur. A ratio in that range only happens if the
+heap pages holding overdue rows are contiguous and separable from the rest of the heap — i.e.
+the heap is laid out as a contiguous run of pages by `due_date`, meaning the seeding INSERT
+executed in date-major order (all leases for day 0, then all leases for day 1, ...), not
+lease-major order (which would scatter each day's rows across the whole heap instead of
+clustering them).
 That date-major heap layout is what lets an index scan over 92% of the rows cost about the
 same as a sequential scan — it is not paying for out-of-order heap access, because the heap
 is already close to sorted by the indexed expression. This is a real property of the ledger
@@ -541,6 +546,73 @@ Every AFTER plan across all three shapes shows `Index Cond` on the `charges` sca
 pasted plans above, and independent of the timing-noise question: `Index Cond` vs `Filter`
 is read directly off the plan text, not measured with a stopwatch.
 
+## Limits of what was measured
+
+**The largest realism gap: the ledger carries no surcharges at all.** Every shape's table
+reads `surcharge charges | 0`. `run_surcharge`'s `not exists (… charge_type = 'surcharge')`
+anti-join therefore removed nothing in any run — visible in the plans as the `Materialize`
+node's `rows=0`, and in the planner's costing of that anti-join at zero benefit. What was
+measured is a one-year-old ledger **on which the nightly job has never run once**. That is a
+worst case, not a steady state. In production the job runs nightly, so nearly every
+month-overdue unsettled rental already carries its surcharge; the anti-join becomes highly
+selective, and the planner may push it much earlier in the plan than it did here. That would
+change the whole cost profile against which this index was judged — possibly for the better
+(far fewer rows reaching the laterals), possibly for the worse (a different plan shape in
+which this index is not chosen at all). Nothing in this document speaks to that case. A
+measurement of a ledger that has already been surcharged is the obvious follow-up, and it has
+not been done.
+
+**`charge_condonations` is empty too.** The condonation lateral returns `rows=0` on all
+184,500 loops at the gate shape, so what it cost here is the cost of probing an empty table.
+That one is deliberate — the harness settles through collections and allocations precisely so
+the expensive lateral is exercised (`scripts/surcharge-scan-measure.sql:135-138`) — but it
+still means a ledger with real condonations pays more per loop than anything measured above.
+
+**The surcharge gap, by contrast, was not designed in.** The harness seeds rentals only and
+has no switch for pre-existing surcharges. Closing it is a change to
+`scripts/surcharge-scan-measure.sql`, not a re-interpretation of these numbers.
+
+## An alternative nobody considered
+
+**A redundant conjunct on the existing index — unimplemented and unmeasured.** Because
+`(due_date + interval '1 month')::date >= due_date + 28` holds for every date (no calendar
+month is shorter than 28 days), the original predicate
+`v_date > (due_date + interval '1 month')::date` *implies* `due_date < v_date - interval
+'28 days'`. Adding that second test as an **additional conjunct alongside** the exact
+predicate — not in place of it — is therefore provably behaviour-preserving: an implied
+predicate removes no row the original kept, and the original stays in the `where` clause to
+remove the rows between 28 days and a calendar month. It would seek on the **existing**
+`charges_due_date_idx` and would need no new index at all.
+
+This is strictly better-founded than the sargable *rewrite* §5 of the design rejected. That
+one was a **replacement**, which is exactly why it changed behaviour on 10 date pairs; a
+redundant conjunct cannot, because the exact predicate is still there.
+
+It is recorded here only as a future option. It touches `run_surcharge`'s `where` clause,
+which this branch's scope explicitly excluded, so **it has not been implemented and has not
+been measured** — in particular, nobody has checked whether it would actually beat the
+expression index that shipped, or whether the planner would use `charges_due_date_idx` for it.
+Note also that it would not help with the finding that dominates this document: it changes how
+the month-overdue rows are found, not how many of them reach the laterals.
+
+## Open question
+
+**Why did the planner's estimate stay a flat one-third at every shape?** The harness runs
+`analyze ceedo_collections.charges` immediately after `create index charges_surcharge_due_idx`,
+inside the same transaction. Postgres normally collects statistics for an expression index's
+expression on ANALYZE, which should have given the planner a real selectivity for
+`((due_date + '1 mon'::interval))::date < '2026-09-19'::date` instead of `DEFAULT_INEQ_SEL`.
+It did not: the estimate is exactly one-third of the post-`charge_type` row count in the
+AFTER plan at all three shapes, identical to the BEFORE plan's. No one has explained this.
+This document does not offer a theory, because it has not tested one.
+
+It matters more than a curiosity. The index keeps being chosen *despite* the planner costing
+it on a wrong estimate, so the continued selection of the index — which is the entire gate
+this measurement passed — depends on a planner behaviour nobody here understands. Anyone
+revisiting this index should start by resolving it: inspect `pg_stats` for the index's
+expression column after the harness's ANALYZE and find out whether statistics were collected
+and ignored, or never collected.
+
 ## Decision
 
 **SHIP** — Shape C's AFTER plan shows `Index Scan using charges_surcharge_due_idx on charges c`
@@ -554,6 +626,11 @@ laterals run against all 184,500 month-overdue rows, settled or not, before sett
 is even known). The index ships because the planner picked it under a real ANALYZE, on a real
 schema, at all three measured shapes — not because the selectivity story that motivated it
 turned out to be true, and not because a measured speed advantage was demonstrated (see "The
-timing and buffer deltas" above). A later task that revisits this index's value under a
-differently-correlated heap, or that wants to explain *why* it keeps winning, should treat
-that as open, not settled by this document.
+timing and buffer deltas" above). That ground is narrower than "picked under a real ANALYZE"
+sounds: the planner made the choice on `DEFAULT_INEQ_SEL`, a flat one-third guess, not on any
+statistic about the indexed expression, and it never saw the real 92.25% (see "The planner's
+row estimate" above, and the open question about why the ANALYZE did not change that). A
+future Postgres — or a future ANALYZE that does collect usable expression statistics — would
+cost this scan at its true selectivity and may well choose differently. A later task that
+revisits this index's value under a differently-correlated heap, or that wants to explain
+*why* it keeps winning, should treat that as open, not settled by this document.

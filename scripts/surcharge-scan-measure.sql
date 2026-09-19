@@ -233,9 +233,17 @@ select
 -- the fraction a human deciding whether to ship the index needs -- and, empirically on this
 -- harness's date-correlated heap, a seek range this large did not stop the planner from
 -- choosing the index anyway.
+--
+-- Numerator and denominator both range over charge_type <> 'surcharge' -- the index's own
+-- partial predicate, which is what "indexed rows" in this metric's name means. They must
+-- agree: an earlier version took the numerator over charge_type = 'rental' instead, which
+-- coincides only on a ledger whose sole non-surcharge type is 'rental'. On a mixed ledger
+-- that mismatch would silently understate the seek range. Every shape published in
+-- docs/superpowers/measurements/2026-09-19-surcharge-scan.md had zero surcharge charges and
+-- only rental charges, so the figures recorded there are unaffected by this correction.
 select round(
          100.0 * (select count(*) from ceedo_collections.charges
-                    where charge_type = 'rental'
+                    where charge_type <> 'surcharge'
                       and ceedo_collections.business_date() > (due_date + interval '1 month')::date)
          / nullif((select count(*) from ceedo_collections.charges where charge_type <> 'surcharge'), 0),
          2) as pct_of_indexed_rows_in_seek_range;

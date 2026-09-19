@@ -696,10 +696,15 @@ it.
 
 **The upgrade path this section originally named — a materialised `charge_balances` with a
 scheduled refresh — was wrong, and is superseded by
-`docs/superpowers/specs/2026-09-19-surcharge-scan-cost-design.md`.** Measured at 83,257
-charges, the cost is a non-sargable date predicate, not the view's laterals: the month-overdue
-test lands in `Filter` rather than `Index Cond`, so every non-surcharge charge is read and
-discarded. Materialising the view is unsafe in two independent ways. `post_collection` reads
+`docs/superpowers/specs/2026-09-19-surcharge-scan-cost-design.md`.** Measured against a
+synthetic 200,000-charge ledger
+(`docs/superpowers/measurements/2026-09-19-surcharge-scan.md`), the month-overdue date test
+is not selective at all at one year's depth — 92.25% of charges match it — and the dominant
+cost is `charge_balances`'s per-row lateral joins, which run once for every one of those
+184,500 rows before settlement status is known. An expression index makes the date test seek
+(shipped as `charges_surcharge_due_idx`) but does not change how many rows reach the
+laterals, and was measured to be no faster than no index at all. Materialising the view would
+address the laterals — and is unsafe in two independent ways. `post_collection` reads
 `charge_balances` twice — once through `unpaid_period_groups()` to compute the FIFO prefix,
 and again after taking its row locks — and that second, transactionally current read is the
 entire mechanism producing `stale_allocations`; against a snapshot both reads return the same
