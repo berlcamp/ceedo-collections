@@ -21,8 +21,8 @@ the app is written against.
 
 ## Execution status — read this first
 
-**Branch:** `phase-3b-i-device-spine` (branched from `main`). Suite green at **694 tests /
-61 files**; `pnpm typecheck` clean. Working tree clean as of the last commit below.
+**Branch:** `phase-3b-i-device-spine` (branched from `main`). Suite green at **763 tests /
+67 files**; `pnpm typecheck` clean. Working tree clean as of the last commit below.
 
 | Task | State |
 | --- | --- |
@@ -37,8 +37,8 @@ the app is written against.
 | 8 — reset, epoch, daily full re-sync | **done** — 13 tests; E8 wipe confirmed falsifiable |
 | 9 — the outbox and the sync loop | **done** — 24 engine tests + 4 over real HTTP; suite at 733 |
 | 10 — `expo-sqlite` driver, on-device run | **done** — ran on the tablet; E7 atomicity holds on `expo-sqlite` |
-| 11 — enrollment | **code done; step 8 outstanding** — needs the tablet and a native rebuild |
-| 12 — offline sign-in | **code done; step 7 outstanding** — needs the tablet in airplane mode |
+| 11 — enrollment | **QR scan confirmed on the tablet.** The force-quit/Keystore check and the typed fallback are still unrun |
+| 12 — offline sign-in | **sign-in confirmed on the tablet.** Airplane mode, the five-attempt lock and the second-collector gate are still unrun |
 | 13 — shift lifecycle and closeout | **done** — 7 tests; both §5.1 comparisons falsified separately |
 | **14 — the exit criterion** | **NEXT.** Entirely on the tablet. |
 

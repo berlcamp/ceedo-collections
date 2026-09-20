@@ -63,7 +63,7 @@ run answered.
 
 ---
 
-## Two bugs the tablet found that no test had
+## Four bugs the tablet found that no test had
 
 Both surfaced from one enrollment attempt reporting *"Enrolled, but the first sync
 failed... sync-push failed with 400"*. Neither was reachable from Node.
@@ -85,9 +85,25 @@ would have thrown the instant a collector tapped "Open a shift". The id is now r
 the missing global is a type error at the call site rather than a crash in a market; the app
 supplies it from `expo-crypto`.
 
-Both are the same shape as the `postgres`-vs-`ceedo_app` gap this phase was built around: a
-double that is exempt from what the real thing enforces. Worth noting neither would have
-been caught by more Node tests — only by running it.
+**3. Sign-in reported "this tablet has not synced yet" about a tablet that had just synced.**
+`sync_pull` scopes collectors by the device's facility assignment, and the device had none,
+so a clean sync brought back an empty collector list. The screen derived its message from
+`rows.length` instead of asking `canSignIn`, and blamed the one thing the person had just
+watched succeed. There is now a fifth `SignInBlock` — `not_assigned` — told apart from
+`never_synced` by `last_full_sync_date`, which every sync writes.
+
+**4. A tablet in that state could not be recovered from inside the app.** Collectors arrive
+only through the pull, and every sync in the app sat behind the shift screen, which sits
+behind sign-in. The only way out was re-enrolling with a credential that is shown once and
+cannot be read back. Sign-in now has its own *Sync now*. Also: the disabled Sign in button
+said nothing about why, which with two collectors in scope (neither auto-selected, on
+purpose) meant a PIN typed before tapping a name left a dead button and no explanation.
+
+All four are the same shape as the `postgres`-vs-`ceedo_app` gap this phase was built
+around: a double that is exempt from what the real thing enforces. None would have been
+caught by more Node tests — only by running it. Bugs 3 and 4 are the ones worth dwelling on,
+because they were not wrong code at all: every unit test passed, and the system was still
+unusable end to end.
 
 ## Task 11 — enrollment
 
@@ -99,7 +115,7 @@ at the first sync.
 
 | Check | Expected | Observed |
 | --- | --- | --- |
-| Scan the QR from the admin's Device credential screen | "Enrolled and synced. This tablet is ready." | _not yet run_ |
+| Scan the QR from the admin's Device credential screen | "Enrolled and synced. This tablet is ready." | **confirmed** — 2026-09-20, after the quarantine fix |
 | Force-quit and reopen, then sync again | still enrolled — the Keystore kept it | _not yet run_ |
 | Re-issue a credential, then TYPE both values | same success message | _not yet run_ |
 | Type a secret with one character wrong | "That code did not scan cleanly…" immediately, no network call | _not yet run_ |
@@ -116,7 +132,7 @@ design: the collector list and the PIN hashes both arrive by pull and are verifi
 
 | Check | Expected | Observed |
 | --- | --- | --- |
-| Sign in as a synced collector | reaches the shift screen | _not yet run_ |
+| Sign in as a synced collector | reaches the shift screen | **confirmed** — 2026-09-20 |
 | Time that verification | ~482 ms (Task 2a's figure), and under 2 s regardless | _not yet run_ |
 | Fail the PIN four times | "2 attempts left…", then "1 attempt left…" | _not yet run_ |
 | Fail it a fifth time | "Locked after five incorrect PINs." | _not yet run_ |
