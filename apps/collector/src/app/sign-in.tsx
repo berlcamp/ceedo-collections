@@ -29,15 +29,19 @@ import type { Collector } from "../auth/types";
  * Spec E10 and parent §4.4. Sign-in works with no signal at all: the collector list and the
  * PIN hashes both arrive by pull and are verified locally.
  *
- * FOUR REFUSALS, NOT ONE. Each of these looks like "sign-in failed" to someone standing in
+ * FIVE REFUSALS, NOT ONE. Each of these looks like "sign-in failed" to someone standing in
  * a market at 5am, and each needs a different action. Collapsing them into one message
- * makes three of the four undiagnosable in the field -- which is why `canSignIn` returns a
+ * makes four of the five undiagnosable in the field -- which is why `canSignIn` returns a
  * reason rather than a boolean.
  */
 const MESSAGES: Record<SignInBlock, string> = {
   never_synced:
     "This tablet has not synced yet, so it has no collectors. Connect to the office " +
     "network and sync before the round.",
+  not_assigned:
+    "This tablet has synced, but it is not assigned to a market yet — so the sync brought " +
+    "no collectors with it. An administrator assigns the tablet to a facility; then sync " +
+    "again.",
   no_pin:
     "No PIN is set for this collector. An administrator sets it on the web, and it " +
     "reaches this tablet on the next sync.",

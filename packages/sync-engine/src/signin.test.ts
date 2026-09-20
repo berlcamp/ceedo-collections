@@ -5,6 +5,11 @@ import { canSignIn, recordPinFailure, clearPinFailures } from "./signin";
 import type { SqliteDriver } from "./driver";
 
 const SCHEMA = `
+  create table sync_state (
+    id integer primary key, cursor integer not null default 0,
+    epoch integer not null default 0, last_full_sync_date text
+  );
+  insert into sync_state (id, cursor, epoch) values (1, 0, 0);
   create table collectors (
     id text primary key, employee_no text, full_name text, pin_hash text, status text
   );
@@ -38,12 +43,33 @@ describe("canSignIn", () => {
     expect(await canSignIn(driver, "alice")).toEqual({ ok: true });
   });
 
+  it("distinguishes a tablet that HAS synced but is assigned to no facility", async () => {
+    /**
+     * FOUND ON THE TABLET. An enrolled device that synced cleanly still had an empty
+     * `collectors` table, because `sync_pull` scopes collectors by the device's facility
+     * assignment and this device had none. Sign-in reported "this tablet has not synced
+     * yet" -- a false statement about the one thing the person had just watched succeed,
+     * pointing them at the network instead of at the admin screen.
+     *
+     * An empty collector list has two causes and they need different actions: sync the
+     * tablet, or assign it. The device can tell them apart because a sync writes
+     * `last_full_sync_date`.
+     */
+    db.exec("delete from collectors");
+    db.exec("update sync_state set last_full_sync_date = '2026-10-05' where id = 1");
+    expect(await canSignIn(driver, "alice")).toEqual({
+      ok: false,
+      reason: "not_assigned",
+    });
+  });
+
   it("refuses a device that has never synced, distinguishably", async () => {
     // Collectors reach the device only through the pull. An empty collector list is not
     // "wrong PIN" and must not be reported as one -- at 5am the difference between "your
     // PIN is wrong" and "this tablet was never synced" is the difference between a
     // collector retrying uselessly and one phoning the office.
     db.exec("delete from collectors");
+    // last_full_sync_date stays NULL: this device has genuinely never synced.
     expect(await canSignIn(driver, "alice")).toEqual({
       ok: false,
       reason: "never_synced",

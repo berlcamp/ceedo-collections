@@ -3,16 +3,26 @@ import type { SqliteDriver } from "./driver";
 /** Parent spec §11.5: "five failed attempts lock the device until it next syncs". */
 const MAX_PIN_FAILURES = 5;
 
-export type SignInBlock = "locked" | "no_pin" | "never_synced" | "other_shift_open";
+export type SignInBlock =
+  | "locked"
+  | "no_pin"
+  | "never_synced"
+  | "not_assigned"
+  | "other_shift_open";
 
 /**
  * Whether this collector may sign in on this tablet, and if not, WHICH of four reasons.
  *
- * FOUR VALUES RATHER THAN A BOOLEAN, DELIBERATELY. Every one of these refusals looks like
+ * FIVE VALUES RATHER THAN A BOOLEAN, DELIBERATELY. Every one of these refusals looks like
  * "sign-in failed" to a collector standing in a market at 5am, and each needs a different
- * action: sync the tablet, phone the office for a PIN, wait for a sync to clear the lock,
- * or find the person whose shift is still open. Collapsing them into one message makes
- * three of the four undiagnosable in the field.
+ * action: sync the tablet, get it assigned to a facility, phone the office for a PIN, wait
+ * for a sync to clear the lock, or find the person whose shift is still open. Collapsing
+ * them into one message makes four of the five undiagnosable in the field.
+ *
+ * `not_assigned` was the fifth, and it was added after a real tablet hit it: an enrolled
+ * device that synced cleanly still had no collectors, because `sync_pull` scopes them by
+ * the device's facility assignment. Reporting that as `never_synced` denied the one thing
+ * the person had just watched succeed and sent them to look at the network.
  *
  * NOTE WHAT THIS DOES NOT DO: it never checks the PIN. Verification is the caller's, and it
  * goes through the native module (~482 ms) rather than bcryptjs (~22 s under Hermes).
@@ -24,10 +34,22 @@ export async function canSignIn(
   const collectors = await driver.select<{ id: string; pin_hash: string | null }>(
     "select id, pin_hash from collectors",
   );
-  if (collectors.length === 0) return { ok: false, reason: "never_synced" };
+
+  if (collectors.length === 0) {
+    // Two causes, two different actions. `last_full_sync_date` is written by every sync
+    // (see reset.ts), so its presence is the device's own record of having talked to the
+    // server -- which is exactly the fact that tells the two apart.
+    const state = await driver.select<{ last_full_sync_date: string | null }>(
+      "select last_full_sync_date from sync_state where id = 1",
+    );
+    return {
+      ok: false,
+      reason: state[0]?.last_full_sync_date ? "not_assigned" : "never_synced",
+    };
+  }
 
   const me = collectors.find((c) => c.id === collectorId);
-  if (!me) return { ok: false, reason: "never_synced" };
+  if (!me) return { ok: false, reason: "not_assigned" };
   if (!me.pin_hash) return { ok: false, reason: "no_pin" };
 
   const locks = await driver.select<{ failures: number }>(
