@@ -63,6 +63,32 @@ run answered.
 
 ---
 
+## Two bugs the tablet found that no test had
+
+Both surfaced from one enrollment attempt reporting *"Enrolled, but the first sync
+failed... sync-push failed with 400"*. Neither was reachable from Node.
+
+**1. One malformed outbox entry deadlocked the device permanently.** The engine probe (Task
+10) left a `spoiled_form` entry in the real outbox whose payload cannot satisfy
+`SpoiledFormPayload`. Task 5's contract validation then refused the whole push body with
+`400 invalid_body`; the entries stayed `in_flight`, spec E11 re-pushed the same body next
+sync, and the server refused it again — forever, with every later receipt stranded behind
+it. Migration 0039's lesson arriving by a different road: the Edge Function validates the
+body *before* Postgres, so `sync_push`'s per-entry isolation never runs. The device now
+quarantines an entry that cannot satisfy the shared contract instead of retrying it, keeping
+the row (§6.3) and pushing the rest of the round. Five tests in
+`packages/sync-engine/src/quarantine.test.ts`.
+
+**2. `openShift` defaulted its id to `crypto.randomUUID()`, which does not exist on
+Hermes.** Not in React Native, not in Expo's winter runtime. It passed every Node test and
+would have thrown the instant a collector tapped "Open a shift". The id is now required, so
+the missing global is a type error at the call site rather than a crash in a market; the app
+supplies it from `expo-crypto`.
+
+Both are the same shape as the `postgres`-vs-`ceedo_app` gap this phase was built around: a
+double that is exempt from what the real thing enforces. Worth noting neither would have
+been caught by more Node tests — only by running it.
+
 ## Task 11 — enrollment
 
 Needs a native rebuild first: `expo-camera`, `expo-sqlite` and `expo-secure-store` are
