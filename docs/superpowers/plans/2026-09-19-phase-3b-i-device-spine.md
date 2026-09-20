@@ -40,7 +40,7 @@ the app is written against.
 | 11 — enrollment | **QR scan confirmed on the tablet.** The force-quit/Keystore check and the typed fallback are still unrun |
 | 12 — offline sign-in | **sign-in confirmed on the tablet.** Airplane mode, the five-attempt lock and the second-collector gate are still unrun |
 | 13 — shift lifecycle and closeout | **done** — 7 tests; both §5.1 comparisons falsified separately |
-| **14 — the exit criterion** | **NEXT.** Entirely on the tablet. |
+| **14 — the exit criterion** | **steps 1 and 5 done** — suite green from a clean DB, handover written. Steps 2–4 are the tablet sequence; run, but the observations are not yet transcribed |
 
 **What Task 2 changed, and why it matters to everything after it.** `bcryptjs` under Hermes
 verifies a cost-12 hash in **22,265 ms** (release build) against a 2,000 ms threshold. The
@@ -4718,7 +4718,8 @@ Spec §1.1. Nothing in this phase is complete until this runs.
 - Modify: `docs/superpowers/measurements/phase-3b-i-device-smoke.md`
 - Create: `docs/superpowers/phase-3b-i-handover.md`
 
-- [ ] **Step 1: Run the whole automated suite from a clean database**
+- [x] **Step 1: Run the whole automated suite from a clean database** — 73 files, 763
+tests, from a fresh `supabase db reset`.
 
 ```bash
 supabase db reset && \
@@ -4760,7 +4761,7 @@ The failure this catches has no automated equivalent: an app that holds a shift 
 entry only in React state loses it here, and nothing in Vitest would notice. Record which
 stages were interrupted.
 
-- [ ] **Step 5: Write the handover**
+- [x] **Step 5: Write the handover** — `docs/superpowers/phase-3b-i-handover.md`.
 
 Create `docs/superpowers/phase-3b-i-handover.md` following the structure of
 `docs/superpowers/phase-3a-handover.md`. It must contain, at minimum:
