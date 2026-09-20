@@ -6,6 +6,7 @@ export {
   pushable,
   markInFlight,
   applyResults,
+  quarantine,
   purgeAcked,
   type OutboxRow,
 } from "./outbox";

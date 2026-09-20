@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { randomUUID } from "expo-crypto";
 import { Button, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";
 import { drizzle } from "drizzle-orm/expo-sqlite";
@@ -68,13 +69,36 @@ export default function EngineProbe() {
         );
       }
 
+      // THE PROBE CLEANS UP AFTER ITSELF, and the first version of it did not.
+      //
+      // It left this entry in the REAL outbox with a payload that cannot satisfy
+      // SpoiledFormPayload, so the next sync pushed it, the Edge Function answered
+      // `400 invalid_body` for the whole body, and enrollment reported "the first sync
+      // failed". The engine now quarantines an entry like that instead of retrying it
+      // forever (quarantine.test.ts), but a diagnostic that leaves rubbish in the queue it
+      // is diagnosing is wrong regardless of how well the queue copes.
+      //
+      // The payload is VALID now as well as temporary. A probe that can only be survived
+      // because of a safety net is not testing the thing it appears to test.
+      const probeId = randomUUID();
       await enqueue(driver, {
-        id: "probe-entry",
+        id: probeId,
         type: "spoiled_form",
-        payload: { reason: "probe" },
-        collectorId: "probe-collector",
+        payload: {
+          booklet_id: randomUUID(),
+          or_no: 1,
+          collector_id: randomUUID(),
+          reason: "Engine probe. Deleted before this screen returns.",
+        },
+        collectorId: probeId,
       });
-      out.push(`outbox pushable: ${(await pushable(driver)).length}`);
+      const queued = await pushable(driver);
+      await driver.execute("delete from outbox where id = ?", [probeId]);
+      const left = await pushable(driver);
+      out.push(
+        `outbox: ${queued.length} pushable with the probe entry, ` +
+          `${left.length} after removing it`,
+      );
     } catch (e) {
       out.push(`THREW: ${String(e)}`);
     }

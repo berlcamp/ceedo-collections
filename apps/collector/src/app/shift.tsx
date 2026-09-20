@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { randomUUID } from "expo-crypto";
 import { deviceTotals, openShift, pushable, type OutboxRow } from "@ceedo/sync-engine";
 import { openDeviceDb } from "../db/client";
 import { expoSqliteDriver } from "../db/driver";
@@ -134,6 +135,11 @@ export default function Shift() {
             setBusy(true);
             try {
               await openShift(driver, {
+                // expo-crypto, because `crypto.randomUUID` is a Node global that Hermes
+                // does not have. The engine requires this id rather than defaulting it, so
+                // that the missing global is a type error here instead of a crash in a
+                // market.
+                id: randomUUID(),
                 collectorId: collector.id,
                 businessDate: businessDate(),
               });

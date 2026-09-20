@@ -68,12 +68,22 @@ function closeEntryId(shiftId: string): string {
  * One id because the server's idempotency is on the client-generated shift id: a re-pushed
  * shift_open answers `duplicate` against the shift this row already named, rather than
  * opening a second one.
+ *
+ * `id` IS REQUIRED, and it used to default to `crypto.randomUUID()`. That default was a
+ * trap of exactly the kind this phase exists to catch: `crypto` is a Node global, and
+ * neither Hermes, React Native nor Expo's winter runtime provides one. It worked in every
+ * test and would have thrown on the tablet the moment a collector tapped "Open a shift".
+ *
+ * The engine cannot import React Native (parent spec §4), so it cannot reach for
+ * `expo-crypto` itself. Making the caller supply the id removes the environment-dependent
+ * branch instead of hiding it: there is no longer a default that can be right in one
+ * runtime and absent in the other.
  */
 export async function openShift(
   driver: SqliteDriver,
-  input: { collectorId: string; businessDate: string; id?: string; openedAt?: string },
+  input: { id: string; collectorId: string; businessDate: string; openedAt?: string },
 ): Promise<string> {
-  const id = input.id ?? crypto.randomUUID();
+  const { id } = input;
   const openedAt = input.openedAt ?? new Date().toISOString();
 
   await driver.execute(

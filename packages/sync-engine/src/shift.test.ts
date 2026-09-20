@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { betterSqliteDriver } from "./testing/better-sqlite-driver";
 import { openShift, deviceTotals, closeShift } from "./shift";
@@ -60,6 +61,7 @@ describe("the shift lifecycle", () => {
 
   it("queues a shift_open entry when a shift opens", async () => {
     const id = await openShift(driver, {
+      id: randomUUID(),
       collectorId: "alice",
       businessDate: "2026-10-05",
     });
@@ -69,7 +71,11 @@ describe("the shift lifecycle", () => {
   });
 
   it("sums the device's own collections for that shift", async () => {
-    const id = await openShift(driver, { collectorId: "alice", businessDate: "2026-10-05" });
+    const id = await openShift(driver, {
+      id: randomUUID(),
+      collectorId: "alice",
+      businessDate: "2026-10-05",
+    });
     collect(id, "c1", "150.00");
     collect(id, "c2", "75.50");
 
@@ -81,7 +87,11 @@ describe("the shift lifecycle", () => {
     // The falsifying case for a sum with no WHERE. A second shift's receipts sitting in the
     // same table would otherwise be added to this one's closeout figure, and the collector
     // would be asked to match money that was never in their drawer.
-    const mine = await openShift(driver, { collectorId: "alice", businessDate: "2026-10-05" });
+    const mine = await openShift(driver, {
+      id: randomUUID(),
+      collectorId: "alice",
+      businessDate: "2026-10-05",
+    });
     collect(mine, "c1", "150.00");
     collect("some-other-shift", "c2", "999.00");
     collect(null as unknown as string, "c3", "12.00");
@@ -100,7 +110,11 @@ describe("the shift lifecycle", () => {
      * would be worse than useless: it gives a collector who is short a direct incentive to
      * adjust the declaration until it matched.
      */
-    const id = await openShift(driver, { collectorId: "alice", businessDate: "2026-10-05" });
+    const id = await openShift(driver, {
+      id: randomUUID(),
+      collectorId: "alice",
+      businessDate: "2026-10-05",
+    });
     collect(id, "c1", "200.00");
 
     const outcome = await closeShift(
@@ -132,7 +146,11 @@ describe("the shift lifecycle", () => {
   });
 
   it("leaves the shift OPEN on a records mismatch", async () => {
-    const id = await openShift(driver, { collectorId: "alice", businessDate: "2026-10-05" });
+    const id = await openShift(driver, {
+      id: randomUUID(),
+      collectorId: "alice",
+      businessDate: "2026-10-05",
+    });
     collect(id, "c1", "200.00");
 
     const outcome = await closeShift(
@@ -168,7 +186,11 @@ describe("the shift lifecycle", () => {
      * The shift_close entry stays in the outbox and reconciles whenever the tablet next
      * reaches the network.
      */
-    const id = await openShift(driver, { collectorId: "alice", businessDate: "2026-10-05" });
+    const id = await openShift(driver, {
+      id: randomUUID(),
+      collectorId: "alice",
+      businessDate: "2026-10-05",
+    });
 
     const outcome = await closeShift(
       driver,
@@ -192,7 +214,11 @@ describe("the shift lifecycle", () => {
   it("queues the shift_close BEFORE the network, so an offline close is already durable", async () => {
     // The ordering is the guarantee. If the entry were queued only after a successful push,
     // the one case it exists for -- no signal -- would be the one case that queues nothing.
-    const id = await openShift(driver, { collectorId: "alice", businessDate: "2026-10-05" });
+    const id = await openShift(driver, {
+      id: randomUUID(),
+      collectorId: "alice",
+      businessDate: "2026-10-05",
+    });
     let queuedAtPostTime: string[] = [];
     const watching: Transport = {
       async post() {

@@ -158,6 +158,37 @@ export async function applyResults(
 }
 
 /**
+ * Takes an entry out of the push queue permanently, for a reason no retry can change.
+ *
+ * WHY THIS IS NOT A RETRY, AND WHY IT IS NOT A DELETE EITHER.
+ *
+ * The device and the server validate against the SAME contract -- packages/shared's
+ * sync-contract.ts, copied to the Edge Functions by `pnpm edge:contract` with a staleness
+ * test holding the copy honest. So an entry the device cannot validate is one the server
+ * would refuse with `400 invalid_body`, every time, forever. Re-pushing it is not
+ * resilience; it is a loop with a collector watching it, and because the Function refuses
+ * the WHOLE body, it takes every other receipt in the round down with it.
+ *
+ * But the row STAYS. Parent §6.3: "a server rejection must never mean discard the record."
+ * A malformed entry may still be a receipt a vendor is holding. It stops being pushed; it
+ * does not stop existing, and `last_result` records which fields were wrong so a person can
+ * see why without a debugger.
+ */
+export async function quarantine(
+  driver: SqliteDriver,
+  id: string,
+  detail: unknown,
+): Promise<void> {
+  await driver.execute(
+    `update outbox
+        set state = 'rejected', reason_code = 'invalid_payload', retryable = 0,
+            last_result = ?
+      where id = ?`,
+    [JSON.stringify(detail), id],
+  );
+}
+
+/**
  * Parent §6.4: "Acked entries are retained for closeout reconciliation and purged after 30
  * days. Rejected entries are retained until resolved."
  *

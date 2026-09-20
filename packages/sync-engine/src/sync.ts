@@ -1,8 +1,8 @@
-import { PushResult } from "@ceedo/shared";
+import { PushEntry, PushResult } from "@ceedo/shared";
 import type { SqliteDriver, Transport } from "./driver";
 import { applyPull, readSyncState } from "./apply";
 import { needsFullSync, resetScopedData } from "./reset";
-import { applyResults, markInFlight, pushable } from "./outbox";
+import { applyResults, markInFlight, pushable, quarantine, type OutboxRow } from "./outbox";
 
 export interface SyncDeps {
   driver: SqliteDriver;
@@ -82,7 +82,30 @@ export async function sync(deps: SyncDeps): Promise<SyncOutcome> {
     await applyPull(driver, envelope);
   }
 
-  const rows = await pushable(driver);
+  // VALIDATE BEFORE PUSHING, and quarantine what can never pass.
+  //
+  // Found on the tablet: one entry whose payload could not satisfy the shared contract made
+  // the Edge Function answer `400 invalid_body` for the whole body, and spec E11 correctly
+  // re-pushed the same body on every subsequent sync. A permanent deadlock behind an entry
+  // that could never succeed. See quarantine.test.ts for the full account.
+  const queued = await pushable(driver);
+  const rows: OutboxRow[] = [];
+  for (const row of queued) {
+    const parsed = PushEntry.safeParse({ type: row.type, payload: row.payload });
+    if (parsed.success) {
+      rows.push(row);
+      continue;
+    }
+    await quarantine(
+      driver,
+      row.id,
+      parsed.error.issues.map((issue) => ({
+        path: issue.path.join("."),
+        message: issue.message,
+      })),
+    );
+  }
+
   if (rows.length > 0) {
     await markInFlight(
       driver,
@@ -96,7 +119,9 @@ export async function sync(deps: SyncDeps): Promise<SyncOutcome> {
     if (pushRes.status !== 200) {
       // The entries stay in_flight. Spec E11: the next sync re-pushes them, because a lost
       // response is indistinguishable from a lost request and only one of those is safe to
-      // assume.
+      // assume. That is safe HERE in a way it was not before the loop above: everything
+      // still in flight has been validated, so a repeat of this body can fail on the
+      // network but not on its own shape.
       throw new SyncError(`sync-push failed with ${pushRes.status}`, pushRes.status);
     }
     await applyResults(driver, rows, PushResult.array().parse(pushRes.body));
