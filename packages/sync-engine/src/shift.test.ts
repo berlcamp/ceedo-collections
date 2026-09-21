@@ -27,6 +27,12 @@ const SCHEMA = `
   create table collections (
     id text primary key, shift_id text, gross_amount text, collector_id text
   );
+  create table local_collections (
+    id text primary key, or_no integer not null, booklet_id text not null,
+    collector_id text not null, shift_id text not null, collected_at text not null,
+    fee_type_id text not null, lease_id text, gross_amount text not null,
+    payer_ref text, notes text, created_at text not null
+  );
 `;
 
 function transportReturning(body: unknown, status = 200): Transport {
@@ -53,10 +59,16 @@ describe("the shift lifecycle", () => {
     driver = betterSqliteDriver(db);
   });
 
+  // Writes into local_collections, NOT the pulled `collections` table: deviceTotals now
+  // reads the device-authored table exclusively, per Task 5's fix (spec F2).
+  let orNo = 1;
   function collect(shiftId: string, id: string, amount: string): void {
     db.prepare(
-      "insert into collections (id, shift_id, gross_amount, collector_id) values (?, ?, ?, ?)",
-    ).run(id, shiftId, amount, "alice");
+      `insert into local_collections
+         (id, or_no, booklet_id, collector_id, shift_id, collected_at, fee_type_id,
+          gross_amount, created_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(id, orNo++, "b1", "alice", shiftId, "2026-10-05T00:00:00.000Z", "f1", amount, "2026-10-05T00:00:00.000Z");
   }
 
   it("queues a shift_open entry when a shift opens", async () => {
@@ -83,6 +95,40 @@ describe("the shift lifecycle", () => {
     expect(await deviceTotals(driver, id)).toEqual({ count: 2, total: "225.50" });
   });
 
+  it("counts receipts the device authored but has not yet synced", async () => {
+    // Parent §6.5 step 2: the device sends its own count and sum. Reading the PULLED
+    // `collections` table reports 0.00 for a receipt taken offline, so the closeout would
+    // compare nothing against nothing and balance. This was correct for Phase 3b-i only
+    // because a zero-receipt shift sums to zero whichever table is read.
+    db.exec(`
+      insert into local_collections
+        (id, or_no, booklet_id, collector_id, shift_id, collected_at, fee_type_id,
+         lease_id, gross_amount, created_at)
+      values
+        ('k1', 1, 'b1', 'c1', 'sh1', '2026-09-21T01:00:00.000Z', 'f1', 'L1',
+         '1545.00', '2026-09-21T01:00:00.000Z'),
+        ('k2', 2, 'b1', 'c1', 'sh1', '2026-09-21T02:00:00.000Z', 'f1', null,
+         '250.50', '2026-09-21T02:00:00.000Z');
+    `);
+
+    expect(await deviceTotals(driver, "sh1")).toEqual({ count: 2, total: "1795.50" });
+  });
+
+  it("counts only this shift", async () => {
+    db.exec(`
+      insert into local_collections
+        (id, or_no, booklet_id, collector_id, shift_id, collected_at, fee_type_id,
+         lease_id, gross_amount, created_at)
+      values
+        ('k1', 1, 'b1', 'c1', 'sh1', '2026-09-21T01:00:00.000Z', 'f1', 'L1',
+         '1500.00', '2026-09-21T01:00:00.000Z'),
+        ('k2', 2, 'b1', 'c1', 'sh2', '2026-09-21T02:00:00.000Z', 'f1', 'L1',
+         '9999.00', '2026-09-21T02:00:00.000Z');
+    `);
+
+    expect(await deviceTotals(driver, "sh1")).toEqual({ count: 1, total: "1500.00" });
+  });
+
   it("counts only this shift's collections, not the whole device's", async () => {
     // The falsifying case for a sum with no WHERE. A second shift's receipts sitting in the
     // same table would otherwise be added to this one's closeout figure, and the collector
@@ -94,7 +140,11 @@ describe("the shift lifecycle", () => {
     });
     collect(mine, "c1", "150.00");
     collect("some-other-shift", "c2", "999.00");
-    collect(null as unknown as string, "c3", "12.00");
+    // A row in the pulled `collections` table -- even one with a null shift_id -- must not
+    // leak into the device total: deviceTotals reads local_collections exclusively.
+    db.prepare(
+      "insert into collections (id, shift_id, gross_amount, collector_id) values (?, ?, ?, ?)",
+    ).run("c3", null, "12.00", "alice");
 
     expect(await deviceTotals(driver, mine)).toEqual({ count: 1, total: "150.00" });
   });
@@ -175,8 +225,18 @@ describe("the shift lifecycle", () => {
     );
 
     expect(outcome.status).toBe("mismatch");
+    if (outcome.status === "mismatch") expect(outcome.deviceTotal).toBe("200.00");
     const row = db.prepare("select status from local_shifts where id = ?").get(id);
     expect(row).toEqual({ status: "open" });
+
+    // The QUEUED PAYLOAD, not just the outcome. Parent §6.5 step 2 has the device send its
+    // own count and sum, and that figure is what close_shift compares against -- but until
+    // now nothing anywhere asserted the `device_total` that actually goes on the wire. A
+    // change that broke the wiring between deviceTotals and this payload (a hardcoded
+    // "0.00", the declared total substituted for the device total, a float) would have
+    // passed every test in this file while making every closeout mismatch.
+    const entry = (await pushable(driver)).find((r) => r.type === "shift_close");
+    expect(entry?.payload).toMatchObject({ device_count: 1, device_total: "200.00" });
   });
 
   it("writes closed_unsynced with no signal, and still queues the push", async () => {

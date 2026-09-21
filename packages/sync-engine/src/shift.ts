@@ -110,10 +110,19 @@ export async function openShift(
 /**
  * What THIS DEVICE believes it collected during THIS shift.
  *
+ * READS local_collections, NOT the mirrored `collections` table -- spec F2. A receipt
+ * taken offline exists only here and in the outbox; reading the pulled table reported
+ * 0.00 for it, so an offline closeout compared nothing against nothing and balanced. That
+ * query was correct throughout Phase 3b-i only because a zero-receipt shift sums to zero
+ * whichever table is read.
+ *
  * `where shift_id = ?`, and the predicate is the whole point: migration 20260919000043 put
  * shift_id on collections precisely so a closeout counts one shift rather than a
  * collector's whole day. A sum without it would ask a collector to match money that was
  * never in their drawer.
+ *
+ * A shift belongs to one collector on one device, so this set is complete for the shift
+ * and cannot double-count the pulled row that arrives later under the same id.
  *
  * Summed as INTEGER CENTAVOS through packages/shared/src/money.ts, never as SQL `sum()`
  * over a text column or a JS float over pesos. This is the figure a collector's cash is
@@ -125,7 +134,7 @@ export async function deviceTotals(
   shiftId: string,
 ): Promise<DeviceTotals> {
   const rows = await driver.select<{ gross_amount: string | null }>(
-    "select gross_amount from collections where shift_id = ?",
+    "select gross_amount from local_collections where shift_id = ?",
     [shiftId],
   );
   const total = rows.reduce<Centavos>(

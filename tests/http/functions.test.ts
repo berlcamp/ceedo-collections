@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { PushResult } from "@ceedo/shared";
 import { POSTGRES_URL, createSyncFixture, resetCutover } from "../helpers/supabase";
-import { callFunction } from "../helpers/functions";
+import { GATEWAY_URL, callFunction } from "../helpers/functions";
 
 let db: Client;
 let fx: Awaited<ReturnType<typeof createSyncFixture>>;
@@ -58,22 +58,18 @@ describe("authentication over HTTP", () => {
   });
 
   it("refuses a GET with 405", async () => {
-    const res = await fetch(
-      `${process.env.SUPABASE_URL ?? "http://127.0.0.1:54321"}/functions/v1/sync-pull`,
-      { headers: GATEWAY_HEADERS },
-    );
+    const res = await fetch(`${GATEWAY_URL}/functions/v1/sync-pull`, {
+      headers: GATEWAY_HEADERS,
+    });
     expect(res.status).toBe(405);
   });
 
   it("refuses a malformed body with 400", async () => {
-    const res = await fetch(
-      `${process.env.SUPABASE_URL ?? "http://127.0.0.1:54321"}/functions/v1/sync-pull`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json", ...GATEWAY_HEADERS },
-        body: "{not json",
-      },
-    );
+    const res = await fetch(`${GATEWAY_URL}/functions/v1/sync-pull`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...GATEWAY_HEADERS },
+      body: "{not json",
+    });
     expect(res.status).toBe(400);
   });
 

@@ -380,6 +380,113 @@ const configs: ResourceConfig[] = [
     writeRoles: SUPERVISOR_UP,
   },
   {
+    // Determines WHAT DATA SYNCS TO A TABLET. Supervisors may write this (migration 0008
+    // lists device_assignments among the five supervisor-writable tables); the roles here
+    // mirror that policy rather than restating a preference.
+    //
+    // device_assignments_one_active is a unique index on (device_id) where active, so a
+    // device can hold exactly one active assignment. Re-assigning a tablet means clearing
+    // `active` on the current row first; a second active row is refused by the database
+    // with 23505 and the form surfaces that error rather than swallowing it.
+    key: "device-assignments",
+    table: "device_assignments",
+    title: "Tablet assignments",
+    singular: "tablet assignment",
+    schema: z.object({
+      device_id: uuid,
+      facility_id: uuid,
+      section_id: uuid.nullable(),
+      active: z.boolean(),
+    }),
+    fields: [
+      { name: "device_id", label: "Tablet", type: "select", optionsFrom: "devices" },
+      { name: "facility_id", label: "Facility", type: "select", optionsFrom: "facilities" },
+      {
+        name: "section_id",
+        label: "Section",
+        type: "select",
+        optionsFrom: "sections",
+        optional: true,
+        help: "Leave blank to assign the whole facility. A terminal or slaughterhouse has no sections.",
+      },
+      {
+        name: "active",
+        label: "Active",
+        type: "boolean",
+        help: "A tablet may hold only one active assignment. Deactivate the current one before adding another.",
+      },
+    ],
+    columns: [
+      { key: "devices", label: "Tablet" },
+      { key: "facilities", label: "Facility" },
+      { key: "sections", label: "Section" },
+      { key: "active", label: "Active" },
+    ],
+    // sections is disambiguated: device_assignments carries two foreign keys into it
+    // (the plain section_id FK, and device_assignments_section_in_facility's composite
+    // one), so an unqualified sections(name) is refused by PostgREST at runtime with
+    // PGRST201 ("more than one relationship was found") even though it typechecks fine.
+    select:
+      "id, active, devices(label), facilities(name), sections!device_assignments_section_id_fkey(name)",
+    orderBy: "created_at",
+    optionLabel: "id",
+    readRoles: BACK_OFFICE,
+    writeRoles: SUPERVISOR_UP,
+  },
+  {
+    // Determines WHERE A PERSON MAY COLLECT. Admin-only: migration 0008 does NOT list
+    // collector_assignments, so apply_master_data_policies' admin-only rule stands.
+    //
+    // A trigger refuses any assignee whose app_users role is not 'collector'. The picker
+    // cannot filter by role (optionsFrom takes a resource, not a predicate), so a wrong
+    // choice is refused by the database with 23514 and its message is shown as-is.
+    key: "collector-assignments",
+    table: "collector_assignments",
+    title: "Collection areas",
+    singular: "collection area",
+    schema: z.object({
+      collector_id: uuid,
+      facility_id: uuid,
+      section_id: uuid.nullable(),
+      active: z.boolean(),
+    }),
+    fields: [
+      {
+        name: "collector_id",
+        label: "Collector",
+        type: "select",
+        optionsFrom: "users",
+        help: "Collectors only. Another role is refused by the database.",
+      },
+      { name: "facility_id", label: "Facility", type: "select", optionsFrom: "facilities" },
+      {
+        name: "section_id",
+        label: "Section",
+        type: "select",
+        optionsFrom: "sections",
+        optional: true,
+        help: "Leave blank to assign the whole facility.",
+      },
+      { name: "active", label: "Active", type: "boolean" },
+    ],
+    columns: [
+      { key: "app_users", label: "Collector" },
+      { key: "facilities", label: "Facility" },
+      { key: "sections", label: "Section" },
+      { key: "active", label: "Active" },
+    ],
+    // Same disambiguation as device-assignments above: collector_assignments also carries
+    // two foreign keys into sections (section_id, and the composite
+    // collector_assignments_section_in_facility), so an unqualified sections(name) is
+    // refused by PostgREST at runtime with PGRST201.
+    select:
+      "id, active, app_users(full_name), facilities(name), sections!collector_assignments_section_id_fkey(name)",
+    orderBy: "created_at",
+    optionLabel: "id",
+    readRoles: BACK_OFFICE,
+    writeRoles: ADMIN_ONLY,
+  },
+  {
     // An app_users row can only exist once someone has completed Google sign-in (its id
     // references auth.users), but the access gate refuses anyone without an app_users row.
     // Inviting by email breaks that circle: an administrator records the intended staff

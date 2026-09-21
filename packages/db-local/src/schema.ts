@@ -97,11 +97,75 @@ export const pinAttempts = sqliteTable("pin_attempts", {
   lockedAt: text("locked_at"),
 });
 
+/**
+ * Receipts this device authored, before the server has them. Spec F1.
+ *
+ * NOT the mirrored `collections` table, and the distinction is load-bearing: `collections`
+ * is in PULLED_TABLES, which an epoch reset empties. A receipt taken offline whose only
+ * local record lived there would be destroyed by a supervisor changing a device
+ * assignment, and destroyed without trace -- the outbox entry carries no amount, so
+ * nothing downstream could notice the loss.
+ *
+ * `id` is the same client-generated UUID the outbox row uses. One receipt, one id, in both
+ * places, which is what makes the push idempotent and the join trivial.
+ *
+ * `grossAmount` is what THIS DEVICE computed. It is a claim, not truth -- the payload
+ * carries no amount at all and the server recomputes from the rate table (invariant #3).
+ * It is stored because parent §6.5's closeout comparison needs two sides; without it there
+ * is one figure, and a single figure agrees with itself.
+ */
+export const localCollections = sqliteTable("local_collections", {
+  id: text("id").primaryKey(),
+  orNo: integer("or_no").notNull(),
+  bookletId: text("booklet_id").notNull(),
+  collectorId: text("collector_id").notNull(),
+  shiftId: text("shift_id").notNull(),
+  collectedAt: text("collected_at").notNull(),
+  feeTypeId: text("fee_type_id").notNull(),
+  leaseId: text("lease_id"),
+  // money: text, 2dp, via toDecimalString. Never a float.
+  grossAmount: text("gross_amount").notNull(),
+  payerRef: text("payer_ref"),
+  notes: text("notes"),
+  createdAt: text("created_at").notNull(),
+});
+
+/**
+ * Which charges this device believes it settled.
+ *
+ * RESOLVED CHARGE IDS, not the group ranks the payload carries. A rank is meaningless the
+ * moment the list it indexes changes, and the whole purpose of these rows is to let the
+ * local ledger subtract what this device has already collected (spec F4).
+ */
+export const localAllocations = sqliteTable(
+  "local_allocations",
+  {
+    collectionId: text("collection_id").notNull(),
+    chargeId: text("charge_id").notNull(),
+    amount: text("amount").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.collectionId, t.chargeId] })],
+);
+
+/** On-the-spot items: quantity x rate. The ambulant receipt, and Phase 5's shape. */
+export const localLines = sqliteTable("local_lines", {
+  id: text("id").primaryKey(),
+  collectionId: text("collection_id").notNull(),
+  feeTypeId: text("fee_type_id").notNull(),
+  rateClass: text("rate_class"),
+  quantity: integer("quantity").notNull(),
+  unitRate: text("unit_rate").notNull(),
+  amount: text("amount").notNull(),
+});
+
 export const DEVICE_AUTHORED_TABLES = [
   "sync_state",
   "outbox",
   "local_shifts",
   "pin_attempts",
+  "local_collections",
+  "local_allocations",
+  "local_lines",
 ] as const;
 
 /* -------------------------------------------------------------------------------------

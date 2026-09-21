@@ -1,0 +1,236 @@
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "expo-router";
+import { Button, StyleSheet, Text, TextInput, View } from "react-native";
+import { randomUUID } from "expo-crypto";
+import {
+  format,
+  formatSerial,
+  parseOrNo,
+  validateOrEntry,
+  type OrEntryContext,
+  type OrEntryResult,
+} from "@ceedo/shared";
+import { commitReceipt, orEntryContext } from "@ceedo/sync-engine";
+import { deviceDriver } from "../db/driver";
+import { signedIn } from "../auth/session";
+import { clearDraft, draft } from "../collect/draft";
+
+/**
+ * The OR number goes in AFTER the money is counted and the paper receipt is written.
+ *
+ * There is no printer. The receipts are pre-printed accountable forms the collector
+ * carries; the app records a number that already exists on paper in the tenant's hand
+ * (spec §1.2). So this screen's job is to validate a serial, not to issue one.
+ *
+ * A SEQUENCE SKIP IS A WARNING THE COLLECTOR CAN ACCEPT, never a block: parent §7.1 says
+ * booklets legitimately get skipped, and a warning that fires on correct behaviour is one
+ * that gets ignored on the day it is right. `ambiguous_booklet` IS a hard stop, because a
+ * silently wrong booklet id on a real receipt is unrecoverable once the vendor walks away.
+ */
+export default function Receipt() {
+  const router = useRouter();
+  const driver = deviceDriver();
+  const collector = signedIn();
+  const pending = draft();
+
+  const [context, setContext] = useState<OrEntryContext | null>(null);
+  const [contextError, setContextError] = useState<string | null>(null);
+  const [orText, setOrText] = useState("");
+  const [check, setCheck] = useState<OrEntryResult | null>(null);
+  const [acceptedSkip, setAcceptedSkip] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Named so the "Try again" button below can call the exact same load rather than
+  // duplicating it. If this read fails, `context` stays null and Record would otherwise
+  // stay disabled with nothing on screen saying why -- the same shape as the PIN-screen
+  // stranding bug from the previous phase, just relocated. So it always resolves one way
+  // or the other: either a context, or a stated reason plus a way to retry.
+  const loadContext = useCallback(() => {
+    if (!collector) return;
+    setContextError(null);
+    orEntryContext(driver, collector.id)
+      .then(setContext)
+      .catch((caught: unknown) => {
+        setContextError(`Could not load your booklets: ${String(caught)}`);
+      });
+  }, [collector, driver]);
+
+  useEffect(() => {
+    loadContext();
+  }, [loadContext]);
+
+  // ONE effect drives validation, keyed on both the typed text and the booklet context,
+  // rather than validating only from the TextInput's onChangeText. `check === null` used
+  // to conflate two causes: "not a valid number yet" and "context has not loaded yet". A
+  // collector who types a complete, valid OR number before orEntryContext resolves would
+  // see a dead Record button that self-heals only on the NEXT keystroke -- there might not
+  // be one, since they already finished typing. Keying this off `context` too means a
+  // number already sitting in the field is evaluated the instant the booklets arrive, with
+  // no further input required.
+  //
+  // `parseOrNo`, never `Number.parseInt`: parseInt("1005x", 10) is 1005, and this screen
+  // would then have ENABLED Record and written 1005 against whatever the paper actually
+  // says. The non-empty-but-not-a-number state gets its own message below rather than
+  // leaving the button dead with nothing said.
+  useEffect(() => {
+    setAcceptedSkip(false);
+    const orNo = parseOrNo(orText);
+    if (!context || orNo === null) {
+      setCheck(null);
+      return;
+    }
+    setCheck(validateOrEntry(context, orNo));
+  }, [context, orText]);
+
+  if (!collector) return <Text style={styles.note}>Sign in first.</Text>;
+  if (!pending) return <Text style={styles.note}>Nothing to record. Start from the shift screen.</Text>;
+
+  const reason = (result: OrEntryResult): string => {
+    if (result.ok) return "";
+    switch (result.reason) {
+      case "not_in_assigned_booklet":
+        return "That number is not inside any booklet assigned to you.";
+      case "already_consumed":
+        return "That number has already been used.";
+      case "marked_spoiled":
+        return "That number is marked spoiled.";
+      case "ambiguous_booklet":
+        return "That number falls inside two of your booklets. Check the form type before writing it.";
+    }
+  };
+
+  // A lookup that tolerates a miss, rather than the two non-null assertions the brief's
+  // draft used. When check.ok is true, its bookletId did come from context.booklets --
+  // but the compiler cannot see that connection through state, and asserting it twice in
+  // a render path is exactly how a crash gets written later. If this ever fails to find a
+  // match (it should not), the screen just withholds the confirmation line instead of
+  // throwing -- the Record button is still gated on `check.ok`, not on this lookup.
+  const matchedBooklet =
+    check?.ok ? context?.booklets.find((b) => b.id === check.bookletId) : undefined;
+
+  // Parsed once and reused, so the echoed serial, the recorded serial and the validated
+  // serial cannot be three different numbers.
+  const orNo = parseOrNo(orText);
+  const notANumber = orText.trim() !== "" && orNo === null;
+
+  const blocked =
+    check === null ||
+    !check.ok ||
+    (check.warning === "sequence_skipped" && !acceptedSkip);
+
+  return (
+    <View style={styles.screen}>
+      <Text style={styles.heading}>
+        {pending.kind === "lease" ? `${pending.stallNo} · ${pending.tenantName}` : pending.label}
+      </Text>
+      <Text style={styles.amount}>{format(pending.grossAmount)}</Text>
+      {pending.kind === "lease" && pending.change > 0 ? (
+        <Text style={styles.change}>Change {format(pending.change)}</Text>
+      ) : null}
+
+      <Text style={styles.label}>Write the receipt, then enter its number</Text>
+      <TextInput
+        style={styles.input}
+        keyboardType="number-pad"
+        placeholder="OR number"
+        value={orText}
+        onChangeText={setOrText}
+      />
+
+      {contextError ? (
+        <View style={styles.warnBox}>
+          <Text style={styles.error}>{contextError}</Text>
+          <Button title="Try again" onPress={loadContext} />
+        </View>
+      ) : !context ? (
+        <Text style={styles.note}>Loading your booklets…</Text>
+      ) : null}
+
+      {notANumber ? (
+        <Text style={styles.error}>
+          An OR number is digits only. Type the number exactly as it is printed on the form.
+        </Text>
+      ) : null}
+      {check && !check.ok ? <Text style={styles.error}>{reason(check)}</Text> : null}
+      {check?.ok && matchedBooklet && orNo !== null ? (
+        <Text style={styles.ok}>{formatSerial(matchedBooklet.serialPrefix, orNo)}</Text>
+      ) : null}
+      {check?.ok && check.warning === "sequence_skipped" && !acceptedSkip ? (
+        <View style={styles.warnBox}>
+          <Text style={styles.warn}>
+            This skips one or more numbers in the booklet. That is allowed — confirm it is
+            what the paper shows.
+          </Text>
+          <Button title="Yes, that is the number written" onPress={() => setAcceptedSkip(true)} />
+        </View>
+      ) : null}
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      <Button
+        title="Record this receipt"
+        disabled={blocked || busy}
+        onPress={async () => {
+          if (!check?.ok || orNo === null) return;
+          setBusy(true);
+          setError(null);
+          try {
+            const shifts = await driver.select<{ id: string }>(
+              "select id from local_shifts where collector_id = ? and status = 'open' order by opened_at desc",
+              [collector.id],
+            );
+            const shiftId = shifts[0]?.id;
+            if (!shiftId) {
+              setError("This shift is no longer open. Open one from the shift screen.");
+              return;
+            }
+
+            await commitReceipt(
+              driver,
+              {
+                id: randomUUID(),
+                orNo,
+                bookletId: check.bookletId,
+                collectorId: collector.id,
+                shiftId,
+                collectedAt: new Date().toISOString(),
+                feeTypeId: pending.feeTypeId,
+                leaseId: pending.kind === "lease" ? pending.leaseId : null,
+                grossAmount: pending.grossAmount,
+                ranks: pending.kind === "lease" ? pending.ranks : [],
+                allocations: pending.kind === "lease" ? pending.allocations : [],
+                lines: pending.kind === "lines" ? pending.lines : [],
+                payerRef: null,
+                notes: null,
+              },
+              pending.kind === "lines" ? pending.lines.map(() => randomUUID()) : [],
+            );
+
+            clearDraft();
+            router.replace("/shift");
+          } catch (caught) {
+            // Nothing was written -- commitReceipt is one transaction. Saying so matters:
+            // the collector needs to know whether to write another paper receipt.
+            setError(`Not recorded, and nothing was saved: ${String(caught)}`);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, padding: 16, gap: 10 },
+  heading: { fontSize: 20, fontWeight: "700" },
+  amount: { fontSize: 34, fontWeight: "800" },
+  change: { fontSize: 18, color: "#1b5e20" },
+  label: { marginTop: 12, fontSize: 14, color: "#666" },
+  input: { borderWidth: 1, borderColor: "#999", borderRadius: 6, padding: 12, fontSize: 24 },
+  ok: { fontSize: 18, color: "#1b5e20", fontWeight: "600" },
+  error: { color: "#b71c1c", fontSize: 15 },
+  warnBox: { backgroundColor: "#fff8e1", padding: 10, borderRadius: 6, gap: 8 },
+  warn: { fontSize: 14 },
+  note: { padding: 16, fontSize: 15, color: "#666" },
+});

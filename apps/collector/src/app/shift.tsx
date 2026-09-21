@@ -9,9 +9,14 @@ import {
   View,
 } from "react-native";
 import { randomUUID } from "expo-crypto";
-import { deviceTotals, openShift, pushable, type OutboxRow } from "@ceedo/sync-engine";
-import { openDeviceDb } from "../db/client";
-import { expoSqliteDriver } from "../db/driver";
+import {
+  deviceTotals,
+  openShift,
+  purgeAcked,
+  pushable,
+  type OutboxRow,
+} from "@ceedo/sync-engine";
+import { deviceDriver } from "../db/driver";
 import { signedIn, signOut } from "../auth/session";
 import { businessDate, syncNow } from "../sync/device-sync";
 
@@ -29,7 +34,7 @@ interface LocalShift {
  */
 export default function Shift() {
   const router = useRouter();
-  const driver = expoSqliteDriver(openDeviceDb());
+  const driver = deviceDriver();
   const collector = signedIn();
 
   const [shift, setShift] = useState<LocalShift | null>(null);
@@ -90,6 +95,14 @@ export default function Shift() {
         <Text style={styles.body}>No shift is open on this tablet for you.</Text>
       )}
 
+      {shift ? (
+        <View style={styles.card}>
+          <Button title="Collect" onPress={() => router.push("/leases")} />
+          <Button title="Ambulant fee" onPress={() => router.push("/ambulant")} />
+          <Button title="Spoil a form" onPress={() => router.push("/spoil")} />
+        </View>
+      ) : null}
+
       {blocked ? (
         <Text style={styles.warn}>
           {queued.length} entr{queued.length === 1 ? "y" : "ies"} still waiting to reach the
@@ -110,6 +123,18 @@ export default function Shift() {
               `Synced${outcome.fullResync ? " (full re-sync)" : ""}. ` +
                 `${outcome.pushed} entr${outcome.pushed === 1 ? "y" : "ies"} pushed.`,
             );
+            // §6.4's retention rule had no caller until now; the outbox simply grew.
+            // Rejected entries are NOT purged -- they are kept until resolved, because a
+            // rejection never means discard (§6.3). Housekeeping runs only after a sync
+            // that already succeeded, and its own failure is swallowed rather than
+            // reported: a purge that failed to run this time will get another chance on
+            // the next sync, but a sync that failed because housekeeping threw would cost
+            // the collector the very thing this screen exists to guarantee.
+            try {
+              await purgeAcked(driver, 30);
+            } catch {
+              // Deliberately silent -- see comment above.
+            }
           } catch (error) {
             // Never fatal. A collector with no signal keeps working offline; that is the
             // whole design (parent §3).
