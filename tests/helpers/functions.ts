@@ -1,6 +1,16 @@
-const BASE =
-  process.env.FUNCTIONS_URL ??
-  `${process.env.SUPABASE_URL ?? process.env.API_URL ?? "http://127.0.0.1:54321"}/functions/v1`;
+/**
+ * The gateway base URL, exported so tests that must bypass `callFunction()` (to send a raw
+ * GET or a deliberately malformed body) build their own request against the same host it
+ * hits -- rather than repeating this fallback chain a third time with one link missing.
+ * `SUPABASE_URL` and `API_URL` are both names `supabase status -o env` (or a hand-set
+ * override) may use; on a machine running more than one Supabase stack, dropping either link
+ * risks falling through to the hardcoded default and silently hitting the wrong project's
+ * gateway.
+ */
+export const GATEWAY_URL =
+  process.env.SUPABASE_URL ?? process.env.API_URL ?? "http://127.0.0.1:54321";
+
+const BASE = process.env.FUNCTIONS_URL ?? `${GATEWAY_URL}/functions/v1`;
 
 /**
  * The apikey/Authorization pair is the API GATEWAY's credential and is NOT optional.
