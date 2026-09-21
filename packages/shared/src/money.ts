@@ -67,6 +67,25 @@ export function format(amount: Centavos): string {
   return `₱${PESO_FORMAT.format(amount / 100)}`;
 }
 
+/**
+ * The OUTBOUND wire form: a plain decimal string matching `sync-contract.ts`'s `money`
+ * (`/^-?\d+\.\d{2}$/`), with no peso sign and no thousands separators.
+ *
+ * SEPARATE FROM `format`, which is for a human and produces "₱1,234.50". Sending that to
+ * the server would fail validation; showing this to a collector would be a downgrade. Two
+ * audiences, two functions, and conflating them is how a comma reaches a numeric column.
+ *
+ * Built by integer division rather than `(cents / 100).toFixed(2)`: the whole reason this
+ * codebase keeps money in centavos is that a decimal is not exactly representable as a
+ * float, and routing it back through one at the last step to talk to the server would give
+ * that back for nothing.
+ */
+export function toDecimalString(amount: Centavos): string {
+  const sign = amount < 0 ? "-" : "";
+  const abs = Math.abs(amount);
+  return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
+}
+
 export function parsePesoInput(input: string): Centavos {
   const cleaned = input.replace(/[₱,\s]/g, "");
   if (cleaned === "" || !/^-?\d*\.?\d*$/.test(cleaned)) {

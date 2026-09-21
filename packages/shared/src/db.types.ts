@@ -511,6 +511,7 @@ export type Database = {
           posted_at: string
           posted_by: string | null
           row_version: number
+          shift_id: string | null
           synced_at: string | null
         }
         Insert: {
@@ -529,6 +530,7 @@ export type Database = {
           posted_at?: string
           posted_by?: string | null
           row_version?: number
+          shift_id?: string | null
           synced_at?: string | null
         }
         Update: {
@@ -547,6 +549,7 @@ export type Database = {
           posted_at?: string
           posted_by?: string | null
           row_version?: number
+          shift_id?: string | null
           synced_at?: string | null
         }
         Relationships: [
@@ -590,6 +593,13 @@ export type Database = {
             columns: ["posted_by"]
             isOneToOne: false
             referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collections_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
             referencedColumns: ["id"]
           },
         ]

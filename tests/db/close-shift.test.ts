@@ -65,10 +65,17 @@ async function postAndRead(
   return { collectionId, grossAmount: rows[0].gross_amount as string };
 }
 
-async function collectOnce(fx: Fixture): Promise<string> {
+/**
+ * Collects one receipt INTO a shift. Since migration 0043 close_shift counts by
+ * collections.shift_id, so every test here opens its shift first and posts against it --
+ * which is the real sequence anyway (a shift opens, then receipts are collected during it).
+ * A receipt posted with no shift_id belongs to no shift and is counted by no closeout.
+ */
+async function collectOnce(fx: Fixture, shiftId: string): Promise<string> {
   await db.query(`select ceedo_collections.run_accrual($1::date)`, [BUSINESS_DATE]);
   const { grossAmount } = await postAndRead(fx, {
     groupRanks: [1],
+    shiftId,
     collectedAt: `${BUSINESS_DATE}T02:00:00+00:00`,
   });
   return grossAmount;
@@ -77,8 +84,8 @@ async function collectOnce(fx: Fixture): Promise<string> {
 describe("close_shift — record reconciliation", () => {
   it("closes when the device and the server agree", async () => {
     const fx = await createSyncFixture(db);
-    const amount = await collectOnce(fx);
     const shiftId = await openShift(fx);
+    const amount = await collectOnce(fx, shiftId);
 
     const result = await close(shiftId, fx, { declared: amount, count: 1, total: amount });
 
@@ -95,8 +102,8 @@ describe("close_shift — record reconciliation", () => {
     // §6.5 step 4. A device holding an unpushed receipt has a count the server cannot
     // match, and THAT is what makes silent data loss impossible to overlook.
     const fx = await createSyncFixture(db);
-    const amount = await collectOnce(fx);
     const shiftId = await openShift(fx);
+    const amount = await collectOnce(fx, shiftId);
 
     const result = await close(shiftId, fx, { declared: amount, count: 2, total: amount });
 
@@ -112,8 +119,8 @@ describe("close_shift — record reconciliation", () => {
     // Both halves are load-bearing. Comparing only the sum would let a shift with one
     // missing receipt and one duplicated amount close cleanly.
     const fx = await createSyncFixture(db);
-    const amount = await collectOnce(fx);
     const shiftId = await openShift(fx);
+    const amount = await collectOnce(fx, shiftId);
 
     const result = await close(shiftId, fx, { declared: amount, count: 1, total: "999.00" });
 
@@ -122,8 +129,8 @@ describe("close_shift — record reconciliation", () => {
 
   it("returns both sides so the device can display the difference", async () => {
     const fx = await createSyncFixture(db);
-    const amount = await collectOnce(fx);
     const shiftId = await openShift(fx);
+    const amount = await collectOnce(fx, shiftId);
 
     const result = await close(shiftId, fx, { declared: amount, count: 3, total: "1.00" });
 
@@ -141,9 +148,11 @@ describe("close_shift — record reconciliation", () => {
     // Otherwise a cancelled receipt inflates the number a collector is asked to match, and
     // an honest closeout is refused for a receipt that no longer counts.
     const fx = await createSyncFixture(db);
+    const shiftId = await openShift(fx);
     await db.query(`select ceedo_collections.run_accrual($1::date)`, [BUSINESS_DATE]);
     const keep = await postAndRead(fx, {
       groupRanks: [1],
+      shiftId,
       collectedAt: `${BUSINESS_DATE}T02:00:00+00:00`,
     });
     // NOT another lease allocation: unpaid_period_groups renumbers from 1 over whatever
@@ -156,6 +165,7 @@ describe("close_shift — record reconciliation", () => {
       leaseId: null,
       feeTypeId: fx.perHeadFeeTypeId,
       lines: [{ fee_type_id: fx.perHeadFeeTypeId, rate_class: "hog", quantity: 1 }],
+      shiftId,
       collectedAt: `${BUSINESS_DATE}T02:00:00+00:00`,
     });
     await db.query(
@@ -165,7 +175,6 @@ describe("close_shift — record reconciliation", () => {
       [drop.collectionId, fx.collectorId],
     );
 
-    const shiftId = await openShift(fx);
     const result = await close(shiftId, fx, {
       declared: keep.grossAmount,
       count: 1,
@@ -182,8 +191,8 @@ describe("close_shift — cash variance", () => {
     // Blocking here would be worse than useless -- it would give a collector who is short
     // a direct incentive to adjust the declaration until it matched.
     const fx = await createSyncFixture(db);
-    const amount = await collectOnce(fx);
     const shiftId = await openShift(fx);
+    const amount = await collectOnce(fx, shiftId);
     const declared = (Number(amount) - 50).toFixed(2);
 
     const result = await close(shiftId, fx, { declared, count: 1, total: amount });
@@ -198,8 +207,8 @@ describe("close_shift — cash variance", () => {
 
   it("records an over as a positive variance", async () => {
     const fx = await createSyncFixture(db);
-    const amount = await collectOnce(fx);
     const shiftId = await openShift(fx);
+    const amount = await collectOnce(fx, shiftId);
     const declared = (Number(amount) + 25).toFixed(2);
 
     await close(shiftId, fx, { declared, count: 1, total: amount });

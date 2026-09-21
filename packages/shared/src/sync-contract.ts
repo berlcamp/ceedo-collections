@@ -76,6 +76,18 @@ export const CollectionPayload = z
     collected_at: z.string().datetime({ offset: true }),
     fee_type_id: uuid,
     lease_id: uuid.nullable().optional(),
+    /**
+     * The device shift this receipt was collected in. Nullable and optional: a collection
+     * posted from the web belongs to no device shift, and pre-3b-i devices sent none.
+     *
+     * Unlike `gross_amount` and `device_id`, this is NOT a forbidden field. The device is
+     * the only party that knows which shift a receipt was taken during -- the server cannot
+     * derive it, because a shift's time window deliberately does not bound its collections
+     * (a receipt queued before the shift_open push is acked can carry
+     * collected_at < opened_at). So it is a claim the server accepts, and the constraint
+     * that keeps it honest is the foreign key plus close_shift's own arithmetic.
+     */
+    shift_id: uuid.nullable().optional(),
     payer_ref: z.string().nullable().optional(),
     notes: z.string().nullable().optional(),
     allocations: z.array(z.object({ group_rank: z.number().int().positive() })),

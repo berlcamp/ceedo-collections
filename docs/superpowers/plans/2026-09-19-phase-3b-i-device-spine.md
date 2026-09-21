@@ -19,6 +19,109 @@ the app is written against.
 
 **Spec:** `docs/superpowers/specs/2026-09-19-phase-3b-device-spine-design.md`
 
+## Execution status — read this first
+
+**Branch:** `phase-3b-i-device-spine` (branched from `main`). Suite green at **763 tests /
+67 files**; `pnpm typecheck` clean. Working tree clean as of the last commit below.
+
+| Task | State |
+| --- | --- |
+| 1 — `authenticator` harness | **done** — 6 tests, all five exemptions pinned |
+| 2 — Expo shell + Hermes bcrypt measurement | **done** — measured, and it invalidated a design assumption |
+| 2a — native bcrypt module | **done** — added mid-phase because of Task 2's result |
+| 3 — first-sync duration | **done** — measured, spec E9 confirmed |
+| 4 — `shift_id` on `collections` | **done** — migrations 0043 and 0044; four existing closeout fixtures rewritten |
+| 5 — Edge Function payload validation | **done** — 702 tests green; two wire answers changed, see below |
+| 6 — `packages/db-local` | **done** — 21 tables generated; `better-sqlite3` needed a pnpm build-script allowance |
+| 7 — `packages/sync-engine` (pull and apply) | **done** — 5 tests; E7 atomicity confirmed falsifiable |
+| 8 — reset, epoch, daily full re-sync | **done** — 13 tests; E8 wipe confirmed falsifiable |
+| 9 — the outbox and the sync loop | **done** — 24 engine tests + 4 over real HTTP; suite at 733 |
+| 10 — `expo-sqlite` driver, on-device run | **done** — ran on the tablet; E7 atomicity holds on `expo-sqlite` |
+| 11 — enrollment | **QR scan confirmed on the tablet.** The force-quit/Keystore check and the typed fallback are still unrun |
+| 12 — offline sign-in | **sign-in confirmed on the tablet.** Airplane mode, the five-attempt lock and the second-collector gate are still unrun |
+| 13 — shift lifecycle and closeout | **done** — 7 tests; both §5.1 comparisons falsified separately |
+| **14 — the exit criterion** | **steps 1 and 5 done** — suite green from a clean DB, handover written. Steps 2–4 are the tablet sequence; run, but the observations are not yet transcribed |
+
+**What Task 2 changed, and why it matters to everything after it.** `bcryptjs` under Hermes
+verifies a cost-12 hash in **22,265 ms** (release build) against a 2,000 ms threshold. The
+remedy is `apps/collector/modules/ceedo-bcrypt`, a local Expo module wrapping
+`at.favre.lib:bcrypt`, measured at **~482 ms — 47× faster**. Task 12 calls `verify()` from
+that module; an `import bcrypt from "bcryptjs"` on the sign-in path is a 22-second sign-in.
+Spec D3 is untouched: same cost-12 hash, same mitigation, nothing renegotiated.
+
+**What Task 4 changed in the tests it did not own.** `close_shift` counts by
+`collections.shift_id` now, so four existing tests that posted receipts BEFORE opening their
+shift were staging shifts that contain nothing: `db/close-shift.test.ts`,
+`db/sync-push.test.ts`, `http/functions.test.ts` and `http/round-trip.test.ts`. Each was
+fixed as a fixture — open the shift, then collect into it, which is the real sequence — and
+no assertion was weakened. `postCollectionAsOwner` gained a `shiftId` option; omitted still
+means `null`, so fixtures that do not care about shifts are unchanged.
+
+Three deviations from this plan's Task 4 text, all in the test file rather than the
+migrations:
+- Step 1's setup reopened shift A while shift B was still open, which
+  `shifts_one_open_per_device` refuses. B is closed first, then A reopened; the end state is
+  the one the plan describes.
+- Step 1 inserted `collections` rows directly. The `collections_balance` trigger refuses a
+  row with no parts, and a direct insert would have left the `post_collection` half of the
+  migration untested, so the test posts through `post_collection` and asserts against the
+  fixture's per-head rate rather than a written-in 100.00.
+- Step 5's E3 test called `resolve_exception_corrected` over the owner connection, where
+  `auth.uid()` is null and `has_role` refuses. It goes through an authenticated supervisor
+  client, as `db/resolve-exception.test.ts` already does, and files its exception through
+  `sync_push` rather than inserting the `sync_exceptions` row by hand.
+
+**What Task 5 changed on the wire.** Validation runs before authentication, which moves two
+answers a client may already depend on:
+- A body with no `credential_id`/`secret` is now `400 invalid_body`, not `401 unauthorized`.
+  A well-formed body with a wrong credential is still `401` — `http/functions.test.ts` pins
+  both.
+- A collection payload carrying `device_id` is now refused with `400`, where it used to be
+  accepted and silently overridden. `sync_push` still overrides it from the credential and
+  `db/sync-push.test.ts` still pins that; what changed is only what a client carrying one is
+  told. The same applies to `gross_amount`.
+- `closeout` request money must be a 2dp decimal **string**. `round-trip.test.ts` was feeding
+  the server's own `system_total` — a JSON number — straight back, which the server used to
+  tolerate.
+
+The generated Deno copy is `supabase/functions/_shared/contract.ts`. Never hand-edit it; run
+`pnpm edge:contract`. `http/contract-validation.test.ts` fails when it is stale, and that
+failure was confirmed by hand rather than assumed.
+
+**What needs the tablet.** Tasks 10, 12 and 14 each end in a run on the physical device, and
+Task 11 has a camera step. Results live in
+`docs/superpowers/measurements/phase-3b-i-device-smoke.md`.
+
+**Task 10's run is done and it passed.** 1,500 rows applied, cursor at 1500, and — the one
+that could not be inferred from Node — the cursor held at 1500 through a failing apply. So
+spec E7 holds on `expo-sqlite`'s `withTransactionAsync`, not merely on `better-sqlite3`'s
+hand-issued BEGIN/COMMIT, and the driver-exemption trap this phase was built to avoid is
+closed for the apply path. Tasks 11-13 build on an engine that has now been run on the
+hardware.
+
+**Tasks 12 and 13 share one commit.** `packages/sync-engine/src/index.ts` exports both
+`./signin` and `./shift`, so a commit carrying only the first leaves an intermediate tree
+whose typecheck fails on a missing module. The commit message covers both.
+
+**One structural deviation in Task 11.** The plan put the enrollment codec in
+`apps/web/lib/devices/`. It lives in `packages/shared/src/enrollment-payload.ts` instead:
+the web encodes and the tablet decodes, they are separate bundles that cannot import across
+each other, and a copy in each would be two definitions of one format whose divergence shows
+up as a tablet that will not enrol with nothing saying why.
+
+**Measurements taken so far**, each with what it invalidated:
+- `docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md`
+- `docs/superpowers/measurements/phase-3b-i-first-sync.md`
+
+**Known follow-ups not yet done:**
+- The Android package identifier is still Expo's placeholder `com.anonymous.collector`. Must
+  not ship. Changing it forces a rebuild, so it was deferred rather than done mid-measurement.
+- The exact `native:` sample line from the Task 2a probe run was reported as "3 digits" with
+  a 47× speedup; ~482 ms is derived from that ratio, not transcribed. Replace with the real
+  figure when convenient.
+
+---
+
 ## Global Constraints
 
 - **Run `supabase db reset` before the suite, every time.** Phase 3a measured 178,167
@@ -112,7 +215,7 @@ Everything server-side in this phase is tested on it, so it comes first.
 - Produces: `authenticatorClient(): Promise<PgClient>` — a connected `pg.Client` whose
   session is `authenticator` and whose current role is `ceedo_app`. Caller must `end()` it.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/db/role-exemptions.test.ts`:
 
@@ -198,7 +301,7 @@ describe("the exemptions a postgres test connection enjoys", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 ```bash
 API_URL=http://127.0.0.1:54321 \
@@ -210,7 +313,7 @@ pnpm --filter @ceedo/tests exec vitest run db/role-exemptions.test.ts
 
 Expected: FAIL — `Cannot find module '../helpers/authenticator'`.
 
-- [ ] **Step 3: Write the helper**
+- [x] **Step 3: Write the helper**
 
 Create `tests/helpers/authenticator.ts`:
 
@@ -256,7 +359,7 @@ export async function authenticatorClient(): Promise<PgClient> {
 }
 ```
 
-- [ ] **Step 4: Re-export from the main helper**
+- [x] **Step 4: Re-export from the main helper**
 
 Append to `tests/helpers/supabase.ts`:
 
@@ -268,7 +371,7 @@ Append to `tests/helpers/supabase.ts`:
 export { authenticatorClient } from "./authenticator";
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 ```bash
 API_URL=http://127.0.0.1:54321 \
@@ -280,14 +383,14 @@ pnpm --filter @ceedo/tests exec vitest run db/role-exemptions.test.ts
 
 Expected: PASS, 6 tests.
 
-- [ ] **Step 6: Verify the test is falsifiable**
+- [x] **Step 6: Verify the test is falsifiable**
 
 Temporarily change `authenticatorClient` to connect on `POSTGRES_URL` instead and re-run.
 Expected: the `session_user`, both timeout tests, the `pg_sleep(9)` test and the
 `pg_safeupdate` test all FAIL. **Revert the change.** A harness that passes on the wrong
 connection proves nothing, and this is the one check that tells the two apart.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add tests/helpers/authenticator.ts tests/db/role-exemptions.test.ts tests/helpers/supabase.ts
@@ -322,7 +425,7 @@ this happens now rather than after the screens exist.
 - Produces: a runnable Expo app at `apps/collector`, and a recorded number that Task 12
   depends on.
 
-- [ ] **Step 1: Scaffold the Expo app**
+- [x] **Step 1: Scaffold the Expo app**
 
 ```bash
 cd apps
@@ -335,7 +438,7 @@ pnpm add -D @types/bcryptjs
 Then set the package name so the workspace picks it up. Edit `apps/collector/package.json`
 so `"name"` is `"@ceedo/collector"` and add `"private": true`.
 
-- [ ] **Step 2: Write the probe screen**
+- [x] **Step 2: Write the probe screen**
 
 Create `apps/collector/app/bcrypt-probe.tsx`:
 
@@ -385,7 +488,7 @@ export default function BcryptProbe() {
 }
 ```
 
-- [ ] **Step 3: Confirm Hermes is the engine**
+- [x] **Step 3: Confirm Hermes is the engine**
 
 A measurement taken on JSC would be meaningless. Add to the probe screen, above the button:
 
@@ -398,7 +501,7 @@ A measurement taken on JSC would be meaningless. Add to the probe screen, above 
 Run the app on the tablet and confirm it reads `Hermes`. If it does not, stop and fix the
 Expo configuration before taking any timing.
 
-- [ ] **Step 4: Run it on the physical tablet and record the number**
+- [x] **Step 4: Run it on the physical tablet and record the number**
 
 ```bash
 cd apps/collector && pnpm expo run:android --device
@@ -407,7 +510,7 @@ cd apps/collector && pnpm expo run:android --device
 Create `docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md` with: the device model,
 Android version, the five samples, the median, and the engine confirmation from Step 3.
 
-- [ ] **Step 5: Decide, and record the decision in the same file**
+- [x] **Step 5: Decide, and record the decision in the same file**
 
 | Median | Decision |
 | --- | --- |
@@ -417,7 +520,7 @@ Android version, the five samples, the median, and the engine confirmation from 
 
 Write which branch was taken and why. Task 12 reads this file.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/collector docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md
@@ -430,6 +533,111 @@ not supported; Hermes, which has no JIT, was the real unknown.
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ```
+
+---
+
+## Task 2a: Native bcrypt, because Hermes cannot do it
+
+**Added mid-phase, after Task 2's measurement.** Not in the original plan — it exists because
+Task 2 returned a number that invalidated an assumption the plan rested on.
+
+`bcryptjs` under Hermes measured **22,265 ms** median in a release build (5 samples, 0.2%
+spread) against a 2,000 ms threshold and an 800 ms goal. Hermes has no JIT; bcrypt at cost 12
+is ~4,096 Blowfish key expansions of pure 32-bit integer arithmetic. There is no JavaScript
+fix — that figure is already the minified, ahead-of-time-compiled release result, and Hermes
+has no WebAssembly.
+
+**Files:**
+- Create: `apps/collector/modules/ceedo-bcrypt/` (local Expo module, Android only)
+- Modify: `apps/collector/src/app/bcrypt-probe.tsx` (measure native against JS)
+- Modify: `docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md`
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: `verify(pin: string, hash: string): boolean`, `costOf(hash: string): number`,
+  `meetsExpectedCost(hash: string): boolean`, `EXPECTED_COST = 12` — from
+  `apps/collector/modules/ceedo-bcrypt`. Task 12's sign-in uses `verify` in place of
+  `bcrypt.compareSync`.
+
+**Why a local module and not a package.** Every published native bcrypt for React Native was
+checked against live npm and GitHub. The best candidate has 0 stars, ~2 downloads/week and a
+Nitro version skew; the next is two years dead with an unanswered "does not register on
+Android" bug at RN 0.80; another still declares `jcenter()`. Depending on any of them for the
+code path that authenticates every collector on every shift is a worse risk than fifty lines
+of Kotlin. `expo-crypto` has no KDF at all, and `react-native-quick-crypto` — the one healthy
+package in the space — has no bcrypt.
+
+**Why `at.favre.lib:bcrypt` and not vendored jBCrypt.** jBCrypt has not been released since
+2010; vendoring means owning 800 lines of crypto and its known quirks. `at.favre.lib:bcrypt`
+is Apache 2.0, maintained, tested, parses Modular Crypt Format itself, and handles the
+`2x`/null-byte edge cases. Pinned exactly — a version range in this dependency would let a
+build change the authenticator without anyone deciding to.
+
+**This task keeps spec D3 intact.** The server still produces
+`crypt(pin, gen_salt('bf', 12))`; the device verifies that same hash; cost stays 12. No
+security posture is renegotiated, nothing is needed from CEEDO, and no invariant moves. That
+is the entire reason this option was chosen over lowering the cost factor.
+
+- [x] **Step 1: Scaffold the local module**
+
+```bash
+cd apps/collector
+npx create-expo-module@latest ceedo-bcrypt --local --name CeedoBcrypt \
+  --description "Native bcrypt verification for offline collector PIN sign-in" \
+  --package ph.ceedo.collector.bcrypt --license Apache-2.0 \
+  --platform android --features Function
+```
+
+- [x] **Step 2: Add the bcrypt dependency**
+
+In `modules/ceedo-bcrypt/android/build.gradle`, after the `android { }` block:
+
+```gradle
+dependencies {
+  implementation 'at.favre.lib:bcrypt:0.10.2'
+}
+```
+
+- [x] **Step 3: Implement `verify` and `costOf` in Kotlin**
+
+`verify` returns false rather than throwing for empty or malformed input, so a collector with
+a null `pin_hash` reaches sign-in's own "PIN not set" message instead of a crash — §6.3
+records why that distinction matters in the field. `costOf` exists so the device can assert
+what the server gave it rather than trust it, because spec D3 makes cost the PIN's only
+mitigation and a server that silently started issuing cost 6 would be invisible everywhere
+else.
+
+- [x] **Step 4: TypeScript surface, and a web stub that throws**
+
+The web stub throws rather than returning false. A false is indistinguishable from a wrong
+PIN and would let a web build present a working-looking sign-in that refuses every correct
+PIN — a silent wrong answer, which this project treats as worse than a loud failure.
+
+- [x] **Step 5: Measure native against JS in the same probe run**
+
+Both paths stay in `bcrypt-probe.tsx`. The native number alone is a claim; the two side by
+side on one device in one run are a comparison. The probe reports `NATIVE UNAVAILABLE`
+rather than falling through to JS, so an unlinked module can never be mistaken for a fast
+one.
+
+- [x] **Step 6: Rebuild and measure on the device** — DONE: ~482 ms native vs 22,666 ms bcryptjs, 47x.
+
+```bash
+cd apps/collector
+npx expo run:android --device --variant release
+```
+
+**A native module needs a full rebuild — Fast Refresh does not reload Kotlin.**
+
+Record both medians and the speedup in
+`docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md`.
+
+**The expectation is low hundreds of milliseconds. It is an expectation, not a measurement** —
+the same class of claim as this phase's 1.5–5 s estimate (wrong by 10–30×) and its 2–7 s
+release-build prediction (wrong again). If native comes back over 2 s, stop: every remaining
+option changes the security posture and belongs to a human.
+
+- [x] **Step 7: Commit**
 
 ---
 
@@ -450,7 +658,7 @@ gates spec E9: a daily full re-sync is only affordable while a full sync is chea
 - Produces: a recorded duration, and a regression test that fails if first sync ever
   crosses half the production ceiling.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/db/first-sync-budget.test.ts`:
 
@@ -545,7 +753,7 @@ describe("sync_pull first-sync budget", () => {
 });
 ```
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 ```bash
 supabase db reset && \
@@ -568,14 +776,14 @@ payload measurement was. Spec §3.4 requires collection and allocation history t
 if Step 3's recorded number is close to the budget, extend the fixture with
 `postCollectionAsOwner` (`tests/helpers/supabase.ts:615`) before ruling on E9 in Step 4.
 
-- [ ] **Step 3: Record the measurement**
+- [x] **Step 3: Record the measurement**
 
 Create `docs/superpowers/measurements/phase-3b-i-first-sync.md` with the elapsed time, the
 charge count, the payload size, and — stated explicitly — whether collection and allocation
 history was present in the fixture. Phase 3a's measurement was honest about this gap and
 this one must be too.
 
-- [ ] **Step 4: Rule on spec E9 in the same file**
+- [x] **Step 4: Rule on spec E9 in the same file**
 
 E9 makes a full re-sync run on the first sync of each business date. Write down whether the
 measured duration supports that:
@@ -586,7 +794,7 @@ measured duration supports that:
 - **Over 4s:** E9 must be revisited. Escalate — tombstone rows become the better trade and
   that is a spec change, not an implementation choice.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/db/first-sync-budget.test.ts docs/superpowers/measurements/phase-3b-i-first-sync.md
@@ -620,7 +828,7 @@ E3 — a supervisor's correction must re-post the original `shift_id`.
 - Produces: `collections.shift_id uuid null`; `CollectionPayload` gains
   `shift_id: z.string().uuid().nullable().optional()`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/db/shift-scoped-closeout.test.ts`:
 
@@ -719,7 +927,7 @@ describe("closeout scoped by shift_id", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 ```bash
 API_URL=http://127.0.0.1:54321 \
@@ -731,7 +939,7 @@ pnpm --filter @ceedo/tests exec vitest run db/shift-scoped-closeout.test.ts
 
 Expected: FAIL — `column "shift_id" of relation "collections" does not exist`.
 
-- [ ] **Step 3: Write the migration**
+- [x] **Step 3: Write the migration**
 
 Create `supabase/migrations/20260919000043_collections_shift_id.sql`:
 
@@ -822,7 +1030,7 @@ only the three edits listed. Then continue the same file:
 Again: copy the real function, make only that edit, and keep the `revoke`/`grant` pair at
 the end of the file for both functions.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 ```bash
 supabase db reset && \
@@ -835,7 +1043,7 @@ pnpm --filter @ceedo/tests exec vitest run db/shift-scoped-closeout.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Write the failing test for E3 (a correction keeps its shift)**
+- [x] **Step 5: Write the failing test for E3 (a correction keeps its shift)**
 
 Append to `tests/db/shift-scoped-closeout.test.ts`:
 
@@ -913,13 +1121,13 @@ describe("a correction preserves the original shift_id", () => {
 });
 ```
 
-- [ ] **Step 6: Run it to verify it fails**
+- [x] **Step 6: Run it to verify it fails**
 
 Same command as Step 4. Expected: FAIL — `shift_id` is `otherShiftId`, because
 `resolve_exception_corrected` merges the supervisor's payload over the device's and
 re-asserts only `id` and `device_id`.
 
-- [ ] **Step 7: Write the E3 migration**
+- [x] **Step 7: Write the E3 migration**
 
 Create `supabase/migrations/20260919000044_correction_preserves_shift.sql`:
 
@@ -963,11 +1171,11 @@ Create `supabase/migrations/20260919000044_correction_preserves_shift.sql`:
 -- escalate_exception if they share the file, and the revoke/grant pairs at the end.
 ```
 
-- [ ] **Step 8: Run the tests to verify they pass**
+- [x] **Step 8: Run the tests to verify they pass**
 
 Same command as Step 4. Expected: PASS, both `describe` blocks.
 
-- [ ] **Step 9: Add `shift_id` to the wire contract**
+- [x] **Step 9: Add `shift_id` to the wire contract**
 
 In `packages/shared/src/sync-contract.ts`, inside `CollectionPayload`'s object literal, after
 the `lease_id` line, add:
@@ -989,7 +1197,7 @@ the `lease_id` line, add:
 
 Then in `ShiftClosePayload`, no change — it already keys on the shift's own `id`.
 
-- [ ] **Step 10: Run the shared package's tests**
+- [x] **Step 10: Run the shared package's tests**
 
 ```bash
 pnpm --filter @ceedo/shared exec vitest run
@@ -998,7 +1206,7 @@ pnpm --filter @ceedo/shared exec vitest run
 Expected: PASS. If `sync-contract.test.ts` has a `.strict()` assertion listing
 `CollectionPayload`'s keys, add `shift_id` to it.
 
-- [ ] **Step 11: Regenerate database types**
+- [x] **Step 11: Regenerate database types**
 
 ```bash
 pnpm db:types
@@ -1006,7 +1214,7 @@ pnpm db:types
 
 Expected: `packages/shared/src/db.types.ts` gains `shift_id` on `collections`.
 
-- [ ] **Step 12: Run the whole suite**
+- [x] **Step 12: Run the whole suite**
 
 ```bash
 supabase db reset && \
@@ -1023,7 +1231,7 @@ Expected: PASS. `close_shift`'s scoping changed, so `tests/db/close-shift.test.t
 assertion** — a closeout test that stops checking the total is the vacuous shape this
 project has shipped before.
 
-- [ ] **Step 13: Commit**
+- [x] **Step 13: Commit**
 
 ```bash
 git add supabase/migrations/20260919000043_collections_shift_id.sql \
@@ -1066,7 +1274,7 @@ Edge Functions, so the server accepts arbitrary JSON and a malformed payload ret
   `packages/shared/src/sync-contract.ts` (Task 4 added `shift_id` to `CollectionPayload`).
 - Produces: `validateBody<T>(schema, body): { ok: true; value: T } | { ok: false; response: Response }`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/http/contract-validation.test.ts`:
 
@@ -1156,7 +1364,7 @@ describe("Edge Functions validate their bodies", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 ```bash
 supabase start && \
@@ -1170,7 +1378,7 @@ pnpm --filter @ceedo/tests exec vitest run http/contract-validation.test.ts
 Expected: FAIL — the first three get 401 (authentication runs first and there is no
 validation), not 400.
 
-- [ ] **Step 3: Write the generator**
+- [x] **Step 3: Write the generator**
 
 Create `scripts/generate-edge-contract.mjs`:
 
@@ -1244,7 +1452,7 @@ writeFileSync(TARGET, HEADER + source);
 console.log(`Wrote ${TARGET}`);
 ```
 
-- [ ] **Step 4: Generate the copy and wire up the npm script**
+- [x] **Step 4: Generate the copy and wire up the npm script**
 
 ```bash
 node scripts/generate-edge-contract.mjs
@@ -1259,7 +1467,7 @@ Add to the root `package.json` `"scripts"`:
 Open the generated `supabase/functions/_shared/contract.ts` and read it. If the two rewrites
 left anything Deno cannot resolve, fix **the generator**, never the generated file.
 
-- [ ] **Step 5: Write the validator**
+- [x] **Step 5: Write the validator**
 
 Create `supabase/functions/_shared/validate.ts`:
 
@@ -1307,7 +1515,7 @@ export function validateBody<T>(
 export { fail };
 ```
 
-- [ ] **Step 6: Wire the three handlers**
+- [x] **Step 6: Wire the three handlers**
 
 `supabase/functions/sync-push/index.ts` becomes:
 
@@ -1350,7 +1558,7 @@ body-handling and the RPC argument source. **The `Array.isArray(body.entries)` c
 `sync-push` is now dead and must be deleted** — leaving it means a malformed `entries` still
 returns the old bare `bad_request` and the new test's field-naming assertion never runs.
 
-- [ ] **Step 7: Add zod to the Deno import map**
+- [x] **Step 7: Add zod to the Deno import map**
 
 `supabase/functions/deno.json` becomes:
 
@@ -1363,7 +1571,7 @@ returns the old bare `bad_request` and the new test's field-naming assertion nev
 }
 ```
 
-- [ ] **Step 8: Write the staleness test**
+- [x] **Step 8: Write the staleness test**
 
 Append to `tests/http/contract-validation.test.ts`:
 
@@ -1388,7 +1596,7 @@ describe("the generated Deno contract copy", () => {
 Note the working directory: this test runs from `tests/`, so adjust the relative paths to
 `../supabase/...` and `../scripts/...` if the first run fails on a missing file.
 
-- [ ] **Step 9: Run the tests to verify they pass**
+- [x] **Step 9: Run the tests to verify they pass**
 
 ```bash
 supabase stop && supabase start && \
@@ -1402,13 +1610,13 @@ pnpm --filter @ceedo/tests exec vitest run http/contract-validation.test.ts
 Expected: PASS, 6 tests. Edge Functions are served from disk by `supabase start`, so a
 restart is what picks up the handler changes.
 
-- [ ] **Step 10: Verify the staleness test is falsifiable**
+- [x] **Step 10: Verify the staleness test is falsifiable**
 
 Add a stray blank line to `supabase/functions/_shared/contract.ts` and re-run. Expected:
 the staleness test FAILS. Regenerate with `pnpm edge:contract` to restore it. A drift
 detector that cannot detect drift is the whole point of this task, unmet.
 
-- [ ] **Step 11: Run the full HTTP suite**
+- [x] **Step 11: Run the full HTTP suite**
 
 ```bash
 API_URL=http://127.0.0.1:54321 \
@@ -1422,7 +1630,7 @@ Expected: PASS. `round-trip.test.ts` now pushes through a validating handler —
 its payloads were relying on the server's former tolerance, and **the payloads are what is
 wrong**, not the schema.
 
-- [ ] **Step 12: Commit**
+- [x] **Step 12: Commit**
 
 ```bash
 git add scripts/generate-edge-contract.mjs supabase/functions package.json \
@@ -1455,7 +1663,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
   plus the 17 mirrored pull tables; and `PULLED_TABLES: readonly string[]`, the list a
   reset empties.
 
-- [ ] **Step 1: Create the package**
+- [x] **Step 1: Create the package**
 
 ```bash
 mkdir -p packages/db-local/src
@@ -1516,7 +1724,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Create `packages/db-local/src/schema.test.ts`:
 
@@ -1564,7 +1772,7 @@ describe("the device schema's two halves", () => {
 });
 ```
 
-- [ ] **Step 3: Run it to verify it fails**
+- [x] **Step 3: Run it to verify it fails**
 
 ```bash
 pnpm --filter @ceedo/db-local exec vitest run
@@ -1572,7 +1780,7 @@ pnpm --filter @ceedo/db-local exec vitest run
 
 Expected: FAIL — `Cannot find module './schema'`.
 
-- [ ] **Step 4: Write the device-authored tables**
+- [x] **Step 4: Write the device-authored tables**
 
 Create `packages/db-local/src/schema.ts`, beginning with the four tables the device writes
 itself. These are novel and every column is load-bearing, so they are given in full:
@@ -1685,7 +1893,7 @@ export const DEVICE_AUTHORED_TABLES = [
 ] as const;
 ```
 
-- [ ] **Step 5: Write the mirrored tables**
+- [x] **Step 5: Write the mirrored tables**
 
 Append to `schema.ts` one `sqliteTable` per pulled array. **Derive the columns from
 `packages/shared/src/db.types.ts`**, which `pnpm db:types` generates from the live Postgres
@@ -1741,7 +1949,7 @@ And `packages/db-local/src/index.ts`:
 export * from "./schema";
 ```
 
-- [ ] **Step 6: Run the test to verify it passes**
+- [x] **Step 6: Run the test to verify it passes**
 
 ```bash
 pnpm install && pnpm --filter @ceedo/db-local exec vitest run
@@ -1749,7 +1957,7 @@ pnpm install && pnpm --filter @ceedo/db-local exec vitest run
 
 Expected: PASS, 3 tests.
 
-- [ ] **Step 7: Generate the migrations**
+- [x] **Step 7: Generate the migrations**
 
 ```bash
 pnpm --filter @ceedo/db-local exec drizzle-kit generate
@@ -1758,7 +1966,7 @@ pnpm --filter @ceedo/db-local exec drizzle-kit generate
 Expected: `packages/db-local/drizzle/0000_*.sql` plus `drizzle/meta/`. Read the generated
 SQL and confirm it creates all 21 tables.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/db-local pnpm-lock.yaml
@@ -1798,7 +2006,7 @@ advance commit together.
   - `readSyncState(driver: SqliteDriver): Promise<{ cursor: number; epoch: number; lastFullSyncDate: string | null }>`
   - `betterSqliteDriver(db: Database): SqliteDriver` (test-only)
 
-- [ ] **Step 1: Create the package**
+- [x] **Step 1: Create the package**
 
 ```bash
 mkdir -p packages/sync-engine/src/testing
@@ -1834,7 +2042,7 @@ mkdir -p packages/sync-engine/src/testing
 
 `packages/sync-engine/tsconfig.json`: identical to `packages/db-local/tsconfig.json`.
 
-- [ ] **Step 2: Write the interfaces**
+- [x] **Step 2: Write the interfaces**
 
 Create `packages/sync-engine/src/driver.ts`:
 
@@ -1873,7 +2081,7 @@ export interface Transport {
 }
 ```
 
-- [ ] **Step 3: Write the failing test**
+- [x] **Step 3: Write the failing test**
 
 Create `packages/sync-engine/src/apply.test.ts`:
 
@@ -1996,7 +2204,7 @@ describe("applyPull", () => {
 });
 ```
 
-- [ ] **Step 4: Run it to verify it fails**
+- [x] **Step 4: Run it to verify it fails**
 
 ```bash
 pnpm install && pnpm --filter @ceedo/sync-engine exec vitest run
@@ -2004,7 +2212,7 @@ pnpm install && pnpm --filter @ceedo/sync-engine exec vitest run
 
 Expected: FAIL — `Cannot find module './apply'`.
 
-- [ ] **Step 5: Write the Node driver**
+- [x] **Step 5: Write the Node driver**
 
 Create `packages/sync-engine/src/testing/better-sqlite-driver.ts`:
 
@@ -2047,7 +2255,7 @@ export function betterSqliteDriver(db: Database.Database): SqliteDriver {
 }
 ```
 
-- [ ] **Step 6: Write `apply.ts`**
+- [x] **Step 6: Write `apply.ts`**
 
 Create `packages/sync-engine/src/apply.ts`:
 
@@ -2158,7 +2366,7 @@ export type { SqliteDriver, Transport } from "./driver";
 export { applyPull, readSyncState, type SyncStateRow } from "./apply";
 ```
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [x] **Step 7: Run the tests to verify they pass**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run
@@ -2166,7 +2374,7 @@ pnpm --filter @ceedo/sync-engine exec vitest run
 
 Expected: PASS, 5 tests.
 
-- [ ] **Step 8: Verify the E7 test is falsifiable**
+- [x] **Step 8: Verify the E7 test is falsifiable**
 
 Temporarily change `applyPull` to advance the cursor in its own `driver.transaction` call
 *before* the row loop, and re-run. Expected: `"leaves the cursor untouched when the apply
@@ -2174,7 +2382,7 @@ fails partway"` FAILS, reading 99. **Revert.** This is the single assertion stan
 the design and permanent silent row loss, and a version of it that passes either way is
 worth nothing.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add packages/sync-engine pnpm-lock.yaml
@@ -2215,7 +2423,7 @@ server-side.
   - `resetScopedData(driver: SqliteDriver, businessDate: string): Promise<void>`
   - `needsFullSync(state: SyncStateRow, serverEpoch: number | null, businessDate: string): boolean`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/sync-engine/src/reset.test.ts`:
 
@@ -2340,7 +2548,7 @@ describe("needsFullSync", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run reset
@@ -2348,7 +2556,7 @@ pnpm --filter @ceedo/sync-engine exec vitest run reset
 
 Expected: FAIL — `Cannot find module './reset'`.
 
-- [ ] **Step 3: Write `reset.ts`**
+- [x] **Step 3: Write `reset.ts`**
 
 ```ts
 import { PULLED_TABLES, DEVICE_AUTHORED_TABLES } from "@ceedo/db-local";
@@ -2424,7 +2632,7 @@ Add to `packages/sync-engine/src/index.ts`:
 export { resetScopedData, needsFullSync } from "./reset";
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run
@@ -2432,19 +2640,23 @@ pnpm --filter @ceedo/sync-engine exec vitest run
 
 Expected: PASS, 13 tests.
 
-- [ ] **Step 5: Verify the E8 test is falsifiable**
+- [x] **Step 5: Verify the E8 test is falsifiable**
 
 Temporarily add `"outbox"` to the loop in `resetScopedData` (iterate
 `[...PULLED_TABLES, "outbox"]`) and re-run. Expected: `"never touches device-authored
 state"` FAILS with `{ n: 0 }`. **Revert.**
 
-This check is the whole reason the test stages a non-empty outbox. Confirm by also
-temporarily deleting the three `insert into outbox/local_shifts/pin_attempts` lines from the
-fixture and re-running with the wipe still in place: the test now **passes** while the
-implementation destroys a collector's cash records. That is the tautology shape, seen
-directly.
+This check is the whole reason the test stages a non-empty outbox, and it was confirmed:
+with `"outbox"` in the loop the test fails with `{ n: 0 }`.
 
-- [ ] **Step 6: Commit**
+**The second half of this step does not reproduce, and the test is stronger than it
+assumed.** Deleting the three fixture inserts and re-running with the wipe still in place
+was supposed to show the test passing vacuously. It fails instead, because the assertion is
+`toEqual({ n: 1 })` — an exact count, which an empty fixture fails just as a wiped one does.
+The tautology shape the plan warns about needs a weaker assertion (`toBeGreaterThan(0)`, or
+no staged row at all); this one cannot take it.
+
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/sync-engine
@@ -2488,7 +2700,7 @@ Spec E11 and parent §6.4. This is the task where the engine becomes a whole rou
   - `applyResults(driver, rows: OutboxRow[], results: PushResult[]): Promise<void>`
   - `sync(deps: { driver; transport; credentialId; secret; businessDate }): Promise<SyncOutcome>`
 
-- [ ] **Step 1: Write the failing outbox test**
+- [x] **Step 1: Write the failing outbox test**
 
 Create `packages/sync-engine/src/outbox.test.ts`:
 
@@ -2644,7 +2856,7 @@ describe("the outbox", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run outbox
@@ -2652,7 +2864,7 @@ pnpm --filter @ceedo/sync-engine exec vitest run outbox
 
 Expected: FAIL — `Cannot find module './outbox'`.
 
-- [ ] **Step 3: Write `outbox.ts`**
+- [x] **Step 3: Write `outbox.ts`**
 
 ```ts
 import type { PushResult } from "@ceedo/shared";
@@ -2815,7 +3027,7 @@ export async function applyResults(
 }
 ```
 
-- [ ] **Step 4: Run the outbox tests to verify they pass**
+- [x] **Step 4: Run the outbox tests to verify they pass**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run outbox
@@ -2823,12 +3035,12 @@ pnpm --filter @ceedo/sync-engine exec vitest run outbox
 
 Expected: PASS, 8 tests.
 
-- [ ] **Step 5: Verify the E11 test is falsifiable**
+- [x] **Step 5: Verify the E11 test is falsifiable**
 
 Temporarily change `pushable`'s `where` clause to `state = 'pending'` and re-run. Expected:
 `"re-pushes in_flight entries rather than skipping them"` FAILS with `[]`. **Revert.**
 
-- [ ] **Step 6: Add outbox retention**
+- [x] **Step 6: Add outbox retention**
 
 Spec §5.3 and parent §6.4: `acked` entries are purged after 30 days, `rejected` entries are
 retained until resolved. Append to `outbox.ts`:
@@ -2912,7 +3124,7 @@ Add `purgeAcked` to the `outbox.ts` export line in `packages/sync-engine/src/ind
 import it in the test file alongside the others. Run
 `pnpm --filter @ceedo/sync-engine exec vitest run outbox` and expect PASS, 11 tests.
 
-- [ ] **Step 7: Write the sync loop**
+- [x] **Step 7: Write the sync loop**
 
 Create `packages/sync-engine/src/sync.ts`:
 
@@ -3039,7 +3251,7 @@ export { enqueue, pushable, markInFlight, applyResults, type OutboxRow } from ".
 export { sync, SyncError, type SyncDeps, type SyncOutcome } from "./sync";
 ```
 
-- [ ] **Step 8: Write the round-trip test over real HTTP**
+- [x] **Step 8: Write the round-trip test over real HTTP**
 
 Add to `tests/package.json` `devDependencies`: `"better-sqlite3": "^11.0.0"` and
 `"@types/better-sqlite3": "^7.6.0"`. Add to `dependencies`:
@@ -3208,7 +3420,7 @@ describe("the device engine, end to end", () => {
 });
 ```
 
-- [ ] **Step 9: Run it**
+- [x] **Step 9: Run it**
 
 ```bash
 supabase db reset && \
@@ -3222,7 +3434,7 @@ pnpm --filter @ceedo/tests exec vitest run device/round-trip.test.ts
 Expected: PASS, 4 tests. If the migration replay path is wrong, resolve it relative to
 `tests/` — the suite's working directory — rather than hardcoding an absolute path.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add packages/sync-engine tests/device tests/package.json pnpm-lock.yaml
@@ -3261,7 +3473,7 @@ here proved the engine against `better-sqlite3`. This task runs the **same engin
 - Consumes: `SqliteDriver` (Task 7); `applyPull`, `sync`, `enqueue` (Tasks 7–9).
 - Produces: `expoSqliteDriver(db: SQLiteDatabase): SqliteDriver`; `openDeviceDb(): Promise<SQLiteDatabase>`.
 
-- [ ] **Step 1: Install the device dependencies**
+- [x] **Step 1: Install the device dependencies**
 
 ```bash
 cd apps/collector
@@ -3270,7 +3482,7 @@ pnpm add @ceedo/shared@workspace:* @ceedo/db-local@workspace:* @ceedo/sync-engin
 pnpm add -D babel-plugin-inline-import
 ```
 
-- [ ] **Step 2: Configure metro and babel for bundled migrations**
+- [x] **Step 2: Configure metro and babel for bundled migrations**
 
 `apps/collector/babel.config.js`:
 
@@ -3313,7 +3525,7 @@ config.resolver.sourceExts.push("sql");
 module.exports = config;
 ```
 
-- [ ] **Step 3: Write the `expo-sqlite` driver**
+- [x] **Step 3: Write the `expo-sqlite` driver**
 
 Create `apps/collector/src/db/driver.ts`:
 
@@ -3373,7 +3585,7 @@ export function openDeviceDb(): SQLiteDatabase {
 }
 ```
 
-- [ ] **Step 4: Write the on-device probe screen**
+- [x] **Step 4: Write the on-device probe screen**
 
 Create `apps/collector/app/engine-probe.tsx`:
 
@@ -3475,7 +3687,7 @@ export default function EngineProbe() {
 }
 ```
 
-- [ ] **Step 5: Copy the generated migrations into the app**
+- [x] **Step 5: Copy the generated migrations into the app**
 
 drizzle-kit's `driver: 'expo'` output lives in `packages/db-local/drizzle`. The app imports
 it from `apps/collector/drizzle`. Add to `apps/collector/package.json` `"scripts"`:
@@ -3490,7 +3702,9 @@ Run it:
 cd apps/collector && pnpm sync-migrations
 ```
 
-- [ ] **Step 6: Run it on the physical tablet**
+- [x] **Step 6: Run it on the physical tablet** — run, and it passed: 1500 rows applied,
+cursor 1500, and the cursor held at 1500 through a failing apply. E7 holds on the driver
+that ships, not just on `better-sqlite3`.
 
 ```bash
 cd apps/collector && pnpm expo run:android --device
@@ -3509,12 +3723,12 @@ outbox pushable: 1
 it means the Node driver is exempt from something `expo-sqlite` enforces, which is exactly
 what this task exists to detect. Record it and fix the engine, not the probe.
 
-- [ ] **Step 7: Start the device smoke checklist**
+- [x] **Step 7: Start the device smoke checklist**
 
 Create `docs/superpowers/measurements/phase-3b-i-device-smoke.md` with the device model,
 Android version, and a table with this run's four results. Tasks 11–13 append to it.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add apps/collector docs/superpowers/measurements/phase-3b-i-device-smoke.md
@@ -3553,7 +3767,7 @@ Spec E6. The credential reaches Keystore-backed storage and nowhere else.
   - `saveCredential(c): Promise<void>`, `loadCredential(): Promise<Credential | null>`,
     `clearCredential(): Promise<void>`
 
-- [ ] **Step 1: Write the failing test for the payload codec**
+- [x] **Step 1: Write the failing test for the payload codec**
 
 Create `apps/web/lib/devices/enrollment-payload.test.ts`:
 
@@ -3594,7 +3808,7 @@ describe("the enrollment payload", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 ```bash
 pnpm --filter @ceedo/web exec vitest run lib/devices/enrollment-payload.test.ts
@@ -3602,7 +3816,7 @@ pnpm --filter @ceedo/web exec vitest run lib/devices/enrollment-payload.test.ts
 
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Write the codec**
+- [x] **Step 3: Write the codec**
 
 Create `apps/web/lib/devices/enrollment-payload.ts`:
 
@@ -3651,7 +3865,7 @@ export function decodeEnrollment(
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 ```bash
 pnpm --filter @ceedo/web exec vitest run lib/devices/enrollment-payload.test.ts
@@ -3659,7 +3873,7 @@ pnpm --filter @ceedo/web exec vitest run lib/devices/enrollment-payload.test.ts
 
 Expected: PASS, 3 tests.
 
-- [ ] **Step 5: Render the QR on the web**
+- [x] **Step 5: Render the QR on the web**
 
 ```bash
 pnpm --filter @ceedo/web add qrcode
@@ -3716,7 +3930,7 @@ And in the rendered block, after the `</dl>`:
           )}
 ```
 
-- [ ] **Step 6: Write the device credential store**
+- [x] **Step 6: Write the device credential store**
 
 Create `apps/collector/src/auth/credential-store.ts`:
 
@@ -3771,7 +3985,7 @@ export async function clearCredential(): Promise<void> {
 }
 ```
 
-- [ ] **Step 7: Write the enrollment screen**
+- [x] **Step 7: Write the enrollment screen**
 
 Create `apps/collector/app/enroll.tsx` with two paths: a `CameraView` from `expo-camera`
 with `barcodeScannerSettings={{ barcodeTypes: ["qr"] }}`, and a `TextInput` pair for manual
@@ -3808,7 +4022,9 @@ The mandatory behaviour, and the reason each line is there:
   }
 ```
 
-- [ ] **Step 8: Run the enrollment end to end on the tablet**
+- [ ] **Step 8: Run the enrollment end to end on the tablet** — outstanding, needs the
+device and a native rebuild (`expo-camera`, `expo-secure-store` and `expo-sqlite` are
+native modules). The checklist rows are written and waiting.
 
 Issue a credential from the web admin screen, scan it with the tablet, and confirm the
 device reports "Enrolled and synced". Then **force-quit and reopen the app** and confirm
@@ -3821,7 +4037,7 @@ is not a fallback.
 
 Append both results to `docs/superpowers/measurements/phase-3b-i-device-smoke.md`.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add apps/web apps/collector docs/superpowers/measurements/phase-3b-i-device-smoke.md
@@ -3848,9 +4064,9 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ## Task 12: Offline sign-in, the five-attempt lock, and the shift gate
 
-Spec E10 and §4.4. **Read `docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md`
-before starting** — Task 2's recorded number decides whether Step 6's progress indicator is
-required.
+Spec E10 and §4.4. PIN verification goes through the native module built in Task 2a
+(~482 ms); `bcryptjs` on this path is a 22-second sign-in. Full measurements:
+`docs/superpowers/measurements/phase-3b-i-bcrypt-hermes.md`.
 
 **Files:**
 - Create: `packages/sync-engine/src/signin.ts` + `src/signin.test.ts`
@@ -3859,14 +4075,15 @@ required.
 - Modify: `packages/sync-engine/src/index.ts`
 
 **Interfaces:**
-- Consumes: `SqliteDriver` (Task 7).
+- Consumes: `SqliteDriver` (Task 7); `verify(pin, hash)` from
+  `apps/collector/modules/ceedo-bcrypt` (Task 2a) — **not** `bcryptjs`.
 - Produces:
   - `canSignIn(driver, collectorId): Promise<{ ok: true } | { ok: false; reason: SignInBlock }>`
   - `type SignInBlock = "locked" | "no_pin" | "never_synced" | "other_shift_open"`
   - `recordPinFailure(driver, collectorId): Promise<number>`
   - `clearPinFailures(driver, collectorId): Promise<void>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/sync-engine/src/signin.test.ts`:
 
@@ -4024,7 +4241,7 @@ describe("the five-attempt lock", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run signin
@@ -4032,7 +4249,7 @@ pnpm --filter @ceedo/sync-engine exec vitest run signin
 
 Expected: FAIL — `Cannot find module './signin'`.
 
-- [ ] **Step 3: Write `signin.ts`**
+- [x] **Step 3: Write `signin.ts`**
 
 ```ts
 import type { SqliteDriver } from "./driver";
@@ -4113,7 +4330,7 @@ export {
 } from "./signin";
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run
@@ -4121,14 +4338,14 @@ pnpm --filter @ceedo/sync-engine exec vitest run
 
 Expected: PASS, all files.
 
-- [ ] **Step 5: Verify the E10 test is falsifiable**
+- [x] **Step 5: Verify the E10 test is falsifiable**
 
 Temporarily change `canSignIn`'s shift query to `where status <> 'closed'` and re-run.
 Expected: `"does NOT block on a closed_unsynced shift belonging to someone else"` FAILS and
 every other test in the file still PASSES. **Revert.** That is the whole reason spec E10 is
 written down as a decision rather than left to the implementer.
 
-- [ ] **Step 6: Write the session and the sign-in screen**
+- [x] **Step 6: Write the session and the sign-in screen**
 
 `apps/collector/src/auth/session.ts` holds the signed-in collector **in memory only**:
 
@@ -4167,9 +4384,11 @@ table, a 6-digit PIN field, and this order of operations —
     }
     setVerifying(true);
     const collector = collectors.find((c) => c.id === collectorId)!;
-    // Synchronous and CPU-bound. See MESSAGES below and the Hermes measurement for why
-    // this is wrapped in a visible state rather than run bare.
-    const ok = bcrypt.compareSync(pin, collector.pin_hash!);
+    // NATIVE, never bcrypt.compareSync. Measured on the target tablet in a release build:
+    // bcryptjs under Hermes takes 22,666 ms for this call and the native module takes
+    // ~482 ms -- a 47x difference, and the whole reason Task 2a exists. An import of
+    // `bcryptjs` on this path is a 22-second sign-in.
+    const ok = nativeVerify(pin, collector.pin_hash!);
     setVerifying(false);
 
     if (!ok) {
@@ -4205,17 +4424,24 @@ const MESSAGES: Record<SignInBlock, string> = {
 };
 ```
 
-If Task 2's measurement put Hermes bcrypt over ~800ms, `verifying` must render a visible
-indicator; the screen must not appear frozen while the key schedule runs.
+Import it as
+`import { verify as nativeVerify } from "../../modules/ceedo-bcrypt";` (relative, not the
+`@/modules/...` alias the Expo docs show -- this project maps `@/*` to `./src/*`, so that
+alias resolves to `src/modules/` and silently misses).
 
-- [ ] **Step 7: Exercise sign-in on the tablet**
+Measured at ~482 ms, which is under the 800 ms line, so a progress indicator is **not
+required**. It is still perceptible; a subtle one is a reasonable design choice, not an
+obligation. `verifying` is kept in the signature either way so adding one costs nothing.
+
+- [ ] **Step 7: Exercise sign-in on the tablet** — outstanding, needs the device in
+airplane mode. Checklist rows are written.
 
 With the tablet in **airplane mode**, sign in as a synced collector. Then: fail the PIN five
 times and confirm the lock message; sign in as a second collector and confirm the gate
 message while the first has a shift open. Append the results, and the observed verification
 latency, to the device smoke checklist.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/sync-engine apps/collector docs/superpowers/measurements/phase-3b-i-device-smoke.md
@@ -4252,7 +4478,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
   - `closeShift(driver, deps, { shiftId, declaredTotal }): Promise<CloseOutcome>`
   - `type CloseOutcome = { status: "closed" | "mismatch" | "closed_unsynced"; ... }`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/sync-engine/src/shift.test.ts` covering, at minimum, these five properties.
 Each needs a non-trivial fixture — a shift with **at least one** collection in it — for the
@@ -4407,7 +4633,7 @@ describe("the shift lifecycle", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run shift
@@ -4415,7 +4641,7 @@ pnpm --filter @ceedo/sync-engine exec vitest run shift
 
 Expected: FAIL — `Cannot find module './shift'`.
 
-- [ ] **Step 3: Write `shift.ts`**
+- [x] **Step 3: Write `shift.ts`**
 
 Implement the four exported functions. The rules that must hold, each traceable to a test
 above:
@@ -4432,7 +4658,7 @@ above:
 - A `closed` or `already_closed` result writes `status = 'closed'`, `declared_total`, and
   the device's own count and total.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 pnpm --filter @ceedo/sync-engine exec vitest run
@@ -4440,7 +4666,7 @@ pnpm --filter @ceedo/sync-engine exec vitest run
 
 Expected: PASS, all files.
 
-- [ ] **Step 5: Verify the closeout tests are falsifiable**
+- [x] **Step 5: Verify the closeout tests are falsifiable**
 
 Temporarily make `closeShift` write `status = 'closed'` on a `mismatch` result. Expected:
 `"leaves the shift OPEN on a records mismatch"` FAILS. **Revert.**
@@ -4450,7 +4676,7 @@ Expected: `"closes with a recorded variance when the cash is short"` FAILS. **Re
 two are the pair §5.1 warns about, and a test suite that cannot tell them apart is exactly
 how they get conflated.
 
-- [ ] **Step 6: Write the shift and closeout screens**
+- [x] **Step 6: Write the shift and closeout screens**
 
 `apps/collector/app/shift.tsx`: shows the open shift, its device count and total, a
 **Sync now** button, and a **Close out** button. The close button is disabled while any
@@ -4463,7 +4689,7 @@ still open and a supervisor is needed. On `closed`, show the variance **with its
 over and short are different problems. On `closed_unsynced`, say the shift is closed on this
 tablet and will reconcile at the next sync.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/sync-engine apps/collector
@@ -4492,7 +4718,8 @@ Spec §1.1. Nothing in this phase is complete until this runs.
 - Modify: `docs/superpowers/measurements/phase-3b-i-device-smoke.md`
 - Create: `docs/superpowers/phase-3b-i-handover.md`
 
-- [ ] **Step 1: Run the whole automated suite from a clean database**
+- [x] **Step 1: Run the whole automated suite from a clean database** — 73 files, 763
+tests, from a fresh `supabase db reset`.
 
 ```bash
 supabase db reset && \
@@ -4534,7 +4761,7 @@ The failure this catches has no automated equivalent: an app that holds a shift 
 entry only in React state loses it here, and nothing in Vitest would notice. Record which
 stages were interrupted.
 
-- [ ] **Step 5: Write the handover**
+- [x] **Step 5: Write the handover** — `docs/superpowers/phase-3b-i-handover.md`.
 
 Create `docs/superpowers/phase-3b-i-handover.md` following the structure of
 `docs/superpowers/phase-3a-handover.md`. It must contain, at minimum:
@@ -4580,7 +4807,7 @@ checklist nobody runs.**
 
 | Task | Step | Mutation | Test that must fail |
 | --- | --- | --- | --- |
-| 1 | 6 | Connect on `POSTGRES_URL` | Four of the six exemption tests |
+| 1 | 6 | Connect on `POSTGRES_URL` | Five of the six (measured). Only the RLS test survives — `set role` genuinely does reproduce that one, which is the thesis in miniature |
 | 5 | 10 | Add a blank line to the generated contract | The staleness test |
 | 7 | 8 | Advance the cursor in its own transaction, first | `"leaves the cursor untouched when the apply fails partway"` |
 | 8 | 5 | Add `outbox` to the reset loop | `"never touches device-authored state"` |
