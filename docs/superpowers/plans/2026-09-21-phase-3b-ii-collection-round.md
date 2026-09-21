@@ -20,11 +20,21 @@
 - **The device's amount is a claim, never truth.** `CollectionPayload` forbids `gross_amount` and `device_id`. Never add an amount to a payload.
 - **A rejection never means discard** (parent §6.3). Rejected rows are kept and still count at closeout.
 - **No message may name a cause the screen has not checked.** 3b-i bug 3: a screen that says "not synced" when the real problem is a missing rate sends someone to the wrong place.
-- **Supabase env is passed inline**, not via `eval $(supabase status -o env)`:
+- **Supabase env is passed inline**, not via `eval $(supabase status -o env)`.
+  **This machine runs three Supabase stacks, and ceedo-collections does NOT own the
+  default ports.** `school-management` holds 54321/54322 and `ccb-sms` holds 55321/55322;
+  ours is on **56321/56322**. Using the documented defaults runs the suite against an
+  unrelated project's database. Confirm with `docker ps --format '{{.Names}}\t{{.Ports}}'`
+  before trusting any port, because `supabase status` reports the config file's values,
+  not the running containers'.
   ```
-  API_URL=http://127.0.0.1:54321 ANON_KEY=<anon> SERVICE_ROLE_KEY=<service> \
-  DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres pnpm test
+  API_URL=http://127.0.0.1:56321 SUPABASE_URL=http://127.0.0.1:56321 \
+  ANON_KEY=<anon> SERVICE_ROLE_KEY=<service> \
+  DB_URL=postgresql://postgres:postgres@127.0.0.1:56322/postgres pnpm test
   ```
+  `SUPABASE_URL` is required as well as `API_URL`: two cases in
+  `tests/http/functions.test.ts` read `SUPABASE_URL` and fall back to a hardcoded
+  `127.0.0.1:54321`. Task 2 fixes that fallback; until it lands, set both.
 - **After every `supabase db reset`:** `psql "$DB_URL" -v label="'llejo android'" -v pin="'123456'" -f scripts/dev-wire-tablet.sql`, and re-issue the device credential on `/devices` and re-enrol by QR.
 - **Rebuild vs reload:** if it lands in the JS bundle, reload; if it lands in the APK, rebuild. `modules/ceedo-bcrypt` fails silently on a stale build.
 - **`apps/collector` is NOT in the vitest workspace** (`vitest.workspace.ts` is `["packages/*", "apps/web", "tests"]`). Any logic that needs a test goes in `packages/sync-engine` or `packages/shared`. Screens are verified by `pnpm typecheck`, a clean `npx expo export`, and the device session in Task 12.
