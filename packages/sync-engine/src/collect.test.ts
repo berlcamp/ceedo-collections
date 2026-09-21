@@ -165,13 +165,15 @@ describe("commitReceipt", () => {
     ]);
   });
 
-  it("writes NOTHING when any part of the write fails", async () => {
-    // Spec F5. The two halves are not separable. An outbox entry without local rows makes
-    // the closeout short by that receipt; local rows without an entry mean cash recorded
-    // and never pushed. Both are silent.
+  it("refuses a duplicate id rather than clobbering the earlier receipt", async () => {
+    // NOT an atomicity test. `enqueue` is `on conflict (id) do nothing` (outbox.ts), so a
+    // second commitReceipt under the SAME id makes the second enqueue a silent no-op
+    // regardless of whether the write is transactional -- local_collections' own primary
+    // key is what throws, in both the correct implementation and a split one. This test
+    // only pins the idempotency-by-id behaviour; see "rolls back every table when a later
+    // write in the same commit fails" below for the actual atomicity guarantee.
     await commitReceipt(driver, draft(), []);
 
-    // A second commit under the same id: local_collections' primary key refuses it.
     await expect(
       commitReceipt(driver, draft({ orNo: 1006 }), []),
     ).rejects.toThrow();
@@ -180,6 +182,35 @@ describe("commitReceipt", () => {
       or_no: 1005,
     });
     expect(db.prepare("select count(*) as n from outbox").get()).toEqual({ n: 1 });
+  });
+
+  it("rolls back every table when a later write in the same commit fails", async () => {
+    // Spec F5, and the property this whole task exists for. A FRESH id is used deliberately
+    // -- nothing here may be idempotent, or the failure could be masked exactly as it was in
+    // the duplicate-id test above (enqueue's `on conflict (id) do nothing` no-ops on a
+    // repeated id and hides a split write).
+    //
+    // The SAME chargeId appears twice in `allocations`. A real draft could never do this --
+    // one charge cannot be allocated against twice in one receipt -- so this is not a
+    // validation scenario. It is deliberate failure injection: `local_allocations`' primary
+    // key is (collection_id, charge_id) (packages/db-local/drizzle/0001_true_bedlam.sql), so
+    // the second allocation insert throws AFTER local_collections and the outbox row have
+    // already been written by a non-transactional implementation. Do not "fix" this fixture
+    // by de-duplicating it -- that would silently delete the one test that can fail here.
+    const fresh = draft({
+      id: "fresh-1",
+      orNo: 2001,
+      allocations: [
+        { chargeId: "dup", amount: fromCentavos(1_000) },
+        { chargeId: "dup", amount: fromCentavos(1_000) },
+      ],
+    });
+
+    await expect(commitReceipt(driver, fresh, [])).rejects.toThrow();
+
+    expect(db.prepare("select count(*) as n from local_collections").get()).toEqual({ n: 0 });
+    expect(db.prepare("select count(*) as n from local_allocations").get()).toEqual({ n: 0 });
+    expect(db.prepare("select count(*) as n from outbox").get()).toEqual({ n: 0 });
   });
 
   it("produces a payload the shared contract accepts", async () => {
