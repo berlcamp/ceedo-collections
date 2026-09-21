@@ -48,7 +48,39 @@ first. What it adds is the thing no layer below could supply: the device's own a
   process already does. A collector who can cancel their own receipts can make a shortfall
   disappear.
 
-### 1.2 Exit criterion
+### 1.2 The paper receipt is the primary document
+
+There is no printer. The receipts are **pre-printed accountable forms** — physical OR
+booklets the collector carries, issued to the office and signed for. Parent §3 settled
+this ("app records the number"), parent §15 puts thermal printing out of scope, and
+parent §5.3 models the booklets, their assignments and their serial ranges because the
+paper is the thing being accounted for.
+
+The order of operations follows from that, and every screen in §3.2 is arranged around it:
+
+1. The app computes what is owed and displays it.
+2. The collector takes the cash and **hand-writes the paper OR**, using that figure.
+3. The collector enters the serial into the app, which validates it against the booklets
+   assigned to them.
+
+**The app is a record of a receipt that already exists, not the receipt.** Two consequences
+run through this design:
+
+- **It is why there is no cancel.** A wrong receipt is a spoiled form and a new one issued,
+  because that is what the paper process requires and what a booklet must balance against
+  on return (§7.2: used + spoiled + unused = total).
+- **It sharpens F7.** The amount on the paper the tenant walks away holding is the amount
+  the *device* computed. So a stale rank set is not merely a device-versus-server
+  disagreement — it is a **paper-versus-ledger** divergence, and the paper is the document
+  the tenant holds and COA will ask about. That is what makes F7's two obligations
+  non-negotiable: the lease screen discloses how stale its data is *before* the collector
+  writes anything, and a closeout mismatch blocks.
+
+Parent §6.3 states the same fact from the other end, and it is the reason a rejection may
+never mean discard: *"by the time the server sees a problem, the collector has handed a
+vendor a paper official receipt and taken their money. That serial is spent."*
+
+### 1.3 Exit criterion
 
 A complete shift on the physical tablet containing **real receipts**:
 
@@ -413,7 +445,7 @@ daylight, and whether the amount-driven keypad is usable with a queue waiting.
 11. **Carryovers** — the Android package identifier off `com.anonymous.collector`, and a
     caller for `outbox.purgeAcked` on the shift screen's sync. Both are named in the 3b-i
     handover and both need the rebuild this phase forces anyway.
-12. **Device session** — the exit criterion of §1.2, transcribed.
+12. **Device session** — the exit criterion of §1.3, transcribed.
 
 ---
 
