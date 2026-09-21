@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { validateOrEntry, type OrEntryContext } from "./booklets.js";
+import { orKey, validateOrEntry, type OrEntryContext } from "./booklets.js";
 
 const context = (over: Partial<OrEntryContext> = {}): OrEntryContext => ({
   booklets: [{ id: "b1", serialPrefix: "OR", startNo: 1001, endNo: 1050 }],
-  consumed: new Set<number>(),
-  spoiled: new Set<number>(),
+  consumed: new Set<string>(),
+  spoiled: new Set<string>(),
   ...over,
 });
 
@@ -21,18 +21,18 @@ describe("validateOrEntry", () => {
   });
 
   it("rejects a serial already consumed on this device", () => {
-    const ctx = context({ consumed: new Set([1001]) });
+    const ctx = context({ consumed: new Set([orKey("b1", 1001)]) });
     expect(validateOrEntry(ctx, 1001)).toEqual({ ok: false, reason: "already_consumed" });
   });
 
   it("rejects a serial marked spoiled", () => {
-    const ctx = context({ spoiled: new Set([1002]) });
+    const ctx = context({ spoiled: new Set([orKey("b1", 1002)]) });
     expect(validateOrEntry(ctx, 1002)).toEqual({ ok: false, reason: "marked_spoiled" });
   });
 
   it("warns but accepts when serials are skipped", () => {
     // Booklets legitimately get skipped, so this is a soft warning, never a block.
-    const ctx = context({ consumed: new Set([1001]) });
+    const ctx = context({ consumed: new Set([orKey("b1", 1001)]) });
     expect(validateOrEntry(ctx, 1005)).toEqual({
       ok: true,
       bookletId: "b1",
@@ -41,7 +41,7 @@ describe("validateOrEntry", () => {
   });
 
   it("does not warn when the serial follows the last consumed one", () => {
-    const ctx = context({ consumed: new Set([1001, 1002]) });
+    const ctx = context({ consumed: new Set([orKey("b1", 1001), orKey("b1", 1002)]) });
     expect(validateOrEntry(ctx, 1003)).toEqual({ ok: true, bookletId: "b1" });
   });
 
@@ -77,7 +77,50 @@ describe("validateOrEntry", () => {
 
   it("reports a serial that is both spoiled and consumed as spoiled", () => {
     // Spoiled must win: a spoiled serial should never present as merely "already used".
-    const ctx = context({ consumed: new Set([1002]), spoiled: new Set([1002]) });
+    const ctx = context({
+      consumed: new Set([orKey("b1", 1002)]),
+      spoiled: new Set([orKey("b1", 1002)]),
+    });
     expect(validateOrEntry(ctx, 1002)).toEqual({ ok: false, reason: "marked_spoiled" });
+  });
+
+  it("does not confuse the same serial number spent in a DIFFERENT booklet (ruling R9)", () => {
+    // `consumed_serials` is keyed (booklet_id, or_no) in the schema -- the booklet is part
+    // of a serial's identity. Parent spec §6.1 means a device pulls the booklet assignments
+    // of EVERY collector permitted to sign in to it, so `consumed` routinely carries other
+    // booklets' serials before a shared tablet's own local_collections even enter into it.
+    // Before ruling R9, `consumed` held bare numbers, so this exact fixture -- 1001-1004
+    // legitimately spent in booklet b2, PLUS serial 1005 spent in an unrelated booklet b1
+    // that happens to number-overlap -- made entering 1005 into b2 (its true next serial)
+    // report already_consumed: a legitimate receipt refused with a vendor standing there,
+    // and nothing in the app clears it. Booklet-scoped keys make "b1:1005" and "b2:1005"
+    // different facts, and this fixture is built so no sequence-skip warning is in play
+    // either -- the failure this isolates is the confusion itself, nothing else.
+    const ctx = context({
+      booklets: [{ id: "b2", serialPrefix: "OR", startNo: 1001, endNo: 1050 }],
+      consumed: new Set([
+        orKey("b2", 1001),
+        orKey("b2", 1002),
+        orKey("b2", 1003),
+        orKey("b2", 1004),
+        orKey("b1", 1005),
+      ]),
+    });
+    expect(validateOrEntry(ctx, 1005)).toEqual({ ok: true, bookletId: "b2" });
+  });
+
+  it("scopes the sequence-skip warning to the resolved booklet's own entries", () => {
+    // highestUsed used to range-filter bare numbers as an approximation of "within this
+    // booklet"; with booklet keys it is exact. A high serial consumed in a DIFFERENT
+    // booklet must not suppress -- or wrongly trigger -- this booklet's own skip warning.
+    const ctx = context({
+      booklets: [{ id: "b2", serialPrefix: "OR", startNo: 1001, endNo: 1050 }],
+      consumed: new Set([orKey("other", 1049)]),
+    });
+    expect(validateOrEntry(ctx, 1005)).toEqual({
+      ok: true,
+      bookletId: "b2",
+      warning: "sequence_skipped",
+    });
   });
 });

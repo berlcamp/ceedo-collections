@@ -1,4 +1,4 @@
-import { toDecimalString, type Centavos, type OrEntryContext } from "@ceedo/shared";
+import { orKey, toDecimalString, type Centavos, type OrEntryContext } from "@ceedo/shared";
 import type { SqliteDriver } from "./driver";
 import { enqueue } from "./outbox";
 
@@ -49,6 +49,14 @@ export interface DraftReceipt {
  * receipts. A receipt written an hour ago has not round-tripped, and offering its serial
  * again would put two receipts on one number -- which the server would catch, but only
  * after both vendors had walked away with paper.
+ *
+ * BOOKLET-SCOPED, per ruling R9: `consumed_serials` is keyed `(booklet_id, or_no)`, and a
+ * device pulls the booklet assignments of EVERY collector permitted to sign in to it
+ * (parent spec §6.1), so this set routinely spans booklets that are not this collector's
+ * candidates at all. All three sources -- `consumed_serials`, `local_collections`, and
+ * `spoiled_forms` -- carry a `booklet_id`, so each key is built from the pair, not the
+ * bare `or_no`. Without this, a serial spent in one booklet would refuse the same numeral
+ * in an entirely different one.
  */
 export async function orEntryContext(
   driver: SqliteDriver,
@@ -67,14 +75,17 @@ export async function orEntryContext(
     [collectorId],
   );
 
-  const pulled = await driver.select<{ or_no: number }>(
-    "select or_no from consumed_serials",
+  const pulled = await driver.select<{ booklet_id: string; or_no: number }>(
+    "select booklet_id, or_no from consumed_serials",
   );
-  const mine = await driver.select<{ or_no: number }>(
-    "select or_no from local_collections",
+  // NOT scoped to this collector: on a shared tablet, a previous collector's spent serials
+  // in a booklet they still hold are still spent, and booklet scoping (not collector
+  // scoping) is what makes that correct rather than incidental.
+  const mine = await driver.select<{ booklet_id: string; or_no: number }>(
+    "select booklet_id, or_no from local_collections",
   );
-  const spoiled = await driver.select<{ or_no: number }>(
-    "select or_no from spoiled_forms",
+  const spoiled = await driver.select<{ booklet_id: string; or_no: number }>(
+    "select booklet_id, or_no from spoiled_forms",
   );
 
   return {
@@ -84,8 +95,10 @@ export async function orEntryContext(
       startNo: b.start_no,
       endNo: b.end_no,
     })),
-    consumed: new Set([...pulled, ...mine].map((r) => r.or_no)),
-    spoiled: new Set(spoiled.map((r) => r.or_no)),
+    consumed: new Set(
+      [...pulled, ...mine].map((r) => orKey(r.booklet_id, r.or_no)),
+    ),
+    spoiled: new Set(spoiled.map((r) => orKey(r.booklet_id, r.or_no))),
   };
 }
 

@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
-import { CollectionPayload, fromCentavos } from "@ceedo/shared";
+import { CollectionPayload, fromCentavos, orKey } from "@ceedo/shared";
 import { betterSqliteDriver } from "./testing/better-sqlite-driver";
 import { commitReceipt, orEntryContext, type DraftReceipt } from "./collect";
 import type { SqliteDriver } from "./driver";
@@ -90,13 +90,24 @@ describe("orEntryContext", () => {
               '100.00', '2026-09-21T00:00:00.000Z');
     `);
     const ctx = await orEntryContext(driver, "c1");
-    expect([...ctx.consumed].sort()).toEqual([1001, 1002]);
+    expect([...ctx.consumed].sort()).toEqual([orKey("b1", 1001), orKey("b1", 1002)].sort());
   });
 
   it("carries spoiled serials", async () => {
     db.exec(`insert into spoiled_forms (id, booklet_id, or_no, reason) values ('sp1','b1',1003,'torn');`);
     const ctx = await orEntryContext(driver, "c1");
-    expect([...ctx.spoiled]).toEqual([1003]);
+    expect([...ctx.spoiled]).toEqual([orKey("b1", 1003)]);
+  });
+
+  it("keeps a serial consumed in a DIFFERENT booklet from colliding with this one (ruling R9)", async () => {
+    // b2 is assigned to a different collector (c2) and shares the same numeric range as
+    // b1. Serial 1001 consumed under b2 must not read as b1's own 1001 being spent --
+    // that is exactly the confusion booklet-scoped keys exist to prevent. A bare-number
+    // set would collapse orKey("b1", 1001) and orKey("b2", 1001) into the single value
+    // 1001, so this test would pass on a `new Set([1001, 1001])` regression too.
+    db.exec(`insert into consumed_serials (booklet_id, or_no) values ('b2', 1001);`);
+    const ctx = await orEntryContext(driver, "c1");
+    expect([...ctx.consumed].sort()).toEqual([orKey("b1", 1001), orKey("b2", 1001)].sort());
   });
 });
 
@@ -163,6 +174,54 @@ describe("commitReceipt", () => {
     expect(JSON.parse(row.payload).lines).toEqual([
       { fee_type_id: "f-ambulant", rate_class: "vegetable", quantity: 3 },
     ]);
+  });
+
+  it("omits rate_class from the payload when the line has none", async () => {
+    // CollectionPayload declares `rate_class: z.string().optional()` -- optional, NOT
+    // nullable. Sending `rate_class: null` would be refused by the server's `.strict()`
+    // parse even though collect.ts's own line-mapping logic correctly omits the key for a
+    // null rateClass. Nothing exercised that branch before: "requires an id per line"
+    // throws before a payload exists, and the contract-parse test below uses `lines: []`.
+    // A regression that emitted the key as `null` would have passed every existing test
+    // and failed only against the real server.
+    const lines = [
+      {
+        feeTypeId: "550e8400-e29b-41d4-a716-446655440010",
+        rateClass: null,
+        quantity: 2,
+        unitRate: fromCentavos(500),
+        amount: fromCentavos(1_000),
+      },
+    ];
+    await commitReceipt(
+      driver,
+      draft({
+        id: "550e8400-e29b-41d4-a716-446655440011",
+        bookletId: "550e8400-e29b-41d4-a716-446655440012",
+        collectorId: "550e8400-e29b-41d4-a716-446655440013",
+        shiftId: "550e8400-e29b-41d4-a716-446655440014",
+        feeTypeId: "550e8400-e29b-41d4-a716-446655440015",
+        leaseId: null,
+        ranks: [],
+        allocations: [],
+        lines,
+        grossAmount: fromCentavos(1_000),
+      }),
+      ["line-null-rate-class"],
+    );
+
+    const row = db
+      .prepare("select payload from outbox where id = '550e8400-e29b-41d4-a716-446655440011'")
+      .get() as { payload: string };
+    const payload = JSON.parse(row.payload);
+
+    expect(payload.lines).toEqual([
+      { fee_type_id: "550e8400-e29b-41d4-a716-446655440010", quantity: 2 },
+    ]);
+    expect(payload.lines[0]).not.toHaveProperty("rate_class");
+    // The contract itself is the judge: a `rate_class: null` regression is refused here,
+    // not just by a hand-written assertion.
+    expect(() => CollectionPayload.parse(payload)).not.toThrow();
   });
 
   it("refuses a duplicate id rather than clobbering the earlier receipt", async () => {

@@ -5,13 +5,26 @@ export interface BookletRange {
   endNo: number;
 }
 
+/**
+ * A serial's identity within `consumed`/`spoiled` is `` `${bookletId}:${orNo}` ``, NOT the
+ * bare number. Ruling R9: `consumed_serials` is keyed `(booklet_id, or_no)` in the schema
+ * -- the booklet is part of what makes a serial "used" -- and parent spec §6.1 has a device
+ * pulling the booklet assignments of EVERY collector permitted to sign in to it, so these
+ * sets routinely carry other booklets' serials. A bare number would make serial 1005 spent
+ * in one booklet block serial 1005 in an entirely different one: a receipt the collector is
+ * entitled to write, refused with a vendor standing there, and nothing in the app clears it.
+ */
+export function orKey(bookletId: string, orNo: number): string {
+  return `${bookletId}:${orNo}`;
+}
+
 export interface OrEntryContext {
   /** Booklets currently assigned to this collector. */
   booklets: readonly BookletRange[];
-  /** Serials already used, as known to this device. */
-  consumed: ReadonlySet<number>;
-  /** Serials marked spoiled or cancelled. */
-  spoiled: ReadonlySet<number>;
+  /** `orKey(bookletId, orNo)` for every serial already used, as known to this device. */
+  consumed: ReadonlySet<string>;
+  /** `orKey(bookletId, orNo)` for every serial marked spoiled or cancelled. */
+  spoiled: ReadonlySet<string>;
 }
 
 export type OrRejectReason =
@@ -48,12 +61,16 @@ export function validateOrEntry(context: OrEntryContext, orNo: number): OrEntryR
   if (candidates.length === 0) return { ok: false, reason: "not_in_assigned_booklet" };
   if (candidates.length > 1) return { ok: false, reason: "ambiguous_booklet" };
   const booklet = candidates[0]!;
-  if (context.spoiled.has(orNo)) return { ok: false, reason: "marked_spoiled" };
-  if (context.consumed.has(orNo)) return { ok: false, reason: "already_consumed" };
+  const key = orKey(booklet.id, orNo);
+  if (context.spoiled.has(key)) return { ok: false, reason: "marked_spoiled" };
+  if (context.consumed.has(key)) return { ok: false, reason: "already_consumed" };
 
-  const usedInBooklet = [...context.consumed].filter(
-    (serial) => serial >= booklet.startNo && serial <= booklet.endNo,
-  );
+  // Booklet-scoped and exact, now that a serial's identity carries its booklet: no more
+  // filtering bare numbers by numeric range as an approximation of "within this booklet".
+  const prefix = `${booklet.id}:`;
+  const usedInBooklet = [...context.consumed]
+    .filter((entry) => entry.startsWith(prefix))
+    .map((entry) => Number(entry.slice(prefix.length)));
   const highestUsed = usedInBooklet.length > 0 ? Math.max(...usedInBooklet) : booklet.startNo - 1;
 
   return orNo > highestUsed + 1
