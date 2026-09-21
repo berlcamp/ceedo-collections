@@ -1,7 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import type { Centavos } from "@ceedo/shared";
+import { Button, buttonClass } from "@/components/ui/button";
+import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { FieldShell, TextArea, TextInput } from "@/components/ui/field";
 import { condoneCharge } from "@/lib/ledger/actions";
 import type { SaveResult } from "@/lib/admin/save-result";
 
@@ -22,105 +26,82 @@ export function CondoneDialog({
   outstanding: Centavos;
   detail: string;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [result, setResult] = useState<SaveResult | null>(null);
   const [pending, setPending] = useState(false);
+
+  // A dialog reopened after a failed save should not still be wearing that attempt's
+  // errors. Cleared as the dialog closes, not in an effect watching the state that just
+  // changed — that is a cascading render for something the event already knows.
+  function onOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) setResult(null);
+  }
 
   async function onSubmit(formData: FormData) {
     setPending(true);
     const outcome = await condoneCharge(formData);
     setPending(false);
     setResult(outcome);
-    if (outcome.ok) dialogRef.current?.close();
+    if (outcome.ok) {
+      setOpen(false);
+      router.refresh();
+    }
   }
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => {
-          setResult(null);
-          dialogRef.current?.showModal();
-        }}
-        className="text-xs text-neutral-700 underline"
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger className={buttonClass("ghost", "sm")}>Condone</DialogTrigger>
+      <DialogContent
+        title={`Condone ${detail}`}
+        description="Writes off this charge against an authorising ordinance. Cannot exceed the amount still outstanding."
+        footer={
+          <>
+            <DialogClose className={buttonClass("ghost", "md")}>Close</DialogClose>
+            <Button type="submit" form="condone-form" variant="primary" disabled={pending}>
+              {pending ? "Condoning…" : "Condone"}
+            </Button>
+          </>
+        }
       >
-        Condone
-      </button>
-      <dialog
-        ref={dialogRef}
-        className="rounded-lg border border-neutral-200 p-0 backdrop:bg-black/30"
-      >
-        <form action={onSubmit} className="w-80 p-4">
-          <h2 className="mb-1 text-sm font-semibold">Condone {detail}</h2>
-          <p className="mb-4 text-xs text-neutral-500">
-            Writes off this charge against an authorising ordinance. Cannot exceed the
-            amount still outstanding.
-          </p>
-
+        <form id="condone-form" action={onSubmit}>
           <input type="hidden" name="chargeId" value={chargeId} />
           <input type="hidden" name="leaseId" value={leaseId} />
 
-          <label htmlFor="condone-amount" className="text-sm font-medium text-neutral-800">
-            Amount
-          </label>
-          <input
-            id="condone-amount"
-            name="amount"
-            type="number"
-            step="0.01"
-            min="0.01"
-            required
-            defaultValue={(outstanding / 100).toFixed(2)}
-            className="mt-1 mb-3 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-          />
+          <FieldShell id="condone-amount" label="Amount">
+            <TextInput
+              id="condone-amount"
+              name="amount"
+              type="number"
+              step="0.01"
+              min="0.01"
+              required
+              defaultValue={(outstanding / 100).toFixed(2)}
+            />
+          </FieldShell>
 
-          <label htmlFor="condone-authority" className="text-sm font-medium text-neutral-800">
-            Ordinance reference
-          </label>
-          <input
-            id="condone-authority"
-            name="authorityRef"
-            type="text"
-            required
-            placeholder="e.g. City Ordinance 2026-14"
-            className="mt-1 mb-3 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-          />
+          <FieldShell id="condone-authority" label="Ordinance reference">
+            <TextInput
+              id="condone-authority"
+              name="authorityRef"
+              type="text"
+              required
+              placeholder="e.g. City Ordinance 2026-14"
+            />
+          </FieldShell>
 
-          <label htmlFor="condone-reason" className="text-sm font-medium text-neutral-800">
-            Reason
-          </label>
-          <textarea
-            id="condone-reason"
-            name="reason"
-            required
-            rows={3}
-            className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-          />
+          <FieldShell id="condone-reason" label="Reason">
+            <TextArea id="condone-reason" name="reason" required rows={3} />
+          </FieldShell>
 
           {result && !result.ok && result.formError ? (
-            <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">
+            <p className="mt-2 border border-ribbon/40 bg-ribbon-soft px-3 py-2 text-xs leading-relaxed text-ribbon">
               {result.formError}
             </p>
           ) : null}
-
-          <div className="mt-4 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => dialogRef.current?.close()}
-              className="rounded-md px-3 py-1.5 text-sm text-neutral-600"
-            >
-              Close
-            </button>
-            <button
-              type="submit"
-              disabled={pending}
-              className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-            >
-              {pending ? "Condoning…" : "Condone"}
-            </button>
-          </div>
         </form>
-      </dialog>
-    </>
+      </DialogContent>
+    </Dialog>
   );
 }

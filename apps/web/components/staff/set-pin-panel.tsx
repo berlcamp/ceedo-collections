@@ -1,6 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { FieldShell, TextInput } from "@/components/ui/field";
+import { Notice, Panel } from "@/components/ui/panel";
+import { Select } from "@/components/ui/select";
 import { setCollectorPin } from "@/lib/devices/credential-actions";
 
 export interface CollectorOption {
@@ -16,7 +20,9 @@ export interface CollectorOption {
  * The warning below is not a caveat, it is the point of this component: parent spec §14
  * records "a collector who forgets mid-round offline cannot sign in" as a known limitation
  * of a new PIN reaching a tablet only on its next sync. An administrator resetting a PIN
- * believing it takes effect immediately has sent that collector out unable to work.
+ * believing it takes effect immediately has sent that collector out unable to work. It is
+ * rendered as the panel's standing note rather than a line inside the form, so it cannot
+ * be scrolled past on the way to the button.
  */
 export function SetPinPanel({ collectors }: { collectors: CollectorOption[] }) {
   const [collectorId, setCollectorId] = useState("");
@@ -46,67 +52,61 @@ export function SetPinPanel({ collectors }: { collectors: CollectorOption[] }) {
   if (collectors.length === 0) return null;
 
   return (
-    <div className="max-w-md rounded-lg border border-neutral-200 p-4">
-      <h2 className="mb-1 text-sm font-semibold">Set collector PIN</h2>
-      <p className="mb-4 text-xs font-medium text-amber-800">
-        A new PIN reaches the collector&apos;s tablet only on that tablet&apos;s next sync
-        -- not immediately. A collector already out on their round with the old PIN will
-        not be able to sign in again until they sync, so avoid resetting a PIN mid-round
-        unless the collector can reach a connection.
-      </p>
+    <Panel title="Set collector PIN" className="max-w-xl">
+      <Notice tone="warning" className="mb-4">
+        A new PIN reaches the collector&apos;s tablet only on that tablet&apos;s next sync --
+        not immediately. A collector already out on their round with the old PIN will not be
+        able to sign in again until they sync, so avoid resetting a PIN mid-round unless the
+        collector can reach a connection.
+      </Notice>
 
-      <label htmlFor="pin-collector" className="text-sm font-medium text-neutral-800">
-        Collector
-      </label>
-      <select
-        id="pin-collector"
-        value={collectorId}
-        onChange={(event) => {
-          setCollectorId(event.target.value);
-          setError(null);
-          setSavedFor(null);
-        }}
-        className="mt-1 mb-3 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-      >
-        <option value="">Select…</option>
-        {collectors.map((collector) => (
-          <option key={collector.id} value={collector.id}>
-            {collector.fullName}
-          </option>
-        ))}
-      </select>
+      <FieldShell id="pin-collector" label="Collector">
+        <Select
+          id="pin-collector"
+          value={collectorId}
+          onValueChange={(value) => {
+            setCollectorId(value);
+            setError(null);
+            setSavedFor(null);
+          }}
+          options={collectors.map((collector) => ({
+            value: collector.id,
+            label: collector.fullName,
+          }))}
+        />
+      </FieldShell>
 
-      <label htmlFor="pin-value" className="text-sm font-medium text-neutral-800">
-        New PIN (6 digits)
-      </label>
-      <input
-        id="pin-value"
-        type="text"
-        inputMode="numeric"
-        pattern="\d{6}"
-        maxLength={6}
-        value={pin}
-        onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
-        className="mt-1 mb-3 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-      />
+      <FieldShell id="pin-value" label="New PIN (6 digits)">
+        <TextInput
+          id="pin-value"
+          type="text"
+          inputMode="numeric"
+          pattern="\d{6}"
+          maxLength={6}
+          value={pin}
+          onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+          className="max-w-[9rem] font-mono tracking-[0.35em]"
+        />
+      </FieldShell>
 
       {error ? (
-        <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
+        <Notice tone="error" className="mb-3">
+          {error}
+        </Notice>
       ) : null}
       {savedFor === collectorId && !error ? (
-        <p className="mb-3 rounded-md bg-green-50 px-3 py-2 text-xs text-green-700">
+        <Notice tone="success" className="mb-3">
           PIN set. It will take effect on this tablet&apos;s next sync.
-        </p>
+        </Notice>
       ) : null}
 
-      <button
-        type="button"
+      <Button
+        variant="primary"
         onClick={onSubmit}
         disabled={pending || !collectorId || !/^\d{6}$/.test(pin)}
-        className="rounded-md bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
       >
         {pending ? "Saving…" : "Set PIN"}
-      </button>
-    </div>
+      </Button>
+    </Panel>
   );
 }

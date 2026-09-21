@@ -1,76 +1,12 @@
 import { isAdmin } from "@ceedo/shared";
 import { notFound } from "next/navigation";
+import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
 import { Money } from "@/components/ledger/money";
-import { LedgerTable, type LedgerColumn } from "@/components/ledger/ledger-table";
-import { CondoneDialog } from "@/components/ledger/condone-dialog";
-import {
-  getLeaseBalance,
-  getSubsidiaryLedger,
-  type SubsidiaryLedgerEntry,
-} from "@/lib/ledger/queries";
+import { SubsidiaryLedgerTable } from "@/components/ledger/subsidiary-ledger-table";
+import { ScreenHeader } from "@/components/shell/screen-header";
+import { getLeaseBalance, getSubsidiaryLedger } from "@/lib/ledger/queries";
 import { requireStaff } from "@/lib/supabase/session";
-
-/**
- * Takes `leaseId` and `canCondone` rather than being a module-level constant (as it was
- * before Task 18): the condone action needs both to render, and neither is available at
- * module scope in a Server Component.
- */
-function columns(leaseId: string, canCondone: boolean): LedgerColumn<SubsidiaryLedgerEntry>[] {
-  return [
-    { key: "date", label: "Date", render: (row) => row.entryDate },
-    {
-      key: "detail",
-      label: "Entry",
-      render: (row) => (
-        <span className={row.cancelled ? "line-through text-neutral-500" : ""}>
-          {row.detail}
-          {row.orNo ? ` (OR ${row.orNo})` : null}
-          {row.cancelled && row.cancellationReason ? (
-            // The strikethrough shows the receipt was voided; the reason is the point of
-            // keeping it on the record at all rather than deleting the row.
-            <span className="ml-2 text-xs text-neutral-500">
-              — cancelled: {row.cancellationReason}
-            </span>
-          ) : null}
-        </span>
-      ),
-    },
-    {
-      key: "debit",
-      label: "Debit",
-      align: "right",
-      render: (row) => <Money amount={row.debit} muted={row.cancelled} />,
-    },
-    {
-      key: "credit",
-      label: "Credit",
-      align: "right",
-      render: (row) => <Money amount={row.credit} muted={row.cancelled} />,
-    },
-    {
-      key: "running_balance",
-      label: "Balance",
-      align: "right",
-      render: (row) => <Money amount={row.runningBalance} />,
-    },
-    {
-      key: "action",
-      label: "",
-      // Condoning only ever makes sense against a live charge with something still
-      // outstanding -- a payment row (entryType "collection") and an already-settled
-      // charge both fall through to nothing rendered.
-      render: (row) =>
-        canCondone && row.entryType === "charge" && row.isSettled === false && row.outstanding !== null ? (
-          <CondoneDialog
-            chargeId={row.sourceId}
-            leaseId={leaseId}
-            outstanding={row.outstanding}
-            detail={row.detail}
-          />
-        ) : null,
-    },
-  ];
-}
 
 export default async function SubsidiaryLedgerPage({
   params,
@@ -88,20 +24,36 @@ export default async function SubsidiaryLedgerPage({
   const entries = await getSubsidiaryLedger(leaseId);
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-xl font-semibold">
-          Stall {balance.stallNo} — {balance.tenantName}
-        </h1>
-        <p className="mt-1 text-sm text-neutral-600">
-          Current balance: <Money amount={balance.outstanding} />
-          {balance.daysOverdue > 0 ? ` · ${balance.daysOverdue} days overdue` : null}
-        </p>
-      </div>
-      <LedgerTable
-        columns={columns(leaseId, isAdmin(staff.role))}
-        rows={entries}
-        rowKey={(row) => `${row.entryType}-${row.sourceId}`}
+    <div>
+      {/* This screen is only ever reached by drilling in from Aging or Delinquency, and
+          it is the one route with no entry in the rail — so it carries its own way back. */}
+      <Link
+        href="/ledger/aging"
+        className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-ink-2 transition-colors duration-150 hover:text-ink"
+      >
+        <ChevronLeft size={13} strokeWidth={2} />
+        Aging of receivables
+      </Link>
+
+      <ScreenHeader
+        title={`Stall ${balance.stallNo} — ${balance.tenantName}`}
+        note={
+          <>
+            Current balance:{" "}
+            <span className="font-semibold text-ink">
+              <Money amount={balance.outstanding} />
+            </span>
+            {balance.daysOverdue > 0 ? (
+              <span className="text-ribbon"> · {balance.daysOverdue} days overdue</span>
+            ) : null}
+          </>
+        }
+      />
+
+      <SubsidiaryLedgerTable
+        entries={entries}
+        leaseId={leaseId}
+        canCondone={isAdmin(staff.role)}
       />
     </div>
   );

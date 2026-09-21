@@ -1,55 +1,11 @@
-import { format, fromPesos, type Centavos } from "@ceedo/shared";
+import { fromPesos } from "@ceedo/shared";
+import { classifyShift, type ShiftClass, type ShiftRow } from "./shift-class";
 import { ledgerClient } from "./queries";
 
-export type ShiftClass = "open" | "stale_open" | "unsynced" | "closed" | "remitted";
-
-/**
- * Two states this screen exists to surface, per spec §6.2:
- *
- *   stale_open -- a tablet that never closed out. Nothing else in the system reports this.
- *   unsynced   -- §6.5's closed_unsynced, which "appears on a supervisor dashboard until it
- *                 reconciles".
- */
-export function classifyShift(input: {
-  status: string;
-  businessDate: string;
-  today: string;
-}): ShiftClass {
-  if (input.status === "closed_unsynced") return "unsynced";
-  if (input.status === "open") {
-    return input.businessDate < input.today ? "stale_open" : "open";
-  }
-  if (input.status === "remitted") return "remitted";
-  return "closed";
-}
-
-/**
- * A variance of zero and no variance at all are different facts. A shift that has not closed
- * has no declaration to compare, and rendering that as "Balanced" would say the drawer was
- * counted and matched when nobody has counted it.
- *
- * Signed: over and short are different problems. An absolute value would not tell a
- * supervisor which one they are looking at.
- */
-export function formatVariance(variance: Centavos | null): string {
-  if (variance === null) return "Not yet closed";
-  if (variance === 0) return "Balanced";
-  const pesos = format(Math.abs(variance) as Centavos);
-  return variance > 0 ? `+${pesos} over` : `-${pesos} short`;
-}
-
-export interface ShiftRow {
-  id: string;
-  collectorName: string;
-  deviceLabel: string;
-  businessDate: string;
-  status: string;
-  klass: ShiftClass;
-  systemCount: number | null;
-  systemTotal: Centavos | null;
-  declaredTotal: Centavos | null;
-  variance: Centavos | null;
-}
+// Re-exported so every existing importer (and lib/ledger/shifts.test.ts) keeps working
+// against this module unchanged; the definitions now live in the client-safe file.
+export { classifyShift, formatVariance } from "./shift-class";
+export type { ShiftClass, ShiftRow } from "./shift-class";
 
 /**
  * Sorted so `stale_open` and `unsynced` rows -- the two states nothing else in the system

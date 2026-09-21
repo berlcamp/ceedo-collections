@@ -1,26 +1,248 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+  PROOF TAPE — the visual world for the CEEDO back office.
+
+  The world is the treasury cash-proof ritual: a dark enamelled machine chassis holding a
+  pale continuous tape of figures. Every screen is a proof — a column of entries, a
+  hairline rule, a total, and one line that says whether it agrees.
+
+  Two grounds, and they are not a light/dark theme. There is one theme. The chassis is
+  dark because it is the machine; the tape is pale because it is paper, read all day by a
+  clerk at an office desk. No prefers-color-scheme block, no switcher — `apps/web`'s
+  PRODUCT.md records both as confirmed decisions.
+*/
+
+@theme {
+  /* --- The chassis: the rail, the modal scrim, the machine's enamel ------------- */
+  --color-chassis-900: #16150f;
+  --color-chassis-850: #1c1b15;
+  --color-chassis-800: #23211a;
+  --color-chassis-700: #2e2b22;
+  --color-chassis-600: #3d392e;
+  --color-chassis-500: #56513f;
+  /* Text on the chassis. -dim clears 7:1 on chassis-900, so a resting nav item is never
+     the low-contrast gray that dark sidebars default to. */
+  --color-chassis-ink: #f7f4ec;
+  --color-chassis-dim: #a8a295;
+  /* Brass: the one warm metal on the machine. The focus ring and the current-item bar on
+     the chassis, where the office's blue-black ink would disappear into the enamel. */
+  --color-chassis-accent: #c8b98a;
+
+  /* --- The tape: the field the figures are read off ----------------------------- */
+  --color-tape: #f7f4ec;
+  --color-tape-raised: #fffdf7;
+  --color-tape-sunk: #efebe0;
+  --color-tape-hover: #f2eee2;
+
+  /* --- Rules. The proof sheet is built from these, not from boxes and shadows. --- */
+  --color-rule: #ddd7c7;
+  --color-rule-soft: #e8e3d5;
+  --color-rule-strong: #b9b1a0;
+
+  /* --- Carbon ribbon ink -------------------------------------------------------- */
+  --color-ink: #24221e;
+  --color-ink-2: #57524a; /* 6.8:1 on tape */
+  --color-ink-3: #6e685d; /* 4.9:1 on tape — the floor, never lighter for text */
+
+  /* --- The office's own marks. Colour is reserved; it never fills a ground behind a
+         figure. Red is shortage, void and overdue. Blue-black is the office acting. --- */
+  --color-ribbon: #b5302a;
+  --color-ribbon-deep: #9d2823;
+  --color-ribbon-deeper: #8c231e;
+  --color-ribbon-soft: #f2e2df;
+  --color-mark: #33455c;
+  --color-mark-soft: #e3e8ef;
+  --color-amber: #8a6212;
+  --color-amber-soft: #f6ecd6;
+  --color-proof: #2f5d45;
+  --color-proof-soft: #e2ece6;
+  --color-selection: #d7dce4;
+
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  /* Fixed rem scale — product UI, viewed at consistent DPI. No fluid clamps. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@layer base {
+  html {
+    color-scheme: light;
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  body {
+    background: var(--color-tape);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /*
+    Browser surfaces. These ship with defaults that belong to no design system, and they
+    are the cheapest tell that a page was assembled rather than built.
+  */
+  ::selection {
+    background: var(--color-selection);
+    color: var(--color-ink);
+  }
+
+  :where(input, textarea) {
+    caret-color: var(--color-mark);
+  }
+
+  /* Figures line up on the decimal everywhere, not only where someone remembered. */
+  table,
+  [data-figures] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  input[type="date"] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    opacity: 0.5;
+    cursor: pointer;
+    padding: 0;
+    transition: opacity 150ms ease-out;
+  }
+
+  input[type="date"]:hover::-webkit-calendar-picker-indicator,
+  input[type="date"]:focus::-webkit-calendar-picker-indicator {
+    opacity: 1;
+  }
+
+  a {
+    text-underline-offset: 0.2em;
+    text-decoration-thickness: from-font;
+  }
+
+  /* One focus ring for the whole app, drawn in the office's own ink. */
+  :focus-visible {
+    outline: 2px solid var(--color-mark);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  .on-chassis :focus-visible,
+  .on-chassis:focus-visible {
+    outline-color: var(--color-chassis-accent);
+  }
+
+  /* The page scrolls; the rail stays. Scrollbars are part of the machine either way. */
+  @supports (scrollbar-width: thin) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--color-rule-strong) transparent;
+    }
+    .on-chassis * {
+      scrollbar-color: var(--color-chassis-600) transparent;
+    }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /*
+    The disclosure chevron for a native select, drawn in the palette's own ink.
+
+    Kept here rather than in a Tailwind arbitrary value: an arbitrary value may not contain
+    literal spaces, and this data URI has several inside its `viewBox`, so the utility form
+    silently produced no rule and the control lost the one mark that says it opens.
+  */
+  .select-chevron {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6' fill='none' stroke='%2357524a' stroke-width='1.4'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    background-size: 9px;
+  }
+
+  .select-chevron-sm {
+    background-position: right 0.4rem center;
+    background-size: 8px;
+  }
+}
+
+@layer utilities {
+  /*
+    The accountant's close: a hairline above the total and a double rule below it. This is
+    the one piece of the world that is load-bearing rather than decorative — it is how a
+    proof sheet says "this column is finished".
+  */
+  .rule-close {
+    /*
+      The accountant's close: a hairline above the total, a double rule below it.
+
+      The lower pair is painted as background rules rather than a `border-bottom: double`,
+      because under `border-collapse: collapse` the double border resolves its corners
+      against the neighbouring cell and drops a vertical hairline at every column boundary
+      — the only verticals in a composition built entirely from horizontal rules, and in
+      the one row this world treats as load-bearing. Backgrounds do not collapse, so the
+      close paints as one uninterrupted band across the row.
+    */
+    border-top: 1px solid var(--color-rule-strong);
+    background-image:
+      linear-gradient(var(--color-rule-strong), var(--color-rule-strong)),
+      linear-gradient(var(--color-rule-strong), var(--color-rule-strong));
+    background-size:
+      100% 1px,
+      100% 1px;
+    background-position:
+      left bottom,
+      left bottom 3px;
+    background-repeat: no-repeat;
+  }
+
+  /* Field captions: the letterspaced small caps a printed form uses for its labels. */
+  .caption {
+    font-size: var(--text-2xs);
+    line-height: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/*
+  Motion is state, never decoration: a sheet arriving, a list opening. 120–180ms, from an
+  already-visible default, exponential ease-out. Nothing on this app choreographs a page load —
+  the clerk is mid-task, not watching an entrance.
+*/
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes docket-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 10px)) scale(0.985);
+  }
+}
+
+/* The running proof re-tallies when the filter changes. One authored moment, and the only
+   place in the app where motion draws the eye on purpose. */
+@keyframes retally {
+  50% {
+    background-color: var(--color-mark-soft);
+  }
+}
+
+@keyframes rail-in {
+  from {
+    transform: translateX(-100%);
+  }
 }

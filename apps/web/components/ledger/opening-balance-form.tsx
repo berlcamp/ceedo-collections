@@ -1,6 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { FieldShell, TextInput } from "@/components/ui/field";
+import { Notice, Panel } from "@/components/ui/panel";
+import { Select } from "@/components/ui/select";
 import { recordOpeningBalance } from "@/lib/ledger/actions";
 import type { SaveResult } from "@/lib/admin/save-result";
 import type { OpeningBalanceLease } from "@/lib/ledger/queries";
@@ -43,110 +47,93 @@ export function OpeningBalanceForm({
 
   if (leases.length === 0) {
     return (
-      <p className="max-w-md rounded-lg border border-neutral-200 p-4 text-sm text-neutral-500">
-        Every active lease already has an opening balance recorded.
-      </p>
+      <Panel title="Record an opening balance" className="max-w-xl">
+        <p className="text-sm text-ink-2">Every active lease already has an opening balance recorded.</p>
+      </Panel>
     );
   }
 
   return (
-    <form action={onSubmit} className="max-w-md rounded-lg border border-neutral-200 p-4">
-      <h2 className="mb-1 text-sm font-semibold">Record an opening balance</h2>
-      <p className="mb-4 text-xs text-neutral-500">
-        One per lease, for arrears from before the cutover only. Periods from the cutover
-        onward are billed by the nightly accrual job, not recorded here.
-      </p>
+    <Panel
+      title="Record an opening balance"
+      note="One per lease, for arrears from before the cutover only. Periods from the cutover onward are billed by the nightly accrual job, not recorded here."
+      className="max-w-xl"
+    >
+      <form action={onSubmit}>
+        <FieldShell id="ob-lease" label="Lease" error={fieldErrors.leaseId}>
+          <Select
+            id="ob-lease"
+            name="leaseId"
+            value={leaseId}
+            onValueChange={(value) => {
+              setLeaseId(value);
+              setResult(null);
+            }}
+            options={leases.map((lease) => ({
+              value: lease.leaseId,
+              label: `Stall ${lease.stallNo} — ${lease.tenantName}`,
+            }))}
+          />
+        </FieldShell>
 
-      <label htmlFor="ob-lease" className="text-sm font-medium text-neutral-800">
-        Lease
-      </label>
-      <select
-        id="ob-lease"
-        name="leaseId"
-        required
-        value={leaseId}
-        onChange={(event) => {
-          setLeaseId(event.target.value);
-          setResult(null);
-        }}
-        className="mt-1 mb-3 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-      >
-        <option value="">Select…</option>
-        {leases.map((lease) => (
-          <option key={lease.leaseId} value={lease.leaseId}>
-            Stall {lease.stallNo} — {lease.tenantName}
-          </option>
-        ))}
-      </select>
+        <FieldShell id="ob-amount" label="Reconciled amount" error={fieldErrors.amount}>
+          <TextInput
+            id="ob-amount"
+            name="amount"
+            type="number"
+            step="0.01"
+            min="0.01"
+            required
+            invalid={Boolean(fieldErrors.amount)}
+          />
+        </FieldShell>
 
-      <label htmlFor="ob-amount" className="text-sm font-medium text-neutral-800">
-        Reconciled amount
-      </label>
-      <input
-        id="ob-amount"
-        name="amount"
-        type="number"
-        step="0.01"
-        min="0.01"
-        required
-        className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-      />
-      {fieldErrors.amount ? (
-        <p className="mt-1 mb-2 text-xs text-red-600">{fieldErrors.amount}</p>
-      ) : (
-        <div className="mb-2" />
-      )}
+        <FieldShell
+          id="ob-date"
+          label="Oldest unpaid date"
+          help={`Must be before the cutover date (${cutoverDate}).`}
+          error={fieldErrors.oldestUnpaidDate}
+        >
+          <TextInput
+            id="ob-date"
+            name="oldestUnpaidDate"
+            type="date"
+            max={dayBefore(cutoverDate)}
+            required
+            invalid={Boolean(fieldErrors.oldestUnpaidDate)}
+          />
+        </FieldShell>
 
-      <label htmlFor="ob-date" className="text-sm font-medium text-neutral-800">
-        Oldest unpaid date
-      </label>
-      <input
-        id="ob-date"
-        name="oldestUnpaidDate"
-        type="date"
-        max={dayBefore(cutoverDate)}
-        required
-        className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-      />
-      <p className="mt-1 mb-2 text-xs text-neutral-500">
-        {fieldErrors.oldestUnpaidDate ?? `Must be before the cutover date (${cutoverDate}).`}
-      </p>
+        <FieldShell
+          id="ob-authority"
+          label="Reconciled by / authority reference"
+          error={fieldErrors.authorityRef}
+        >
+          <TextInput
+            id="ob-authority"
+            name="authorityRef"
+            type="text"
+            required
+            placeholder="e.g. Juan dela Cruz, Accounting Section"
+            invalid={Boolean(fieldErrors.authorityRef)}
+          />
+        </FieldShell>
 
-      <label htmlFor="ob-authority" className="text-sm font-medium text-neutral-800">
-        Reconciled by / authority reference
-      </label>
-      <input
-        id="ob-authority"
-        name="authorityRef"
-        type="text"
-        required
-        placeholder="e.g. Juan dela Cruz, Accounting Section"
-        className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-      />
-      {fieldErrors.authorityRef ? (
-        <p className="mt-1 mb-2 text-xs text-red-600">{fieldErrors.authorityRef}</p>
-      ) : (
-        <div className="mb-2" />
-      )}
+        {result && !result.ok && result.formError ? (
+          <Notice tone="error" className="mb-3">
+            {result.formError}
+          </Notice>
+        ) : null}
+        {result?.ok ? (
+          <Notice tone="success" className="mb-3">
+            Recorded.
+          </Notice>
+        ) : null}
 
-      {result && !result.ok && result.formError ? (
-        <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">
-          {result.formError}
-        </p>
-      ) : null}
-      {result?.ok ? (
-        <p className="mb-3 rounded-md bg-green-50 px-3 py-2 text-xs text-green-700">
-          Recorded.
-        </p>
-      ) : null}
-
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-md bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
-      >
-        {pending ? "Recording…" : "Record opening balance"}
-      </button>
-    </form>
+        <Button type="submit" variant="primary" disabled={pending}>
+          {pending ? "Recording…" : "Record opening balance"}
+        </Button>
+      </form>
+    </Panel>
   );
 }
