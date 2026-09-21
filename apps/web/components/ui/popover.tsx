@@ -24,8 +24,8 @@ export function PopoverContent({
         sideOffset={5}
         collisionPadding={12}
         className={cn(
-          "z-50 rounded-[2px] border border-rule-strong bg-tape-raised",
-          "shadow-[0_12px_32px_-12px_rgba(22,21,15,0.38)]",
+          "z-50 rounded-lg border border-rule-strong bg-tape-raised",
+          "shadow-[0_12px_32px_-12px_rgba(12,18,26,0.38)]",
           "data-[state=open]:animate-[fade-in_130ms_ease-out]",
           className,
         )}

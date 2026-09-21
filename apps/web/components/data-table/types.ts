@@ -52,4 +52,10 @@ export interface DataTableProps<Row> {
   proofLine?: (visible: Row[], all: Row[]) => ReactNode;
   /** Noun for the footer count, e.g. "receipts". Defaults to "rows". */
   unit?: string;
+  /**
+   * The control that resolves an empty screen, rendered inside the empty state.
+   * "No dead ends": a screen that explains what is missing should also offer the thing
+   * that fixes it, where there is one.
+   */
+  emptyAction?: ReactNode;
 }

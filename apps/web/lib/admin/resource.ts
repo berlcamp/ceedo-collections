@@ -41,6 +41,16 @@ export interface ResourceConfig<S extends ZodObject<ZodRawShape> = ZodObject<Zod
   /** Column used as the display label when this resource is another field's optionsFrom source. */
   optionLabel: string;
   /**
+   * What to say when this screen has no rows.
+   *
+   * Required, not optional, and deliberately per-resource: "Nothing here yet." is true of
+   * every table and useful on none of them. An operator meeting an empty screen needs to
+   * know what a record here *is* and what depends on it — several of these resources are
+   * only reachable in a particular order (a stall needs a section, a section needs a
+   * market), and an empty screen is exactly where that order has to be visible.
+   */
+  empty: string;
+  /**
    * Roles for whom this screen can show anything. Presentation only — RLS is what
    * actually decides, and this must mirror it: a role listed here that the policy denies
    * gets an empty screen, and a role omitted here that the policy allows loses a screen it

@@ -37,17 +37,21 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const groups: NavGroup[] = [
     {
       heading: "Master data",
-      items: visible.map((resource) => ({ href: `/${resource.key}`, label: resource.title })),
+      items: visible.map((resource) => ({
+        href: `/${resource.key}`,
+        label: resource.title,
+        icon: resource.key,
+      })),
     },
     {
       heading: "Ledger",
       items: [
-        { href: "/ledger/aging", label: "Aging of receivables" },
-        { href: "/ledger/delinquency", label: "Delinquency list" },
-        { href: "/ledger/collections", label: "Collections" },
-        { href: "/ledger/opening-balances", label: "Opening balances" },
-        { href: "/ledger/exceptions", label: "Exceptions" },
-        { href: "/ledger/shifts", label: "Shifts" },
+        { href: "/ledger/aging", label: "Aging of receivables", icon: "aging" },
+        { href: "/ledger/delinquency", label: "Delinquency list", icon: "delinquency" },
+        { href: "/ledger/collections", label: "Collections", icon: "collections" },
+        { href: "/ledger/opening-balances", label: "Opening balances", icon: "opening-balances" },
+        { href: "/ledger/exceptions", label: "Exceptions", icon: "exceptions" },
+        { href: "/ledger/shifts", label: "Shifts", icon: "shifts" },
       ],
     },
   ];

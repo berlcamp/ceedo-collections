@@ -117,7 +117,7 @@ export function ResourceFormDialog({
           ))}
 
           {result && !result.ok && result.formError ? (
-            <p className="mt-3 border border-ribbon/40 bg-ribbon-soft px-3 py-2 text-xs leading-relaxed text-ribbon">
+            <p className="mt-3 rounded-lg border border-ribbon/40 bg-ribbon-soft px-3 py-2 text-xs leading-relaxed text-ribbon">
               {result.formError}
             </p>
           ) : null}

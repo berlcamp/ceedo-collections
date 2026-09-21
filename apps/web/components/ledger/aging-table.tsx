@@ -41,7 +41,7 @@ export function AgingTable({ rows }: { rows: AgingRow[] }) {
       // The gutter carries the age of the worst money on the row, so the leases that have
       // been owed longest are findable without reading a figure.
       rowMark={(row) => (row.bucketOver90 > 0 ? "alert" : row.bucket61to90 > 0 ? "warn" : null)}
-      empty="Nothing here yet."
+      empty="Nothing is outstanding. No lease carries an unpaid charge, so there is nothing to age — this screen fills itself from the nightly accrual, never by hand."
     />
   );
 }

@@ -2,8 +2,8 @@ import type { ButtonHTMLAttributes } from "react";
 import { cn } from "./cn";
 
 /*
- * One button shape for the whole app. Proof Tape is rectilinear — a form's boxes, not
- * pills — so the corner language is 2px everywhere and never varies by variant.
+ * One button shape for the whole app: 8px corners off the shared radius root, never varying
+ * by variant. Primary is navy, never brass — brass is an ornament in this system, not a verb.
  *
  * `danger` is the only variant that carries the ribbon red, and it is reserved for acts
  * that dispose of cash already taken: voiding a receipt, spoiling a form. Colour is the
@@ -14,7 +14,7 @@ export type ButtonSize = "sm" | "md";
 
 const VARIANTS: Record<ButtonVariant, string> = {
   primary:
-    "bg-chassis-900 text-chassis-ink border border-chassis-900 hover:bg-chassis-700 hover:border-chassis-700 active:bg-chassis-850",
+    "bg-primary text-primary-foreground border border-primary hover:bg-primary/90 hover:border-primary/90 active:bg-primary/95",
   secondary:
     "bg-tape-raised text-ink border border-rule-strong hover:bg-tape-hover active:bg-tape-sunk",
   ghost:
@@ -24,8 +24,8 @@ const VARIANTS: Record<ButtonVariant, string> = {
 };
 
 const SIZES: Record<ButtonSize, string> = {
-  sm: "h-7 px-2.5 text-xs gap-1.5",
-  md: "h-9 px-3.5 text-sm gap-2",
+  sm: "h-7 px-2 text-xs gap-1.5",
+  md: "h-8 px-2.5 text-sm gap-1.5",
 };
 
 export function buttonClass(
@@ -34,7 +34,7 @@ export function buttonClass(
   extra?: string,
 ): string {
   return cn(
-    "inline-flex shrink-0 items-center justify-center rounded-[2px] font-medium whitespace-nowrap",
+    "inline-flex shrink-0 items-center justify-center rounded-lg font-medium whitespace-nowrap",
     "transition-colors duration-150",
     "disabled:pointer-events-none disabled:opacity-45",
     VARIANTS[variant],

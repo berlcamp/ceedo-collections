@@ -3,61 +3,70 @@
 /*
   PROOF TAPE — the visual world for the CEEDO back office.
 
-  The world is the treasury cash-proof ritual: a dark enamelled machine chassis holding a
-  pale continuous tape of figures. Every screen is a proof — a column of entries, a
-  hairline rule, a total, and one line that says whether it agrees.
+  The structure is the treasury cash-proof ritual: a dark chassis holding a pale field of
+  figures, and every screen closing like a proof sheet — entries, a hairline rule, a total,
+  and one line that says whether it agrees.
 
-  Two grounds, and they are not a light/dark theme. There is one theme. The chassis is
-  dark because it is the machine; the tape is pale because it is paper, read all day by a
-  clerk at an office desk. No prefers-color-scheme block, no switcher — `apps/web`'s
-  PRODUCT.md records both as confirmed decisions.
+  The MATERIAL is CEEDO's sibling app, berlcamp/hris: a navy sidebar on an off-white page,
+  white panels, a hairline #d9dfe5 rule, navy for the office acting, and brass used three
+  times and no more. The warm carbon-and-paper palette this world was first built in has
+  been translated into that one so the two apps read as the same office. Topology, controls,
+  state vocabulary and the running proof are unchanged; only the tones moved.
+
+  Two grounds, and they are still not a light/dark theme. There is one theme. The chassis is
+  dark because it is the machine; the field is pale because it is read all day at an office
+  desk. No prefers-color-scheme block, no switcher.
 */
 
 @theme {
-  /* --- The chassis: the rail, the modal scrim, the machine's enamel ------------- */
-  --color-chassis-900: #16150f;
-  --color-chassis-850: #1c1b15;
-  --color-chassis-800: #23211a;
-  --color-chassis-700: #2e2b22;
-  --color-chassis-600: #3d392e;
-  --color-chassis-500: #56513f;
-  /* Text on the chassis. -dim clears 7:1 on chassis-900, so a resting nav item is never
-     the low-contrast gray that dark sidebars default to. */
-  --color-chassis-ink: #f7f4ec;
-  --color-chassis-dim: #a8a295;
-  /* Brass: the one warm metal on the machine. The focus ring and the current-item bar on
-     the chassis, where the office's blue-black ink would disappear into the enamel. */
-  --color-chassis-accent: #c8b98a;
+  /* --- The chassis: the navy rail and the modal scrim ---------------------------- */
+  --color-chassis-900: #0d1b2d;
+  --color-chassis-850: #102134;
+  --color-chassis-800: #14263a;
+  --color-chassis-700: #1b2a3c;
+  --color-chassis-600: #202f42;
+  --color-chassis-500: #2b3c50;
+  /* Nav text rests at -dim (about 12:1 on the rail) and brightens to -ink when current. */
+  --color-chassis-ink: #eceff2;
+  --color-chassis-dim: #d9dfe5;
+  /* Brass: the one warm metal on the machine, and deliberately scarce — the brand tile,
+     the avatar chip, the focus ring on the chassis. Nowhere else. */
+  --color-chassis-accent: #daa24f;
 
-  /* --- The tape: the field the figures are read off ----------------------------- */
-  --color-tape: #f7f4ec;
-  --color-tape-raised: #fffdf7;
-  --color-tape-sunk: #efebe0;
-  --color-tape-hover: #f2eee2;
+  /* --- The field the figures are read off ---------------------------------------- */
+  --color-tape: #f7f8fa;
+  --color-tape-raised: #ffffff;
+  --color-tape-sunk: #ebeff4;
+  --color-tape-hover: #f1f4f8;
 
-  /* --- Rules. The proof sheet is built from these, not from boxes and shadows. --- */
-  --color-rule: #ddd7c7;
-  --color-rule-soft: #e8e3d5;
-  --color-rule-strong: #b9b1a0;
+  /* --- Rules. The proof sheet is built from these, not from boxes and shadows. ---- */
+  --color-rule: #d9dfe5;
+  --color-rule-soft: #e6eaef;
+  --color-rule-strong: #c3ccd6;
 
-  /* --- Carbon ribbon ink -------------------------------------------------------- */
-  --color-ink: #24221e;
-  --color-ink-2: #57524a; /* 6.8:1 on tape */
-  --color-ink-3: #6e685d; /* 4.9:1 on tape — the floor, never lighter for text */
+  /* --- Ink ----------------------------------------------------------------------- */
+  --color-ink: #0c121a;
+  --color-ink-2: #3d4653; /* 9:1 on the field */
+  --color-ink-3: #5c646f; /* 5.3:1 — the floor, never lighter for text */
 
   /* --- The office's own marks. Colour is reserved; it never fills a ground behind a
-         figure. Red is shortage, void and overdue. Blue-black is the office acting. --- */
-  --color-ribbon: #b5302a;
-  --color-ribbon-deep: #9d2823;
-  --color-ribbon-deeper: #8c231e;
-  --color-ribbon-soft: #f2e2df;
-  --color-mark: #33455c;
-  --color-mark-soft: #e3e8ef;
-  --color-amber: #8a6212;
-  --color-amber-soft: #f6ecd6;
-  --color-proof: #2f5d45;
-  --color-proof-soft: #e2ece6;
-  --color-selection: #d7dce4;
+         figure. Red is shortage, void and overdue. Navy is the office acting. -------- */
+  --color-ribbon: #c20d23;
+  --color-ribbon-deep: #a90b1e;
+  --color-ribbon-deeper: #920919;
+  --color-ribbon-soft: #fdeaec;
+  --color-mark: #1b3b63;
+  --color-mark-soft: #e4ebf3;
+  --color-amber: #8a5a0b;
+  --color-amber-soft: #fdf1dd;
+  --color-proof: #0b6b45;
+  --color-proof-soft: #e3f2ea;
+  --color-selection: #d8e2f0;
+
+  /* Primary action. Navy, never brass — brass is an ornament here, not a verb. */
+  --color-primary: #1b3b63;
+  --color-primary-foreground: #f7f8fa;
+  --color-ring: #2b568b;
 
   --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, monospace;
@@ -65,6 +74,19 @@
   /* Fixed rem scale — product UI, viewed at consistent DPI. No fluid clamps. */
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
+
+  /*
+    A multiplicative corner ramp off one 0.5rem root, matching the sibling app rather than
+    Tailwind's additive default: nav items and controls at md/lg, panels at xl, state marks
+    at 4xl (a true pill).
+  */
+  --radius-sm: 0.3rem;
+  --radius-md: 0.4rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.7rem;
+  --radius-2xl: 0.9rem;
+  --radius-3xl: 1.1rem;
+  --radius-4xl: 1.3rem;
 }
 
 @layer base {
@@ -123,7 +145,7 @@
   :focus-visible {
     outline: 2px solid var(--color-mark);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--radius-md);
   }
 
   .on-chassis :focus-visible,
@@ -153,7 +175,7 @@
   */
   .select-chevron {
     appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6' fill='none' stroke='%2357524a' stroke-width='1.4'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6' fill='none' stroke='%233d4653' stroke-width='1.4'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 0.6rem center;
     background-size: 9px;

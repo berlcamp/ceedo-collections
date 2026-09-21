@@ -94,7 +94,7 @@ function ExceptionDialog({
         <form id={formId} action={onSubmit}>
           {children}
           {result && !result.ok && result.formError ? (
-            <p className="mt-2 border border-ribbon/40 bg-ribbon-soft px-3 py-2 text-xs leading-relaxed text-ribbon">
+            <p className="mt-2 rounded-lg border border-ribbon/40 bg-ribbon-soft px-3 py-2 text-xs leading-relaxed text-ribbon">
               {result.formError}
             </p>
           ) : null}

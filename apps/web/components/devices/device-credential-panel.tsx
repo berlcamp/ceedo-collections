@@ -129,7 +129,7 @@ export function DeviceCredentialPanel({ devices }: { devices: DeviceOption[] }) 
       </div>
 
       {issued ? (
-        <div className="mt-4 border border-amber/45 bg-amber-soft p-3">
+        <div className="mt-4 rounded-lg border border-amber/45 bg-amber-soft p-3">
           <p className="mb-2.5 text-xs font-semibold text-amber">
             This secret is shown once and cannot be recovered. Copy it to the tablet now.
           </p>
@@ -152,7 +152,7 @@ export function DeviceCredentialPanel({ devices }: { devices: DeviceOption[] }) 
               alt="Enrollment QR code"
               width={256}
               height={256}
-              className="mt-3 border border-amber/30 bg-white p-2"
+              className="mt-3 rounded-lg border border-amber/30 bg-white p-2"
             />
           ) : (
             <p className="mt-3 text-xs text-amber">

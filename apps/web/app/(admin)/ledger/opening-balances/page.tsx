@@ -24,7 +24,7 @@ export default async function OpeningBalancesPage() {
           the cutover date already governs.
         */
         aside={
-          <p className="inline-flex items-baseline gap-2 border border-amber/40 bg-amber-soft px-3 py-1.5 text-sm text-amber">
+          <p className="inline-flex items-baseline gap-2 rounded-lg border border-amber/40 bg-amber-soft px-3 py-1.5 text-sm text-amber">
             <span className="caption">Cutover date</span>
             <span className="font-semibold tabular-nums">{cutoverDate}</span>
           </p>

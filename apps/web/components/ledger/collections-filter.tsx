@@ -47,7 +47,7 @@ export function CollectionsFilter({
   return (
     <div
       className={cn(
-        "mb-4 border border-rule bg-tape-raised transition-opacity duration-150",
+        "mb-4 overflow-hidden rounded-xl border border-rule bg-tape-raised transition-opacity duration-150",
         pending && "opacity-60",
       )}
     >
@@ -62,7 +62,7 @@ export function CollectionsFilter({
             type="date"
             value={businessDate ?? ""}
             onChange={(event) => apply({ businessDate: event.target.value })}
-            className="h-8 rounded-[2px] border border-rule-strong bg-tape-sunk px-2 text-sm text-ink tabular-nums transition-colors duration-150 hover:border-ink-3 focus:border-mark focus:bg-tape-raised"
+            className="h-8 rounded-lg border border-rule-strong bg-tape-sunk px-2 text-sm text-ink tabular-nums transition-colors duration-150 hover:border-ink-3 focus:border-mark focus:bg-tape-raised"
           />
         </div>
 
@@ -115,13 +115,13 @@ export function CollectionsFilter({
 
 function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-[2px] border border-mark/35 bg-mark-soft py-[3px] pl-2 pr-1 text-xs font-medium text-mark">
+    <span className="inline-flex items-center gap-1 rounded-lg border border-mark/35 bg-mark-soft py-[3px] pl-2 pr-1 text-xs font-medium text-mark">
       {label}
       <button
         type="button"
         onClick={onRemove}
         aria-label={`Remove filter: ${label}`}
-        className="rounded-[2px] p-0.5 transition-colors duration-150 hover:bg-mark/15"
+        className="rounded-lg p-0.5 transition-colors duration-150 hover:bg-mark/15"
       >
         <X size={11} strokeWidth={2.25} />
       </button>

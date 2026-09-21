@@ -55,8 +55,8 @@ export function Select({
           sideOffset={4}
           className={cn(
             "z-50 max-h-[18rem] min-w-[var(--radix-select-trigger-width)] overflow-hidden",
-            "rounded-[2px] border border-rule-strong bg-tape-raised",
-            "shadow-[0_10px_28px_-10px_rgba(22,21,15,0.35)]",
+            "rounded-lg border border-rule-strong bg-tape-raised",
+            "shadow-[0_10px_28px_-10px_rgba(12,18,26,0.35)]",
             "data-[state=open]:animate-[fade-in_120ms_ease-out]",
           )}
         >
@@ -66,7 +66,7 @@ export function Select({
                 key={option.value}
                 value={option.value}
                 className={cn(
-                  "relative flex cursor-default select-none items-center gap-2 rounded-[2px]",
+                  "relative flex cursor-default select-none items-center gap-2 rounded-md",
                   "py-1.5 pl-6 pr-2.5 text-sm text-ink outline-none",
                   "data-[highlighted]:bg-mark-soft data-[highlighted]:text-ink",
                   "data-[state=checked]:font-medium",

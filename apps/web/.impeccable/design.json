@@ -1,316 +1,320 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-21T15:19:19Z",
-  "title": "Design System: CEEDO Collections — Back Office",
+  "generatedAt": "2026-09-21T22:57:53.176078Z",
+  "title": "Design System: CEEDO Collections \u2014 Back Office",
   "extensions": {
     "colorMeta": {
-      "chassis-900": {
+      "primary": {
         "role": "primary",
-        "displayName": "Machine Enamel",
-        "canonical": "#16150f",
-        "purpose": "The machine's enamel: rail, dialog head, scrim, primary button, tooltip, filled checkbox.",
+        "displayName": "Office Navy",
+        "canonical": "#1b3b63",
+        "purpose": "The office acting: primary button, focus ring, caret, focused control border, check indicator, facet chip, office mark.",
         "tonalRamp": [
-          "#2d2b1f",
-          "#504d37",
-          "#736e4e",
-          "#958f66",
-          "#aea888",
-          "#c5c2ab",
-          "#dddbcd",
-          "#f5f4f0"
+          "#10243c",
+          "#1c3e68",
+          "#285894",
+          "#3473c0",
+          "#5b90d2",
+          "#87aede",
+          "#bbd1ec",
+          "#ebf1fa"
         ]
       },
-      "chassis-700": {
+      "chassis-900": {
         "role": "primary",
-        "displayName": "Enamel Lift",
-        "canonical": "#2e2b22",
-        "purpose": "Hover and active states on the chassis, and the ground of the current rail item.",
+        "displayName": "Machine Navy",
+        "canonical": "#0d1b2d",
+        "purpose": "The chassis itself: rail, dialog head, scrim, tooltip, checked checkbox.",
         "tonalRamp": [
-          "#2c2921",
-          "#4e4839",
-          "#6f6852",
-          "#91876b",
-          "#aaa28c",
-          "#c3bdad",
-          "#dbd8cf",
-          "#f4f3f0"
+          "#11243b",
+          "#1e3e67",
+          "#2a5892",
+          "#3772be",
+          "#5d8fd0",
+          "#88addd",
+          "#bcd1ec",
+          "#ebf1f9"
+        ]
+      },
+      "chassis-accent": {
+        "role": "primary",
+        "displayName": "Brass",
+        "canonical": "#daa24f",
+        "purpose": "The machine's only warm metal. Brand tile, user initials chip, chassis focus ring. Three uses, no more; never an action.",
+        "tonalRamp": [
+          "#3f2b0d",
+          "#6e4b17",
+          "#9c6a21",
+          "#ca8a2b",
+          "#dba452",
+          "#e4bc81",
+          "#f0d9b7",
+          "#fbf4ea"
         ]
       },
       "chassis-dim": {
         "role": "neutral",
         "displayName": "Chassis Dim",
-        "canonical": "#a8a295",
-        "purpose": "Resting text on the chassis. Clears 7:1 on chassis-900 — the contrast floor for dark ground.",
+        "canonical": "#d9dfe5",
+        "purpose": "Resting nav text, about 12.9:1 on chassis-900. The contrast floor on the machine.",
         "tonalRamp": [
-          "#2a2822",
-          "#4a463d",
-          "#6a6457",
-          "#8a8271",
-          "#a59e91",
-          "#bfbbb1",
-          "#d9d7d1",
-          "#f4f3f1"
+          "#1f262d",
+          "#36424f",
+          "#4d5e70",
+          "#637a91",
+          "#8396aa",
+          "#a4b2c1",
+          "#ccd4dc",
+          "#f0f2f5"
         ]
       },
-      "chassis-accent": {
-        "role": "tertiary",
-        "displayName": "Brass Filament",
-        "canonical": "#c8b98a",
-        "purpose": "The focus ring inside .on-chassis and the 3px bar on the current rail item.",
+      "chassis-ink": {
+        "role": "neutral",
+        "displayName": "Chassis Ink",
+        "canonical": "#eceff2",
+        "purpose": "Current nav item, dialog head text.",
         "tonalRamp": [
-          "#342d18",
-          "#5c502b",
-          "#83723e",
-          "#ab9550",
-          "#bfad77",
-          "#d2c59e",
-          "#e4ddc6",
-          "#f7f5ee"
-        ]
-      },
-      "mark": {
-        "role": "primary",
-        "displayName": "Office Blue-Black",
-        "canonical": "#33455c",
-        "purpose": "The office acting: focus ring, caret, focused control border, select indicator, office mark.",
-        "tonalRamp": [
-          "#1b2531",
-          "#304157",
-          "#455d7c",
-          "#5a79a2",
-          "#7e97b8",
-          "#a4b5cc",
-          "#c9d4e1",
-          "#eff2f6"
+          "#1f262d",
+          "#36424f",
+          "#4d5e70",
+          "#637a91",
+          "#8396aa",
+          "#a4b2c1",
+          "#ccd4dc",
+          "#f0f2f5"
         ]
       },
       "ribbon": {
         "role": "secondary",
         "displayName": "Ribbon Red",
-        "canonical": "#b5302a",
-        "purpose": "Shortage, void, overdue, and the destructive act. Deepens to #9d2823 on hover, #8c231e active.",
+        "canonical": "#c20d23",
+        "purpose": "Shortage, void, overdue, and the destructive act.",
         "tonalRamp": [
-          "#3e100e",
-          "#6d1d19",
-          "#9d2a24",
-          "#cc362f",
-          "#d9625c",
-          "#e4908c",
-          "#efbdbb",
-          "#faebea"
+          "#48050d",
+          "#7c0816",
+          "#b10c20",
+          "#e50f29",
+          "#f23b51",
+          "#f57080",
+          "#faaeb7",
+          "#fde7ea"
         ]
       },
       "amber": {
         "role": "secondary",
         "displayName": "Standing Amber",
-        "canonical": "#8a6212",
-        "purpose": "A standing warning that is true but not yet a failure.",
+        "canonical": "#8a5a0b",
+        "purpose": "True but not yet a failure: a closed shift not yet synced, an overage.",
         "tonalRamp": [
-          "#443009",
-          "#775510",
-          "#ab7916",
-          "#de9e1d",
-          "#e8b54e",
-          "#efca81",
-          "#f5e0b5",
-          "#fcf6e8"
+          "#472e06",
+          "#7b500a",
+          "#af720e",
+          "#e39412",
+          "#f0ac3d",
+          "#f4c271",
+          "#f9ddaf",
+          "#fdf5e7"
         ]
       },
       "proof": {
         "role": "secondary",
         "displayName": "Proof Green",
-        "canonical": "#2f5d45",
-        "purpose": "Agreement: a balanced shift, a successful result.",
+        "canonical": "#0b6b45",
+        "purpose": "Agreement. A balanced shift, a successful notice.",
         "tonalRamp": [
-          "#1a3326",
-          "#2d5a42",
-          "#41805f",
-          "#54a77c",
-          "#7abc99",
-          "#a1cfb7",
-          "#c7e3d5",
-          "#eef6f2"
+          "#07452d",
+          "#0c784e",
+          "#12ab6e",
+          "#17de8f",
+          "#41eca8",
+          "#74f1bf",
+          "#b0f7db",
+          "#e8fdf4"
         ]
       },
       "tape": {
         "role": "neutral",
-        "displayName": "Tape Stock",
-        "canonical": "#f7f4ec",
-        "purpose": "The page ground and every recessed band — filter slip, table head, close, proof line, pager.",
+        "displayName": "Field",
+        "canonical": "#f7f8fa",
+        "purpose": "The page ground and every recessed band.",
         "tonalRamp": [
-          "#362d17",
-          "#5f5028",
-          "#887239",
-          "#b1954a",
-          "#c4ad72",
-          "#d5c59b",
-          "#e6ddc4",
-          "#f7f5ed"
+          "#1d232f",
+          "#333d52",
+          "#495774",
+          "#5e7197",
+          "#7e8eaf",
+          "#a1adc4",
+          "#cad0de",
+          "#eff1f5"
         ]
       },
       "tape-raised": {
         "role": "neutral",
-        "displayName": "Fresh Tape",
-        "canonical": "#fffdf7",
-        "purpose": "The raised sheet: table body, panels, dialog body, popovers, listboxes.",
+        "displayName": "Sheet",
+        "canonical": "#ffffff",
+        "purpose": "The raised surface: table body, panels, dialog body, popovers, listbox.",
         "tonalRamp": [
-          "#4c3900",
-          "#876500",
-          "#c19100",
-          "#fbbd00",
-          "#ffcd37",
-          "#ffdb71",
-          "#ffeaab",
-          "#fff9e5"
+          "#262626",
+          "#424242",
+          "#5e5e5e",
+          "#7a7a7a",
+          "#969696",
+          "#b2b2b2",
+          "#d4d4d4",
+          "#f2f2f2"
         ]
       },
       "tape-sunk": {
         "role": "neutral",
-        "displayName": "Sunk Tape",
-        "canonical": "#efebe0",
-        "purpose": "The blank a clerk writes in. Every input, select and checkbox rests sunk into the tape.",
+        "displayName": "Sunk Field",
+        "canonical": "#ebeff4",
+        "purpose": "The blank a clerk writes in. Every input, select and checkbox.",
         "tonalRamp": [
-          "#322c1a",
-          "#594d2e",
-          "#7f6f42",
-          "#a69056",
-          "#bbaa7b",
-          "#cfc3a1",
-          "#e2dbc8",
-          "#f6f4ee"
+          "#1b2531",
+          "#2f4056",
+          "#435b7a",
+          "#57769e",
+          "#7893b5",
+          "#9cb0c9",
+          "#c7d2e0",
+          "#eff2f6"
         ]
       },
       "ink": {
         "role": "neutral",
         "displayName": "Carbon Ink",
-        "canonical": "#24221e",
+        "canonical": "#0c121a",
         "purpose": "Every figure and every primary word.",
         "tonalRamp": [
-          "#2a2723",
-          "#4a453d",
-          "#696358",
-          "#898172",
-          "#a49e92",
-          "#bebab2",
-          "#d9d6d1",
-          "#f3f3f1"
+          "#182434",
+          "#2a3f5b",
+          "#3c5981",
+          "#4d74a7",
+          "#7091bd",
+          "#96aecf",
+          "#c4d1e4",
+          "#eef2f7"
         ]
       },
       "ink-2": {
         "role": "neutral",
         "displayName": "Second Ink",
-        "canonical": "#57524a",
-        "purpose": "Standing notes, captions, secondary labels. 6.8:1 on tape.",
+        "canonical": "#3d4653",
+        "purpose": "Standing notes, captions, secondary labels. About 9:1 on the field.",
         "tonalRamp": [
-          "#292723",
-          "#49453e",
-          "#686259",
-          "#888074",
-          "#a39d93",
-          "#beb9b2",
-          "#d8d6d2",
-          "#f3f2f1"
+          "#20252c",
+          "#38404c",
+          "#505c6d",
+          "#68778d",
+          "#8694a6",
+          "#a7b0be",
+          "#cdd2da",
+          "#f0f2f4"
         ]
       },
       "ink-3": {
         "role": "neutral",
         "displayName": "Faint Ink",
-        "canonical": "#6e685d",
-        "purpose": "Placeholders, muted rows, the em-dash zero. 4.9:1 on tape — the lightest text permitted.",
+        "canonical": "#5c646f",
+        "purpose": "Placeholders, muted rows, the em-dash zero. About 5.6:1 \u2014 the text floor on the field.",
         "tonalRamp": [
-          "#292723",
-          "#49453e",
-          "#696358",
-          "#888173",
-          "#a39d92",
-          "#bebab2",
-          "#d9d6d2",
-          "#f3f3f1"
+          "#23262a",
+          "#3c4149",
+          "#565d67",
+          "#6f7986",
+          "#8d95a0",
+          "#abb1ba",
+          "#d0d3d8",
+          "#f1f2f3"
         ]
       },
       "rule": {
         "role": "neutral",
         "displayName": "Hairline Rule",
-        "canonical": "#ddd7c7",
+        "canonical": "#d9dfe5",
         "purpose": "Block frames and band divisions.",
         "tonalRamp": [
-          "#302a1d",
-          "#544b33",
-          "#786b49",
-          "#9c8c5f",
-          "#b3a682",
-          "#c9c0a7",
-          "#dfdacb",
-          "#f5f4ef"
+          "#1f262d",
+          "#36424f",
+          "#4d5e70",
+          "#637a91",
+          "#8396aa",
+          "#a4b2c1",
+          "#ccd4dc",
+          "#f0f2f5"
         ]
       },
       "rule-strong": {
         "role": "neutral",
         "displayName": "Structural Rule",
-        "canonical": "#b9b1a0",
-        "purpose": "Structural edges and every control border; the ink of the accountant's close.",
+        "canonical": "#c3ccd6",
+        "purpose": "Control borders and the table head's lower edge.",
         "tonalRamp": [
-          "#2c2820",
-          "#4e4739",
-          "#6f6652",
-          "#91856b",
-          "#aaa08c",
-          "#c3bcad",
-          "#dbd7cf",
-          "#f4f3f0"
+          "#1f262d",
+          "#36424f",
+          "#4d5d70",
+          "#637991",
+          "#8395aa",
+          "#a4b2c1",
+          "#cbd3dc",
+          "#f0f2f5"
         ]
       }
     },
     "typographyMeta": {
       "display": {
         "displayName": "Display",
-        "purpose": "The sign-in screen's name, on the chassis. One place in the app."
+        "purpose": "The screen heading in the header band (1.5rem/700/-0.025em), and the sign-in name on the chassis."
       },
       "headline": {
         "displayName": "Headline",
-        "purpose": "The /no-access refusal, on the chassis. One place in the app."
+        "purpose": "The /no-access refusal, on the chassis. One place."
       },
       "title": {
-        "displayName": "Screen Title",
-        "purpose": "The heading in the header band. The largest type any working screen carries."
+        "displayName": "Title",
+        "purpose": "Panel heads and dialog titles \u2014 a block's name, not a page's."
       },
       "body": {
         "displayName": "Body",
-        "purpose": "Table cells, control text, dialog copy. Standing notes cap at 68ch."
+        "purpose": "Table cells, control text, dialog copy, nav items. Standing notes cap at 68ch."
       },
       "body-small": {
-        "displayName": "Small",
-        "purpose": "Pager counts, help text, secondary cell detail."
+        "displayName": "Body Small",
+        "purpose": "Pager counts, help text, secondary cell detail, quiet marks."
       },
       "label": {
         "displayName": "Caption",
-        "purpose": "The .caption utility: letterspaced small caps for every field label, column head, rail group heading and totals label."
+        "purpose": "The .caption utility: every field label, column head and totals label. Letterspaced small caps at 0.08em."
+      },
+      "rail-label": {
+        "displayName": "Rail Label",
+        "purpose": "The chassis's own small caps at 0.12em: group headings at 40% dim, wordmark subtitle and staff role at 50%."
       },
       "measure": {
         "displayName": "Measure",
-        "purpose": "IBM Plex Mono, reserved for OR serials, lease ids, contact numbers, credential ids, secrets and PINs. Never for money."
+        "purpose": "IBM Plex Mono for serials, lease ids, credential ids, PINs and secrets. Never for emphasis or headings."
       }
     },
     "shadows": [
       {
         "name": "docket",
-        "value": "0 18px 44px -12px rgba(22,21,15,0.45)",
-        "purpose": "The dialog, lifted off the tape onto the chassis. The only large shadow in the app."
+        "value": "0 18px 44px -12px rgba(12,18,26,0.45)",
+        "purpose": "The dialog, lifted off the field onto the chassis."
       },
       {
         "name": "listbox",
-        "value": "0 10px 28px -10px rgba(22,21,15,0.35)",
-        "purpose": "The Radix Select popup."
+        "value": "0 10px 28px -10px rgba(12,18,26,0.35)",
+        "purpose": "The Radix select's popup."
       },
       {
         "name": "slip",
-        "value": "0 12px 32px -12px rgba(22,21,15,0.38)",
+        "value": "0 12px 32px -12px rgba(12,18,26,0.38)",
         "purpose": "The facet popover."
       },
       {
         "name": "note",
-        "value": "0 8px 22px -8px rgba(22,21,15,0.5)",
-        "purpose": "The tooltip, on chassis ground."
+        "value": "0 8px 22px -8px rgba(12,18,26,0.5)",
+        "purpose": "The tooltip."
       }
     ],
     "motion": [
@@ -336,28 +340,28 @@
       },
       {
         "name": "fade-in",
-        "value": "@keyframes fade-in { from { opacity: 0 } } — 120-150ms ease-out",
+        "value": "@keyframes fade-in { from { opacity: 0 } } \u2014 120-150ms ease-out",
         "purpose": "Overlays, listboxes, popovers, tooltips."
       },
       {
         "name": "docket-in",
-        "value": "@keyframes docket-in { from { opacity: 0; transform: translate(-50%, calc(-50% + 10px)) scale(0.985) } } — 180ms",
+        "value": "@keyframes docket-in { from { opacity: 0; transform: translate(-50%, calc(-50% + 10px)) scale(0.985) } } \u2014 180ms",
         "purpose": "The dialog arriving."
       },
       {
         "name": "rail-in",
-        "value": "@keyframes rail-in { from { transform: translateX(-100%) } } — 190ms",
+        "value": "@keyframes rail-in { from { transform: translateX(-100%) } } \u2014 190ms",
         "purpose": "The mobile chassis drawer."
       },
       {
         "name": "retally",
-        "value": "@keyframes retally { 50% { background-color: var(--color-mark-soft) } } — 180ms ease-out",
-        "purpose": "The one authored moment: the running proof re-tallying when the filtered set actually changes. Keyed to a tally counter so it never fires on mount."
+        "value": "@keyframes retally { 50% { background-color: var(--color-mark-soft) } } \u2014 180ms",
+        "purpose": "The one authored moment: the totals row re-tallying when the filter changes. Never fires on mount."
       },
       {
         "name": "reduced-motion",
         "value": "@media (prefers-reduced-motion: reduce) { animation-duration: 0.01ms; transition-duration: 0.01ms }",
-        "purpose": "Collapses every animation and transition."
+        "purpose": "Every animation and transition collapses."
       }
     ],
     "breakpoints": [
@@ -370,137 +374,142 @@
         "value": "1024px"
       }
     ],
-    "layout": [
-      {
-        "name": "rail",
-        "value": "15rem",
-        "purpose": "The chassis rail at lg and above; a 16rem drawer below it."
-      },
-      {
-        "name": "content-max",
-        "value": "96rem",
-        "purpose": "The centred content measure. Wide on purpose: this is a reconciliation surface."
-      },
-      {
-        "name": "prose-max",
-        "value": "68ch",
-        "purpose": "The standing note under a screen heading."
-      }
-    ]
+    "layout": {
+      "rail": "16rem (w-64) sticky navy chassis, no right border; 56px header; 32px nav rows; below lg a 56px sticky bar plus an 18rem drawer.",
+      "content": "px-4 py-6, sm:px-6, lg:px-8 lg:py-7, inside a centred max-w-[96rem].",
+      "header": "1.5rem/700 heading, muted note at max 68ch in ink-3, right-aligned actions, mb-6, no divider rule.",
+      "tape": "One rounded-xl hairline-framed white block: filter slip, table head, rows, the close, proof line, pager.",
+      "rhythm": "4 / 6 / 8 / 12 / 14 / 16 / 20 / 24px. Cells px-3 py-1.5; fields stack at 14px; panels px-4 py-3.5 over px-4 py-2.5."
+    }
   },
   "components": [
     {
       "name": "Primary Button",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "The machine acting. Used for the one committing action on a screen or in a docket footer.",
-      "html": "<button class=\"ds-btn-primary\">Record opening balance</button>",
-      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;height:36px;padding:0 14px;border-radius:2px;border:1px solid;font-family:var(--font-plex-sans),ui-sans-serif,system-ui,sans-serif;font-size:0.875rem;font-weight:500;transition:background-color 150ms ease-out,border-color 150ms ease-out;cursor:pointer;background:#16150f;border-color:#16150f;color:#f7f4ec;}.ds-btn-primary:hover{background:#2e2b22;border-color:#2e2b22;}.ds-btn-primary:active{background:#1c1b15;}.ds-btn-primary:focus-visible{outline:2px solid #33455c;outline-offset:2px;border-radius:2px;}.ds-btn-primary:disabled{opacity:0.45;pointer-events:none;}"
+      "description": "The office acting. Navy, never brass.",
+      "html": "<button class=\"ds-btn-primary\">Record payment</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;font-family:var(--font-sans, 'IBM Plex Sans', system-ui, sans-serif);font-size:0.875rem;font-weight:500;line-height:1;white-space:nowrap;border-radius:var(--radius-lg,0.5rem);border:1px solid transparent;cursor:pointer;transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out;background:var(--color-primary,#1b3b63);border-color:var(--color-primary,#1b3b63);color:var(--color-primary-foreground,#f7f8fa);}.ds-btn-primary:hover{background:#2b568b;border-color:#2b568b;}.ds-btn-primary:active{background:#24497a;}.ds-btn-primary:focus-visible{outline:2px solid var(--color-mark,#1b3b63);outline-offset:2px;}"
     },
     {
       "name": "Secondary Button",
       "kind": "button",
       "refersTo": "button-secondary",
-      "description": "The default button. Fresh tape with a structural edge; every non-committing action.",
-      "html": "<button class=\"ds-btn-secondary\">Cancel</button>",
-      "css": ".ds-btn-secondary{display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;height:36px;padding:0 14px;border-radius:2px;border:1px solid;font-family:var(--font-plex-sans),ui-sans-serif,system-ui,sans-serif;font-size:0.875rem;font-weight:500;transition:background-color 150ms ease-out,border-color 150ms ease-out;cursor:pointer;background:#fffdf7;border-color:#b9b1a0;color:#24221e;}.ds-btn-secondary:hover{background:#f2eee2;}.ds-btn-secondary:active{background:#efebe0;}.ds-btn-secondary:focus-visible{outline:2px solid #33455c;outline-offset:2px;border-radius:2px;}.ds-btn-secondary:disabled{opacity:0.45;pointer-events:none;}"
+      "description": "The default button: a white sheet with a structural edge.",
+      "html": "<button class=\"ds-btn-secondary\">Export</button>",
+      "css": ".ds-btn-secondary{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;font-family:var(--font-sans, 'IBM Plex Sans', system-ui, sans-serif);font-size:0.875rem;font-weight:500;line-height:1;white-space:nowrap;border-radius:var(--radius-lg,0.5rem);border:1px solid transparent;cursor:pointer;transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out;background:var(--color-tape-raised,#ffffff);border-color:var(--color-rule-strong,#c3ccd6);color:var(--color-ink,#0c121a);}.ds-btn-secondary:hover{background:var(--color-tape-hover,#f1f4f8);}.ds-btn-secondary:active{background:var(--color-tape-sunk,#ebeff4);}.ds-btn-secondary:focus-visible{outline:2px solid var(--color-mark,#1b3b63);outline-offset:2px;}"
     },
     {
       "name": "Danger Button",
       "kind": "button",
       "refersTo": "button-danger",
-      "description": "Ribbon red. Reserved for acts that dispose of cash already taken: voiding a receipt, spoiling a form.",
-      "html": "<button class=\"ds-btn-danger\">Cancel this receipt</button>",
-      "css": ".ds-btn-danger{display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;height:36px;padding:0 14px;border-radius:2px;border:1px solid;font-family:var(--font-plex-sans),ui-sans-serif,system-ui,sans-serif;font-size:0.875rem;font-weight:500;transition:background-color 150ms ease-out,border-color 150ms ease-out;cursor:pointer;background:#b5302a;border-color:#b5302a;color:#fffdf7;}.ds-btn-danger:hover{background:#9d2823;border-color:#9d2823;}.ds-btn-danger:active{background:#8c231e;}.ds-btn-danger:focus-visible{outline:2px solid #33455c;outline-offset:2px;border-radius:2px;}"
+      "description": "Reserved for acts that dispose of cash already taken: voiding a receipt, spoiling a form.",
+      "html": "<button class=\"ds-btn-danger\">Void receipt</button>",
+      "css": ".ds-btn-danger{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;font-family:var(--font-sans, 'IBM Plex Sans', system-ui, sans-serif);font-size:0.875rem;font-weight:500;line-height:1;white-space:nowrap;border-radius:var(--radius-lg,0.5rem);border:1px solid transparent;cursor:pointer;transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out;background:var(--color-ribbon,#c20d23);border-color:var(--color-ribbon,#c20d23);color:#ffffff;}.ds-btn-danger:hover{background:var(--color-ribbon-deep,#a90b1e);border-color:var(--color-ribbon-deep,#a90b1e);}.ds-btn-danger:active{background:var(--color-ribbon-deeper,#920919);}.ds-btn-danger:focus-visible{outline:2px solid var(--color-mark,#1b3b63);outline-offset:2px;}"
     },
     {
       "name": "Ghost Button",
       "kind": "button",
       "refersTo": "button-ghost",
-      "description": "A quiet action inside a band — the filter slip's Clear, a row's inline control.",
-      "html": "<button class=\"ds-btn-ghost\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M18 6 6 18M6 6l12 12\"/></svg>Clear</button>",
-      "css": ".ds-btn-ghost{display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;height:28px;padding:0 10px;border-radius:2px;border:1px solid;font-family:var(--font-plex-sans),ui-sans-serif,system-ui,sans-serif;font-size:0.75rem;font-weight:500;transition:background-color 150ms ease-out,border-color 150ms ease-out;cursor:pointer;gap:6px;background:transparent;border-color:transparent;color:#57524a;}.ds-btn-ghost:hover{background:#efebe0;color:#24221e;}.ds-btn-ghost:active{background:#e8e3d5;}.ds-btn-ghost:focus-visible{outline:2px solid #33455c;outline-offset:2px;border-radius:2px;}"
+      "description": "A control that must not compete: clear, dismiss, a row-level action.",
+      "html": "<button class=\"ds-btn-ghost\">Clear</button>",
+      "css": ".ds-btn-ghost{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;font-family:var(--font-sans, 'IBM Plex Sans', system-ui, sans-serif);font-size:0.875rem;font-weight:500;line-height:1;white-space:nowrap;border-radius:var(--radius-lg,0.5rem);border:1px solid transparent;cursor:pointer;transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out;background:transparent;border-color:transparent;color:var(--color-ink-2,#3d4653);}.ds-btn-ghost:hover{background:var(--color-tape-sunk,#ebeff4);color:var(--color-ink,#0c121a);}.ds-btn-ghost:focus-visible{outline:2px solid var(--color-mark,#1b3b63);outline-offset:2px;}"
     },
     {
       "name": "Field",
       "kind": "input",
       "refersTo": "control-input",
-      "description": "The whole form-control vocabulary: one height, one corner, one border weight. Inputs sit sunk into the tape, because on a printed form the field is the part left blank for you to write in.",
-      "html": "<div class=\"ds-field\"><label class=\"ds-field-label\" for=\"ds-or\">OR number <span class=\"ds-field-opt\">optional</span></label><input class=\"ds-field-input\" id=\"ds-or\" placeholder=\"4820114\"><p class=\"ds-field-help\">The serial pre-printed on the paper receipt.</p></div>",
-      "css": ".ds-field{font-family:var(--font-plex-sans),ui-sans-serif,system-ui,sans-serif;margin-bottom:14px;}.ds-field-label{display:flex;align-items:baseline;gap:6px;margin-bottom:4px;font-size:0.6875rem;line-height:1rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#57524a;}.ds-field-opt{font-weight:500;text-transform:none;letter-spacing:normal;color:#6e685d;}.ds-field-input{width:100%;height:36px;padding:0 10px;border:1px solid #b9b1a0;border-radius:2px;background:#efebe0;color:#24221e;font:inherit;font-size:0.875rem;transition:background-color 150ms ease-out,border-color 150ms ease-out;}.ds-field-input::placeholder{color:#6e685d;}.ds-field-input:hover{border-color:#6e685d;}.ds-field-input:focus{outline:none;border-color:#33455c;background:#fffdf7;}.ds-field-input:disabled{opacity:0.55;cursor:not-allowed;}.ds-field-help{margin-top:4px;font-size:0.75rem;line-height:1.35;color:#6e685d;}"
+      "description": "One control vocabulary: 36px, lg corners, sunk ground, caption label in small caps.",
+      "html": "<div class=\"ds-field\"><label class=\"ds-field-label\" for=\"ds-or\">Official Receipt no.<span class=\"ds-field-opt\">optional</span></label><input class=\"ds-field-input\" id=\"ds-or\" placeholder=\"e.g. 4820117\" /><p class=\"ds-field-help\">The serial printed on the paper receipt.</p></div>",
+      "css": ".ds-field{max-width:22rem;font-family:var(--font-sans,'IBM Plex Sans',system-ui,sans-serif);}.ds-field-label{display:flex;align-items:baseline;gap:6px;margin-bottom:4px;font-size:0.6875rem;line-height:1rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-ink-2,#3d4653);}.ds-field-opt{font-weight:500;text-transform:none;letter-spacing:normal;color:var(--color-ink-3,#5c646f);}.ds-field-input{width:100%;height:36px;padding:0 10px;font-size:0.875rem;color:var(--color-ink,#0c121a);background:var(--color-tape-sunk,#ebeff4);border:1px solid var(--color-rule-strong,#c3ccd6);border-radius:var(--radius-lg,0.5rem);transition:background-color 150ms ease-out,border-color 150ms ease-out;}.ds-field-input::placeholder{color:var(--color-ink-3,#5c646f);}.ds-field-input:hover{border-color:var(--color-ink-3,#5c646f);}.ds-field-input:focus{outline:none;border-color:var(--color-mark,#1b3b63);background:var(--color-tape-raised,#ffffff);}.ds-field-help{margin-top:4px;font-size:0.75rem;line-height:1.3;color:var(--color-ink-3,#5c646f);}"
     },
     {
       "name": "State Marks",
       "kind": "chip",
       "refersTo": "mark-alert",
-      "description": "The world's substitute for the coloured pill: a ruled box holding its own word, so no state is signalled by colour alone.",
-      "html": "<span class=\"ds-mark ds-mark-alert\">Cancelled</span> <span class=\"ds-mark ds-mark-warn\">Closed, not yet synced</span> <span class=\"ds-mark ds-mark-proof\">Balanced</span> <span class=\"ds-mark ds-mark-neutral\">Draft</span> <span class=\"ds-quietmark\">Posted</span>",
-      "css": ".ds-mark{display:inline-flex;align-items:center;gap:4px;padding:3px 6px;border:1px solid;border-radius:2px;font-family:var(--font-plex-sans),ui-sans-serif,system-ui,sans-serif;font-size:0.6875rem;font-weight:600;line-height:1;letter-spacing:0.06em;text-transform:uppercase;white-space:nowrap;}.ds-mark-alert{border-color:rgba(181,48,42,0.45);background:#f2e2df;color:#b5302a;}.ds-mark-warn{border-color:rgba(138,98,18,0.4);background:#f6ecd6;color:#8a6212;}.ds-mark-proof{border-color:rgba(47,93,69,0.35);background:#e2ece6;color:#2f5d45;}.ds-mark-neutral{border-color:#b9b1a0;background:#efebe0;color:#57524a;}.ds-quietmark{font-family:var(--font-plex-sans),ui-sans-serif,system-ui,sans-serif;font-size:0.75rem;color:#6e685d;}"
+      "description": "Five tones, each a 20px pill carrying its own word. Colour never signals alone.",
+      "html": "<span class=\"ds-mark ds-mark-alert\">Short</span> <span class=\"ds-mark ds-mark-warn\">Unsynced</span> <span class=\"ds-mark ds-mark-proof\">Balanced</span> <span class=\"ds-mark ds-mark-office\">Posted</span> <span class=\"ds-mark ds-mark-neutral\">Draft</span>",
+      "css": ".ds-mark{display:inline-flex;align-items:center;height:20px;padding:0 8px;margin-right:4px;border:1px solid;border-radius:var(--radius-4xl,1.3rem);font-family:var(--font-sans,'IBM Plex Sans',system-ui,sans-serif);font-size:0.6875rem;font-weight:600;line-height:1;letter-spacing:0.06em;text-transform:uppercase;white-space:nowrap;}.ds-mark-alert{background:var(--color-ribbon-soft,#fdeaec);color:var(--color-ribbon,#c20d23);border-color:rgba(194,13,35,0.45);}.ds-mark-warn{background:var(--color-amber-soft,#fdf1dd);color:var(--color-amber,#8a5a0b);border-color:rgba(138,90,11,0.40);}.ds-mark-proof{background:var(--color-proof-soft,#e3f2ea);color:var(--color-proof,#0b6b45);border-color:rgba(11,107,69,0.35);}.ds-mark-office{background:var(--color-mark-soft,#e4ebf3);color:var(--color-mark,#1b3b63);border-color:rgba(27,59,99,0.35);}.ds-mark-neutral{background:var(--color-tape-sunk,#ebeff4);color:var(--color-ink-2,#3d4653);border-color:var(--color-rule-strong,#c3ccd6);}"
     },
     {
       "name": "Chassis Rail",
       "kind": "nav",
       "refersTo": "rail-item",
-      "description": "The enamelled body of the machine the tape runs out of. Dark because it is the machine, not because it is a theme. The current item carries a brass ink bar, not only a tint.",
-      "html": "<nav class=\"ds-rail\"><div class=\"ds-rail-head\"><span class=\"ds-rail-mark\">CEEDO</span><span class=\"ds-rail-sub\">Collections</span></div><p class=\"ds-rail-group\">Ledger</p><a class=\"ds-rail-item\" href=\"#\">Aging of receivables</a><a class=\"ds-rail-item ds-rail-item-active\" href=\"#\" aria-current=\"page\"><span class=\"ds-rail-bar\" aria-hidden=\"true\"></span>Collections</a><a class=\"ds-rail-item\" href=\"#\">Shifts</a></nav>",
-      "css": ".ds-rail{width:15rem;background:#16150f;padding-bottom:16px;font-family:var(--font-plex-sans),ui-sans-serif,system-ui,sans-serif;}.ds-rail-head{padding:16px;border-bottom:1px solid #2e2b22;}.ds-rail-mark{display:block;font-size:0.9375rem;font-weight:600;line-height:1;letter-spacing:0.02em;color:#f7f4ec;}.ds-rail-sub{display:block;margin-top:6px;font-size:0.6875rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#a8a295;}.ds-rail-group{margin:16px 0 6px;padding:0 16px;font-size:0.6875rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:rgba(168,162,149,0.75);}.ds-rail-item{position:relative;display:block;margin:0 8px;padding:7px 8px 7px 14px;border-radius:2px;font-size:0.875rem;color:#a8a295;text-decoration:none;transition:background-color 150ms ease-out,color 150ms ease-out;}.ds-rail-item:hover{background:#23211a;color:#f7f4ec;}.ds-rail-item:focus-visible{outline:2px solid #c8b98a;outline-offset:2px;}.ds-rail-item-active{background:#2e2b22;font-weight:500;color:#f7f4ec;}.ds-rail-bar{position:absolute;left:0;top:50%;width:3px;height:1.125rem;transform:translateY(-50%);border-radius:0 1px 1px 0;background:#c8b98a;}"
+      "description": "The navy machine: 16rem, no right border, brass brand tile, 32px flush rows where weight separates current from hover.",
+      "html": "<nav class=\"ds-rail\"><div class=\"ds-rail-head\"><span class=\"ds-rail-tile\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"3\" y1=\"22\" x2=\"21\" y2=\"22\"/><line x1=\"6\" y1=\"18\" x2=\"6\" y2=\"11\"/><line x1=\"10\" y1=\"18\" x2=\"10\" y2=\"11\"/><line x1=\"14\" y1=\"18\" x2=\"14\" y2=\"11\"/><line x1=\"18\" y1=\"18\" x2=\"18\" y2=\"11\"/><polygon points=\"12 2 20 7 4 7\"/></svg></span><span class=\"ds-rail-brand\"><span class=\"ds-rail-word\">CEEDO</span><span class=\"ds-rail-sub\">Collections</span></span></div><div class=\"ds-rail-divider\"></div><div class=\"ds-rail-group\"><p class=\"ds-rail-heading\">Ledger</p><a class=\"ds-rail-item ds-rail-item-current\" href=\"#\" aria-current=\"page\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z\"/><path d=\"M8 7h8M8 11h8M8 15h5\"/></svg><span>Collections</span></a><a class=\"ds-rail-item\" href=\"#\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 22h14M5 2h14M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2\"/></svg><span>Aging</span></a></div></nav>",
+      "css": ".ds-rail{width:16rem;padding-bottom:8px;background:var(--color-chassis-900,#0d1b2d);font-family:var(--font-sans,'IBM Plex Sans',system-ui,sans-serif);}.ds-rail-head{display:flex;align-items:center;gap:12px;height:56px;padding:0 16px;}.ds-rail-tile{display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:var(--radius-lg,0.5rem);background:var(--color-chassis-accent,#daa24f);color:var(--color-chassis-900,#0d1b2d);}.ds-rail-brand{display:flex;flex-direction:column;}.ds-rail-word{font-size:0.875rem;font-weight:700;letter-spacing:-0.025em;color:var(--color-chassis-dim,#d9dfe5);}.ds-rail-sub{font-size:0.6875rem;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:rgba(217,223,229,0.5);}.ds-rail-divider{height:1px;background:var(--color-chassis-600,#202f42);}.ds-rail-group{padding:8px;}.ds-rail-heading{margin:0 0 4px;padding:0 8px;font-size:0.6875rem;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:rgba(217,223,229,0.4);}.ds-rail-item{display:flex;align-items:center;gap:8px;height:32px;padding:8px;border-radius:var(--radius-md,0.4rem);font-size:0.875rem;color:var(--color-chassis-dim,#d9dfe5);text-decoration:none;transition:background-color 150ms ease-out,color 150ms ease-out;}.ds-rail-item:hover{background:var(--color-chassis-700,#1b2a3c);color:var(--color-chassis-ink,#eceff2);}.ds-rail-item-current{background:var(--color-chassis-700,#1b2a3c);color:var(--color-chassis-ink,#eceff2);font-weight:500;}.ds-rail-item:focus-visible{outline:2px solid var(--color-chassis-accent,#daa24f);outline-offset:2px;}"
     },
     {
       "name": "The Running Proof",
       "kind": "custom",
       "refersTo": "table-row",
-      "description": "The signature component: a ruled tape of figures closed by the accountant's close — a hairline above the total and a double rule below, painted as background gradients so a collapsed table cannot drop vertical seams at the column boundaries. The in-view sum sits over the unfiltered total, and the proof line says the thing the screen exists to say.",
-      "html": "<table class=\"ds-tape\"><thead><tr><th>OR No.</th><th>Collector</th><th class=\"ds-num\">Gross amount</th></tr></thead><tbody><tr><td class=\"ds-mono\">4820118</td><td>Danilo Ocampo</td><td class=\"ds-num\">₱3,000.00</td></tr><tr class=\"ds-void\"><td class=\"ds-mono\">4820116</td><td>Rosalie Mendoza</td><td class=\"ds-num\">₱360.00</td></tr><tr><td class=\"ds-mono\">4820119</td><td>Danilo Ocampo</td><td class=\"ds-num\">₱840.00</td></tr></tbody><tfoot><tr class=\"ds-close\"><td><span class=\"ds-close-label\">Filtered total</span></td><td></td><td class=\"ds-num\"><span class=\"ds-close-sum\">₱3,840.00</span><span class=\"ds-close-of\">of ₱4,480.00</span></td></tr></tfoot></table><p class=\"ds-proofline\"><strong>1</strong> receipt cancelled, holding <strong class=\"ds-alert\">₱360.00</strong> — excluded from the total above.</p>",
-      "css": ".ds-tape{width:100%;border-collapse:collapse;background:#fffdf7;border:1px solid #ddd7c7;font-family:var(--font-plex-sans),ui-sans-serif,system-ui,sans-serif;font-size:0.875rem;color:#24221e;font-variant-numeric:tabular-nums;}.ds-tape thead tr{background:#f7f4ec;border-bottom:1px solid #b9b1a0;}.ds-tape th{padding:8px 12px;text-align:left;vertical-align:bottom;font-size:0.6875rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#57524a;}.ds-tape td{padding:6px 12px;border-bottom:1px solid #e8e3d5;white-space:nowrap;}.ds-tape tbody tr:hover{background:#f2eee2;}.ds-tape .ds-num{text-align:right;}.ds-tape .ds-mono{font-family:var(--font-plex-mono),ui-monospace,monospace;font-size:0.75rem;}.ds-tape .ds-void td{color:#6e685d;text-decoration:line-through;}.ds-close td{background:#f7f4ec;border-top:1px solid #b9b1a0;border-bottom:none;padding:8px 12px 10px;vertical-align:top;background-image:linear-gradient(#b9b1a0,#b9b1a0),linear-gradient(#b9b1a0,#b9b1a0);background-size:100% 1px,100% 1px;background-position:left bottom,left bottom 3px;background-repeat:no-repeat;}.ds-close-label{font-size:0.6875rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#57524a;}.ds-close-sum{display:block;font-size:0.875rem;font-weight:600;color:#24221e;}.ds-close-of{display:block;margin-top:2px;font-size:0.6875rem;color:#6e685d;}.ds-proofline{margin:0;border:1px solid #ddd7c7;border-top:none;background:#f7f4ec;padding:8px 12px;font-family:var(--font-plex-sans),ui-sans-serif,system-ui,sans-serif;font-size:0.75rem;color:#57524a;}.ds-proofline .ds-alert{color:#b5302a;}"
+      "description": "The signature: a framed white block ending in the accountant's close \u2014 hairline above the total, double rule below.",
+      "html": "<div class=\"ds-proof\"><div class=\"ds-proof-slip\"><span class=\"ds-proof-count\">3 collections</span></div><table class=\"ds-proof-table\"><thead><tr><th>Official Receipt</th><th>Tenant</th><th class=\"ds-num\">Amount</th></tr></thead><tbody><tr><td>4820117</td><td>R. Dela Cruz</td><td class=\"ds-num\">1,450.00</td></tr><tr><td>4820118</td><td>M. Santos</td><td class=\"ds-num\">980.00</td></tr><tr class=\"ds-void\"><td>4820119</td><td>A. Reyes</td><td class=\"ds-num\">620.00</td></tr></tbody><tfoot><tr><td class=\"ds-close\"><span class=\"ds-close-label\">Total</span></td><td class=\"ds-close\"></td><td class=\"ds-close ds-num\"><span class=\"ds-close-sum\">2,430.00</span></td></tr></tfoot></table><div class=\"ds-proof-line\">Void total of 620.00 excluded from the day&rsquo;s remittance.</div></div>",
+      "css": ".ds-proof{border:1px solid var(--color-rule,#d9dfe5);border-radius:var(--radius-xl,0.7rem);overflow:hidden;background:var(--color-tape-raised,#ffffff);font-family:var(--font-sans,'IBM Plex Sans',system-ui,sans-serif);}.ds-proof-slip{padding:8px 10px;background:var(--color-tape,#f7f8fa);border-bottom:1px solid var(--color-rule,#d9dfe5);}.ds-proof-count{font-size:0.75rem;color:var(--color-ink-3,#5c646f);}.ds-proof-table{width:100%;border-collapse:collapse;font-size:0.875rem;font-variant-numeric:tabular-nums;}.ds-proof-table th{padding:8px 12px;text-align:left;background:var(--color-tape,#f7f8fa);border-bottom:1px solid var(--color-rule-strong,#c3ccd6);font-size:0.6875rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-ink-2,#3d4653);}.ds-proof-table td{padding:6px 12px;border-bottom:1px solid var(--color-rule-soft,#e6eaef);color:var(--color-ink,#0c121a);}.ds-proof-table tbody tr:hover{background:var(--color-tape-hover,#f1f4f8);}.ds-num{text-align:right;}.ds-void td{color:var(--color-ink-3,#5c646f);text-decoration:line-through;}.ds-close{border-top:1px solid var(--color-rule-strong,#c3ccd6);border-bottom:none;padding:8px 12px 10px;background-image:linear-gradient(var(--color-rule-strong,#c3ccd6),var(--color-rule-strong,#c3ccd6)),linear-gradient(var(--color-rule-strong,#c3ccd6),var(--color-rule-strong,#c3ccd6));background-size:100% 1px,100% 1px;background-position:left bottom,left bottom 3px;background-repeat:no-repeat;}.ds-close-label{font-size:0.6875rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-ink-2,#3d4653);}.ds-close-sum{font-size:0.875rem;font-weight:600;color:var(--color-ink,#0c121a);}.ds-proof-line{padding:8px 12px;background:var(--color-tape,#f7f8fa);border-top:1px solid var(--color-rule,#d9dfe5);font-size:0.75rem;color:var(--color-ink-2,#3d4653);}"
     },
     {
       "name": "Panel",
       "kind": "card",
       "refersTo": "panel",
-      "description": "The one non-table block shape — a worksheet clipped to the tape, square-cornered and ruled, so a credential panel, a PIN panel and the opening-balance form cannot drift apart. Notice is its result-message companion.",
-      "html": "<section class=\"ds-panel\"><div class=\"ds-panel-head\"><h2>Opening balance</h2><p>Recorded once per lease, against the cutover date.</p></div><div class=\"ds-panel-body\"><p class=\"ds-notice ds-notice-success\">Opening balance recorded.</p></div></section>",
-      "css": ".ds-panel{border:1px solid #ddd7c7;background:#fffdf7;font-family:var(--font-plex-sans),ui-sans-serif,system-ui,sans-serif;}.ds-panel-head{border-bottom:1px solid #ddd7c7;background:#f7f4ec;padding:10px 16px;}.ds-panel-head h2{margin:0;font-size:0.875rem;font-weight:600;color:#24221e;}.ds-panel-head p{margin:4px 0 0;font-size:0.75rem;line-height:1.5;color:#57524a;}.ds-panel-body{padding:14px 16px;}.ds-notice{margin:0;border:1px solid;padding:8px 12px;font-size:0.75rem;line-height:1.5;}.ds-notice-success{border-color:rgba(47,93,69,0.35);background:#e2ece6;color:#2f5d45;}.ds-notice-error{border-color:rgba(181,48,42,0.4);background:#f2e2df;color:#b5302a;}.ds-notice-warning{border-color:rgba(138,98,18,0.4);background:#f6ecd6;color:#8a6212;}"
+      "description": "The one non-table block: a framed white worksheet with a field-ground head.",
+      "html": "<section class=\"ds-panel\"><div class=\"ds-panel-head\"><h2 class=\"ds-panel-title\">Device credential</h2><p class=\"ds-panel-note\">Issued once. The tablet stores it; the office cannot read it back.</p></div><div class=\"ds-panel-body\">Rotate the credential if a device is lost.</div></section>",
+      "css": ".ds-panel{max-width:26rem;overflow:hidden;border:1px solid var(--color-rule,#d9dfe5);border-radius:var(--radius-xl,0.7rem);background:var(--color-tape-raised,#ffffff);font-family:var(--font-sans,'IBM Plex Sans',system-ui,sans-serif);}.ds-panel-head{padding:10px 16px;background:var(--color-tape,#f7f8fa);border-bottom:1px solid var(--color-rule,#d9dfe5);}.ds-panel-title{margin:0;font-size:0.875rem;font-weight:600;color:var(--color-ink,#0c121a);}.ds-panel-note{margin:4px 0 0;font-size:0.75rem;line-height:1.5;color:var(--color-ink-2,#3d4653);}.ds-panel-body{padding:14px 16px;font-size:0.875rem;color:var(--color-ink,#0c121a);}"
     },
     {
       "name": "Docket Dialog",
       "kind": "custom",
       "refersTo": "dialog-head",
-      "description": "Radix Dialog dressed as a docket lifted off the tape and laid on the chassis. The head sits on the chassis — that colour break is what says the sheet was pulled out of the machine — and turns ribbon red when the act disposes of money already collected.",
-      "html": "<div class=\"ds-docket\"><div class=\"ds-docket-head\"><div><p class=\"ds-docket-title\">Cancel receipt 4820116</p><p class=\"ds-docket-desc\">The receipt stays on the tape, struck through, and its amount leaves the total.</p></div><button class=\"ds-docket-close\" aria-label=\"Close\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M18 6 6 18M6 6l12 12\"/></svg></button></div><div class=\"ds-docket-body\"><p>Every consequential act carries a written reason.</p></div><div class=\"ds-docket-foot\"><button class=\"ds-btn-secondary\">Keep it</button><button class=\"ds-btn-danger\">Cancel the receipt</button></div></div>",
-      "css": ".ds-docket{width:30rem;max-width:100%;border:1px solid #3d392e;border-radius:3px;background:#fffdf7;box-shadow:0 18px 44px -12px rgba(22,21,15,0.45);font-family:var(--font-plex-sans),ui-sans-serif,system-ui,sans-serif;overflow:hidden;}.ds-docket-head{display:flex;align-items:flex-start;gap:16px;border-bottom:1px solid rgba(181,48,42,0.4);background:#b5302a;color:#fffdf7;padding:14px 20px;}.ds-docket-title{margin:0;font-size:0.875rem;font-weight:600;letter-spacing:-0.01em;}.ds-docket-desc{margin:4px 0 0;font-size:0.75rem;line-height:1.5;color:rgba(255,253,247,0.85);}.ds-docket-close{margin-left:auto;padding:4px;border:none;border-radius:2px;background:transparent;color:rgba(255,253,247,0.7);cursor:pointer;transition:background-color 150ms ease-out,color 150ms ease-out;}.ds-docket-close:hover{background:rgba(0,0,0,0.15);color:#fffdf7;}.ds-docket-close:focus-visible{outline:2px solid #c8b98a;outline-offset:2px;}.ds-docket-body{padding:16px 20px;font-size:0.875rem;line-height:1.6;color:#24221e;}.ds-docket-body p{margin:0;}.ds-docket-foot{display:flex;justify-content:flex-end;gap:8px;border-top:1px solid #ddd7c7;background:#f7f4ec;padding:12px 20px;}"
+      "description": "A sheet pulled out of the machine: chassis head, white body, xl corners, the only lifted surface.",
+      "html": "<div class=\"ds-docket\"><div class=\"ds-docket-head\"><p class=\"ds-docket-title\">Void receipt 4820119</p><p class=\"ds-docket-desc\">Voiding removes the payment from the day&rsquo;s remittance. It cannot be undone.</p></div><div class=\"ds-docket-body\">Give the reason recorded in the audit log.</div><div class=\"ds-docket-foot\"><button class=\"ds-btn-secondary\">Cancel</button><button class=\"ds-btn-danger\">Void</button></div></div>",
+      "css": ".ds-docket{width:30rem;max-width:100%;overflow:hidden;border:1px solid var(--color-chassis-600,#202f42);border-radius:var(--radius-xl,0.7rem);background:var(--color-tape-raised,#ffffff);box-shadow:0 18px 44px -12px rgba(12,18,26,0.45);font-family:var(--font-sans,'IBM Plex Sans',system-ui,sans-serif);}.ds-docket-head{padding:14px 20px;background:var(--color-chassis-900,#0d1b2d);border-bottom:1px solid var(--color-chassis-600,#202f42);}.ds-docket-title{margin:0;font-size:0.875rem;font-weight:600;letter-spacing:-0.01em;color:var(--color-chassis-ink,#eceff2);}.ds-docket-desc{margin:4px 0 0;font-size:0.75rem;line-height:1.5;color:var(--color-chassis-dim,#d9dfe5);}.ds-docket-body{padding:16px 20px;font-size:0.875rem;color:var(--color-ink,#0c121a);}.ds-docket-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px;background:var(--color-tape,#f7f8fa);border-top:1px solid var(--color-rule,#d9dfe5);}"
+    },
+    {
+      "name": "Teaching Empty State",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "A required per-screen sentence saying what the record IS and what depends on it, with the control that resolves it.",
+      "html": "<div class=\"ds-empty\"><p class=\"ds-empty-copy\">No sections yet. A section divides a market into its trades &mdash; Fish, Meat, Vegetable, Dry goods &mdash; and sets the billing period its stalls inherit. A market facility has to exist before a section can belong to one.</p><div class=\"ds-empty-action\"><button class=\"ds-btn-primary\">Add section</button></div></div>",
+      "css": ".ds-empty{border:1px solid var(--color-rule,#d9dfe5);border-radius:var(--radius-xl,0.7rem);background:var(--color-tape-raised,#ffffff);font-family:var(--font-sans,'IBM Plex Sans',system-ui,sans-serif);}.ds-empty-copy{max-width:36ch;margin:0 auto;padding:56px 24px 0;text-align:center;font-size:0.875rem;line-height:1.6;color:var(--color-ink-2,#3d4653);}.ds-empty-action{display:flex;justify-content:center;padding:20px 24px 56px;}"
     }
   ],
   "narrative": {
     "northStar": "Proof Tape",
-    "overview": "The world is the treasury cash-proof ritual: a dark enamelled machine chassis holding a pale continuous tape of figures. Every screen is a proof — a column of entries, a hairline rule, a total, and one line that says whether it agrees. The rail is dark because it is the machine's enamel; the field is pale because it is paper. This is not a light/dark theme. There is one theme, no prefers-color-scheme block and no switcher, both user-confirmed in PRODUCT.md; the two grounds are two materials in one scene, and swapping either breaks the metaphor.\n\nThe surface is built for an accounting clerk at an office desktop all day, so density and scanning speed outrank expression. Composition is made of rules, not cards: rows are ruled, a total is closed by a hairline above and a double rule below. Colour is the scarce resource — it lives at edges, in row-gutter bars, in state marks and on the variance line, and never as a fill behind a figure. Brand lives in precise details: the accountant's close, the letterspaced small-caps caption, tabular figures that hold their width down a column.\n\nThe confirmed anti-reference is skeuomorphic pastiche. A paper-derived world slides there the moment it reaches for texture, torn edges or drop shadows pretending to be paper. The discipline is rules, rhythm and reserve. The collector tablet app is also explicitly not a visual reference for this surface.",
+    "overview": "The world is the treasury cash-proof ritual: a dark chassis holding a pale continuous field of figures. Every screen is a proof \u2014 a column of entries, a hairline rule, a total, and one line that says whether it agrees. The rail is dark because it is the machine; the field is pale because it is read all day at an office desk. This is not a light/dark theme. There is one theme, no prefers-color-scheme block and no switcher, both user-confirmed in PRODUCT.md.\n\nThe material is CEEDO's sibling app, berlcamp/hris: a navy sidebar on an off-white page, white panels, a hairline #d9dfe5 rule, navy for the office acting, brass spent twice, and a multiplicative corner ramp instead of a single rectilinear step. The warm carbon-and-paper palette this world was first built in was translated into that one, on the user's instruction, so the two apps read as the same office. Topology, control vocabulary, state vocabulary, the colour-reserve discipline, motion and the running proof are unchanged; only the tones and the corners moved.\n\nThe surface is built for an accounting clerk at an office desktop all day, so density and scanning speed outrank expression. Composition is still made of rules. Colour is the scarce resource \u2014 it lives at edges, in row-gutter bars, in state marks and on the variance line, and never as a fill behind a figure. The confirmed anti-reference is skeuomorphic pastiche; the collector tablet app is explicitly not a visual reference for this surface.",
     "keyCharacteristics": [
-      "Two grounds, one theme: chassis charcoal for the machine, tape stock for the field.",
-      "Rules, not cards. No resting surface carries a shadow.",
-      "One corner language: 2px on every control; 3px on the lifted docket, and nowhere else.",
+      "Two grounds, one theme: navy chassis for the machine, off-white field for the figures.",
+      "Rules and hairline frames, not shadows. No resting surface carries a shadow.",
+      "One multiplicative radius ramp (0.3rem to 1.3rem), applied by role, not by whim.",
       "Achromatic figures. Colour only at edges, gutter marks, state marks and the variance line.",
-      "Every state legible with colour removed — strike-through, ink bars, half-density.",
+      "Every state legible with colour removed \u2014 strike-through, ink bars, weight, half-density.",
       "One type family; mono reserved for measurement.",
-      "Motion is state, never decoration, and never on page load."
+      "Brass appears exactly twice on the chassis and nowhere else.",
+      "Motion is state, never decoration, and never on page load.",
+      "An empty screen teaches: it says what a record here is and what depends on it."
     ],
     "rules": [
       {
         "name": "The Achromatic Figure Rule",
-        "body": "Colour never fills the ground behind a number. A peso amount is ink or muted ink, never tinted by its row's status. Colour appears at edges, in the row gutter, inside a state mark, and on the variance line — nowhere else.",
+        "body": "Colour never fills the ground behind a number. A peso amount is ink or muted ink, never tinted by its row's status. Colour appears at edges, in the row gutter, inside a state mark, and on the variance line \u2014 nowhere else.",
         "section": "colors"
       },
       {
         "name": "The Colour-Never-Alone Rule",
-        "body": "No state is signalled by colour alone. Voided is struck through; a row needing attention carries a solid ink bar in its gutter; the current rail item carries a 3px bar; disabled is half-density. The mark always contains its own word.",
+        "body": "No state is signalled by colour alone. Voided is struck through; a row needing attention carries a solid ink bar in its gutter; the current rail item is set in medium weight on the same ground its hover uses; disabled is half-density. The mark always contains its own word.",
         "section": "colors"
       },
       {
         "name": "The Ink Floor Rule",
-        "body": "ink-3 (#6e685d, ~4.9:1) is the lightest text permitted on tape. Nothing lighter is text. On the chassis, chassis-dim is the floor and clears 7:1.",
+        "body": "ink-3 (#5c646f, about 5.6:1) is the lightest text permitted on the field. Nothing lighter is text. On the chassis, chassis-dim (#d9dfe5, about 12.9:1) is the floor.",
+        "section": "colors"
+      },
+      {
+        "name": "The Brass-Is-Ornament Rule",
+        "body": "Brass marks the machine's identity \u2014 brand tile, user chip, chassis focus ring \u2014 and never carries an action. A brass button does not exist here.",
         "section": "colors"
       },
       {
         "name": "The No Ad-Hoc Grey Rule",
-        "body": "The palette is locked. A grey that is not in the token set does not exist; reach for a rule, a tape step or an ink step.",
+        "body": "The palette is locked. A grey that is not in the token set does not exist; reach for a rule, a field step or an ink step.",
         "section": "colors"
       },
       {
@@ -510,7 +519,7 @@
       },
       {
         "name": "The Mono-Is-Measurement Rule",
-        "body": "Mono is reserved for things that are counted, matched or transcribed character-by-character — serials, ids, PINs, secrets. Money is not mono: it is Plex Sans with tabular-nums. Mono is never used for emphasis, headings or code-flavoured styling.",
+        "body": "Mono is reserved for things that are counted, matched or transcribed character-by-character \u2014 serials, ids, PINs, secrets. Money is not mono: it is Plex Sans with tabular-nums.",
         "section": "typography"
       },
       {
@@ -534,23 +543,28 @@
         "section": "layout"
       },
       {
-        "name": "The Rules-Not-Cards Rule",
-        "body": "A block is defined by a 1px rule and a tape step. If a surface needs separating, rule it; do not float it.",
+        "name": "The Value-Step Rule",
+        "body": "The rail needs no border. Where two grounds differ enough in value, the step is the edge; adding a rule there only thickens the machine.",
+        "section": "layout"
+      },
+      {
+        "name": "The Frame-Not-Float Rule",
+        "body": "A block is defined by a 1px rule, a radius and a ground step. If a surface needs separating, frame it; do not float it.",
         "section": "elevation"
       },
       {
         "name": "The Overlay-Only Shadow Rule",
-        "body": "A shadow means 'portalled above the page'. Anything that lives in the flow gets none.",
+        "body": "A shadow means 'portalled above the page'. Anything that lives in the flow gets none, and never as a hard offset.",
         "section": "elevation"
       },
       {
-        "name": "The One Corner Rule",
-        "body": "2px everywhere, never varying by variant, state or size. Pills, capsules and large radii do not exist in this world.",
+        "name": "The Role-Not-Whim Rule",
+        "body": "A radius is chosen by what the element is, not by how it looks in isolation: control -> lg, framed block -> xl, state mark -> 4xl. A sixth radius on a seventh kind of element is drift.",
         "section": "shapes"
       },
       {
         "name": "The Accountant's Close",
-        "body": "A total is closed by a hairline above and a double rule below (.rule-close). It is the one load-bearing piece of the world — it is how a proof sheet says 'this column is finished' — and it is painted as two background gradients rather than border-bottom: double, because under border-collapse: collapse a double border resolves its corners against the neighbouring cell and drops a vertical hairline at every column boundary. Backgrounds do not collapse, so the close paints as one uninterrupted band. Never re-implement the close as a double border inside a collapsed table.",
+        "body": "A total is closed by a hairline above and a double rule below (.rule-close). It is painted as two background gradients rather than border-bottom: double, because under border-collapse: collapse a double border resolves its corners against the neighbouring cell and drops a vertical hairline at every column boundary. Never re-implement the close as a double border inside a collapsed table.",
         "section": "shapes"
       },
       {
@@ -565,31 +579,43 @@
       }
     ],
     "dos": [
-      "Do treat the chassis/tape split as two materials in one scene: dark is the machine (rail, dialog head, scrim, primary button, tooltip), pale is the paper the figures are read off.",
-      "Do close every summed column with .rule-close — hairline above, double rule below.",
+      "Do treat the chassis/field split as two materials in one scene: navy is the machine (rail, dialog head, scrim, tooltip, checkbox fill), off-white is the paper the figures are read off.",
+      "Do close every summed column with .rule-close \u2014 hairline above, double rule below.",
       "Do keep the figure field achromatic; spend colour on edges, gutter bars, state marks and the variance line.",
-      "Do give every state a non-colour carrier: strike-through, an ink bar, a word inside the mark, half-density.",
-      "Do use 2px corners on every control and 3px only on the dialog.",
-      "Do set every label, column head and totals label in the .caption small caps.",
+      "Do give every state a non-colour carrier: strike-through, an ink bar, weight, a word inside the mark, half-density.",
+      "Do pick a radius by role \u2014 lg for controls, xl for framed blocks, 4xl for marks, md for nav rows and focus rings, sm for the checkbox.",
+      "Do keep primary actions navy and brass ornamental: brand tile, user chip, chassis focus ring, and nothing else.",
+      "Do set every field label, column head and totals label in the .caption small caps, and every chassis label at 0.12em.",
       "Do reserve IBM Plex Mono for serials, ids, PINs and secrets; money stays Plex Sans with tabular figures.",
+      "Do write an empty that says what the record is and what depends on it, and pass an emptyAction whenever a control can resolve it.",
       "Do build blocks from Panel, Notice, Mark and DataTable rather than new one-off shapes.",
       "Do keep every screen keyboard-complete: the global / focuses the filter, Radix handles focus trapping and restore, dialogs land on the first real field, sortable heads are buttons carrying aria-sort, and icon-only controls carry aria-label.",
       "Do declare sortValue / searchValue / total / facet explicitly on a column instead of parsing what render produced.",
-      "Do keep ink-3 as the lightest text on tape and chassis-dim as the lightest on chassis."
+      "Do keep ink-3 as the lightest text on the field and chassis-dim as the lightest on the chassis."
     ],
     "donts": [
-      "Don't add a theme switcher, a prefers-color-scheme block or a dark variant of the tape. One theme, user-confirmed.",
+      "Don't add a theme switcher, a prefers-color-scheme block or a dark variant of the field. One theme, user-confirmed.",
       "Don't put a shadow on anything that lives in the flow. Shadows belong to portalled overlays only, and never as a hard offset.",
-      "Don't reach for a card, a rounded panel or a coloured pill; rule it instead.",
       "Don't fill a ground behind a number with colour, or tint a peso amount by its row's status.",
       "Don't signal anything with colour alone.",
-      "Don't implement the accountant's close as border-bottom: double inside a border-collapse: collapse table — it drops vertical seams at every column boundary.",
+      "Don't put brass on a button, a link or any other action.",
+      "Don't add a right border to the rail, or a divider rule under the screen heading \u2014 the value step and the gap are the separation.",
+      "Don't implement the accountant's close as border-bottom: double inside a border-collapse: collapse table \u2014 it drops vertical seams at every column boundary.",
       "Don't put a kicker, eyebrow or overline above a screen heading.",
-      "Don't introduce a grey, a radius or a type size that is not in the token set, and don't use fluid clamp() sizing.",
+      "Don't introduce a grey, a radius step or a type size that is not in the token set, and don't use fluid clamp() sizing.",
+      "Don't ship a table or a resource without empty copy, and don't let 'Nothing here yet.' stand in for it.",
       "Don't choreograph a page load, or animate anything from an invisible default.",
       "Don't add a second type family, or use mono for emphasis, headings or 'code' styling.",
       "Don't add texture, torn edges, rules that pretend to be perforations, or any other skeuomorphic paper effect.",
       "Don't let a denied read and an empty table look the same."
+    ],
+    "openDecisions": [
+      "The sibling app runs DM Sans; this app deliberately kept IBM Plex Sans + IBM Plex Mono, because the tabular figures are load-bearing here. The family is an open decision for the user, not drift.",
+      "Date inputs use the native type=\"date\" control: it submits ISO, and its display order is the OS locale's. An open question for the user rather than a defect."
+    ],
+    "knownResiduals": [
+      "A sub-pixel seam of about 2/255 at column boundaries in the totals row \u2014 a border-collapse compositing artifact, measured and judged imperceptible. Not repaired, not canonized.",
+      "formatCell in components/admin/resource-table.tsx still prints raw numbers for rates.amount and surcharge_bps \u2014 pre-existing, and a data decision rather than a design one."
     ]
   }
 }

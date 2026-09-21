@@ -127,7 +127,7 @@ export default async function ResourcePage({
           short (42501 is a privilege denial, PGRST116 a shape mismatch, and so on).
         */}
         {error ? (
-          <p className="border border-amber/40 bg-amber-soft px-3 py-2 text-sm text-amber">
+          <p className="rounded-lg border border-amber/40 bg-amber-soft px-3 py-2 text-sm text-amber">
             These records could not be loaded. You may not have access to them.
             {error.code ? ` (${error.code})` : null}
           </p>
@@ -137,7 +137,8 @@ export default async function ResourcePage({
             rows={(rows ?? []) as unknown as Record<string, unknown>[]}
             urlKey={config.key}
             unit="records"
-            empty="Nothing here yet."
+            empty={config.empty}
+            canCreate={config.writeMode !== "edit"}
             {...(canWrite ? { spec } : {})}
             {...(canWrite && editRows ? { editRows } : {})}
           />

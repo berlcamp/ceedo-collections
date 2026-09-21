@@ -31,7 +31,7 @@ export function Mark({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-[2px] border px-1.5 py-[3px]",
+        "inline-flex h-5 shrink-0 items-center gap-1 rounded-4xl border px-2",
         "text-2xs font-semibold uppercase tracking-[0.06em] leading-none whitespace-nowrap",
         TONES[tone],
         className,

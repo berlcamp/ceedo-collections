@@ -54,7 +54,7 @@ export function RecordedOpeningBalancesTable({ rows }: { rows: RecordedOpeningBa
       urlKey="ob-recorded"
       unit="leases"
       searchPlaceholder="Filter by stall or tenant…"
-      empty="Nothing here yet."
+      empty="No opening balance has been recorded yet. Each one entered above appears here, and this is the list the Treasurer is shown at go-live."
     />
   );
 }

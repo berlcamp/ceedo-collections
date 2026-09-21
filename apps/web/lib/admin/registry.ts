@@ -24,6 +24,8 @@ const configs: ResourceConfig[] = [
     table: "facilities",
     title: "Facilities",
     singular: "facility",
+    empty:
+      "No facilities yet. A facility is one market, terminal, parking area or slaughterhouse the office collects from. Sections, stalls and leases all hang off a facility, so this is the first thing to set up.",
     schema: z.object({
       code: name,
       name,
@@ -64,6 +66,8 @@ const configs: ResourceConfig[] = [
     table: "sections",
     title: "Sections",
     singular: "section",
+    empty:
+      "No sections yet. A section divides a market into its trades — Fish, Meat, Vegetable, Dry goods — and sets the billing period its stalls inherit. A market facility has to exist before a section can belong to one.",
     schema: z.object({
       facility_id: uuid,
       name,
@@ -102,6 +106,8 @@ const configs: ResourceConfig[] = [
     table: "stalls",
     title: "Stalls",
     singular: "stall",
+    empty:
+      "No stalls yet. A stall is one numbered space inside a section, and it is what a lease binds a tenant to. Add the sections first; stalls are numbered within them.",
     schema: z.object({
       section_id: uuid,
       stall_no: name,
@@ -131,6 +137,8 @@ const configs: ResourceConfig[] = [
     table: "tenants",
     title: "Tenants",
     singular: "tenant",
+    empty:
+      "No tenants yet. A tenant is the person who holds a lease and whose name the collector writes on the paper Official Receipt.",
     schema: z.object({
       full_name: name,
       address: optionalText,
@@ -159,6 +167,8 @@ const configs: ResourceConfig[] = [
     table: "leases",
     title: "Leases",
     singular: "lease",
+    empty:
+      "No leases yet. A lease binds a tenant to a stall at a rate for a billing period. It is what the nightly accrual bills, what shows up in the ledger, and what a collector looks up on the tablet — nothing is collected without one.",
     schema: z.object({
       stall_id: uuid,
       tenant_id: uuid,
@@ -218,6 +228,8 @@ const configs: ResourceConfig[] = [
     table: "fee_types",
     title: "Fee types",
     singular: "fee type",
+    empty:
+      "No fee types yet. A fee type names something the office charges for — stall rental, ambulant vending, parking, terminal, slaughter — and records whether it accrues and what surcharge it carries.",
     schema: z.object({
       code: name,
       name,
@@ -249,6 +261,8 @@ const configs: ResourceConfig[] = [
     table: "rates",
     title: "Rates",
     singular: "rate",
+    empty:
+      "No rates yet. A rate is what a fee type costs from a given date onward. Rates are added and dated rather than edited, so what was charged last year stays provable this year.",
     schema: z.object({
       fee_type_id: uuid,
       rate_class: z.string(),
@@ -296,6 +310,8 @@ const configs: ResourceConfig[] = [
     table: "form_types",
     title: "Accountable form types",
     singular: "form type",
+    empty:
+      "No accountable form types yet. A form type is a class of pre-printed accountable form, such as the Official Receipt the collector hand-writes and the office must account for by serial.",
     schema: z.object({ code: name, name, active: z.boolean() }),
     fields: [
       { name: "code", label: "Code", type: "text", help: "e.g. OR51" },
@@ -317,6 +333,8 @@ const configs: ResourceConfig[] = [
     table: "booklets",
     title: "OR booklets",
     singular: "booklet",
+    empty:
+      "No OR booklets yet. A booklet is a physical range of serial numbers issued to the office. A tablet refuses any serial that falls outside a booklet assigned to it, so the paper and the system stay in step.",
     schema: z.object({
       form_type_id: uuid,
       serial_prefix: name,
@@ -362,6 +380,8 @@ const configs: ResourceConfig[] = [
     table: "devices",
     title: "Tablets",
     singular: "tablet",
+    empty:
+      "No tablets yet. Register a tablet here, then issue it a credential to enrol it. A collector cannot open a shift on a device the office has not registered.",
     schema: z.object({ label: name, active: z.boolean() }),
     fields: [
       { name: "label", label: "Label", type: "text", help: "e.g. Tablet 01. Tablets are shared between collectors." },
@@ -392,6 +412,8 @@ const configs: ResourceConfig[] = [
     table: "device_assignments",
     title: "Tablet assignments",
     singular: "tablet assignment",
+    empty:
+      "No tablet assignments yet. An assignment says which facility and section a tablet collects for, which is how it knows the right leases to pull down before it goes offline.",
     schema: z.object({
       device_id: uuid,
       facility_id: uuid,
@@ -444,6 +466,8 @@ const configs: ResourceConfig[] = [
     table: "collector_assignments",
     title: "Collection areas",
     singular: "collection area",
+    empty:
+      "No collection areas yet. A collection area is the facility and section a collector is responsible for. Until a collector has one, they have nothing to collect and their round will come up empty.",
     schema: z.object({
       collector_id: uuid,
       facility_id: uuid,
@@ -497,6 +521,8 @@ const configs: ResourceConfig[] = [
     table: "staff_invites",
     title: "Staff invitations",
     singular: "invitation",
+    empty:
+      "No invitations yet. Register an office email address here before that person signs in with Google. An account that was never invited is refused at the door, however valid the Google sign-in.",
     schema: z.object({
       email,
       employee_no: name,
@@ -550,6 +576,8 @@ const configs: ResourceConfig[] = [
     table: "app_users",
     title: "Staff",
     singular: "staff member",
+    empty:
+      "No staff yet. A staff record is created by the system the first time an invited person signs in with Google — it cannot be added here. Send them an invitation instead.",
     schema: z.object({
       role: z.enum(["collector", "supervisor", "accounting", "admin"]),
       status: z.enum(["active", "suspended"]),
@@ -600,6 +628,8 @@ const configs: ResourceConfig[] = [
     table: "audit_log",
     title: "Audit log",
     singular: "entry",
+    empty:
+      "Nothing recorded yet. Every change to master data lands here with who made it and when. The database writes this log; nobody types into it.",
     schema: z.object({}),
     fields: [],
     columns: [

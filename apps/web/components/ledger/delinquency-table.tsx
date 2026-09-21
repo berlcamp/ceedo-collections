@@ -74,7 +74,7 @@ export function DelinquencyTable({ rows }: { rows: DelinquencyRow[] }) {
       unit="leases"
       searchPlaceholder="Filter by stall, tenant or contact…"
       rowMark={(row) => (row.daysOverdue >= 90 ? "alert" : null)}
-      empty="Nothing here yet."
+      empty="No lease is more than 30 days overdue. This list is the input to demand letters, so an empty one means there are none to send."
     />
   );
 }

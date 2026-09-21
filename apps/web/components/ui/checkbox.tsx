@@ -31,7 +31,7 @@ export function Checkbox({
       onCheckedChange={(next) => onCheckedChange(next === true)}
       disabled={disabled}
       className={cn(
-        "flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-[2px] border",
+        "flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-sm border",
         "border-rule-strong bg-tape-sunk transition-colors duration-150",
         "hover:border-ink-3",
         "data-[state=checked]:border-chassis-900 data-[state=checked]:bg-chassis-900",

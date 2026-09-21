@@ -29,6 +29,41 @@ export async function ledgerClient(): Promise<SupabaseClient<Database, "ceedo_co
   return getServerClient();
 }
 
+/**
+ * The most ids that may ride in a single PostgREST `in.(…)` filter.
+ *
+ * PostgREST takes its filters in the query string, so an `.in()` over N uuids puts roughly
+ * 37N characters into the URL, and the server refuses the request outright past its limit
+ * ("URI too long", HTTP 414). At 200 that is about 7.4 kB, comfortably inside the usual
+ * 8 kB header budget with the rest of the URL and the auth header alongside it.
+ *
+ * This is not a theoretical bound: the collections browser fetches its window of receipts
+ * and then looks their cancellations up by id, so the screen started returning a server
+ * error at a few hundred receipts — which, per PRODUCT.md, is the scale this deployment
+ * actually reaches.
+ */
+const IN_CHUNK = 200;
+
+/**
+ * Runs `query(idsChunk)` over the ids in batches and concatenates the rows.
+ *
+ * Deliberately sequential: these are secondary lookups behind a page render, and firing
+ * an unbounded number of them at once would trade one failure mode for another.
+ */
+async function selectByIds<Row>(
+  ids: string[],
+  query: (chunk: string[]) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>,
+): Promise<Row[]> {
+  if (ids.length === 0) return [];
+  const out: Row[] = [];
+  for (let i = 0; i < ids.length; i += IN_CHUNK) {
+    const { data, error } = await query(ids.slice(i, i + IN_CHUNK));
+    if (error) throw error;
+    out.push(...(data ?? []));
+  }
+  return out;
+}
+
 export interface AgingRow {
   leaseId: string;
   stallNo: string;
@@ -204,13 +239,10 @@ export async function getSubsidiaryLedger(leaseId: string): Promise<SubsidiaryLe
     .map((r) => r.source_id!);
 
   const reasonById = new Map<string, string>();
-  if (cancelledIds.length > 0) {
-    const { data: cancellations, error: cancellationsError } = await supabase
-      .from("collection_cancellations")
-      .select("collection_id, reason")
-      .in("collection_id", cancelledIds);
-    if (cancellationsError) throw cancellationsError;
-    for (const c of cancellations ?? []) reasonById.set(c.collection_id, c.reason);
+  for (const c of await selectByIds(cancelledIds, (chunk) =>
+    supabase.from("collection_cancellations").select("collection_id, reason").in("collection_id", chunk),
+  )) {
+    reasonById.set(c.collection_id, c.reason);
   }
 
   // Same reasoning as the cancellation lookup above: subsidiary_ledger's `entry_type =
@@ -311,21 +343,21 @@ export async function getCollections(filters: {
   const leaseIds = [...new Set(rows.map((r) => r.lease_id).filter((id): id is string => id !== null))];
   const collectionIds = rows.map((r) => r.id);
 
-  const [{ data: collectors, error: collectorsError }, { data: leases, error: leasesError }, { data: cancellations, error: cancellationsError }] =
-    await Promise.all([
-      supabase.from("app_users").select("id, full_name").in("id", collectorIds),
-      leaseIds.length > 0
-        ? supabase.from("leases").select("id, stalls(stall_no)").in("id", leaseIds)
-        : Promise.resolve({ data: [], error: null }),
-      supabase.from("collection_cancellations").select("collection_id, reason").in("collection_id", collectionIds),
-    ]);
-  if (collectorsError) throw collectorsError;
-  if (leasesError) throw leasesError;
-  if (cancellationsError) throw cancellationsError;
+  const [collectors, leases, cancellations] = await Promise.all([
+    selectByIds(collectorIds, (chunk) =>
+      supabase.from("app_users").select("id, full_name").in("id", chunk),
+    ),
+    selectByIds(leaseIds, (chunk) =>
+      supabase.from("leases").select("id, stalls(stall_no)").in("id", chunk),
+    ),
+    selectByIds(collectionIds, (chunk) =>
+      supabase.from("collection_cancellations").select("collection_id, reason").in("collection_id", chunk),
+    ),
+  ]);
 
-  const collectorNameById = new Map((collectors ?? []).map((c) => [c.id, c.full_name]));
-  const stallNoByLeaseId = new Map((leases ?? []).map((l) => [l.id, l.stalls?.stall_no ?? "—"]));
-  const reasonById = new Map((cancellations ?? []).map((c) => [c.collection_id, c.reason]));
+  const collectorNameById = new Map(collectors.map((c) => [c.id, c.full_name]));
+  const stallNoByLeaseId = new Map(leases.map((l) => [l.id, l.stalls?.stall_no ?? "—"]));
+  const reasonById = new Map(cancellations.map((c) => [c.collection_id, c.reason]));
 
   return rows.map((r) => ({
     id: r.id,

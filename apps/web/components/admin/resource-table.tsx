@@ -52,6 +52,7 @@ export function ResourceTable({
   empty,
   spec,
   editRows,
+  canCreate,
 }: {
   columns: ColumnConfig[];
   rows: Row[];
@@ -62,6 +63,12 @@ export function ResourceTable({
   spec?: ResourceFormSpec;
   /** Present only for a `writeMode: "edit"` resource — the rows the engine can update. */
   editRows?: EditRow[];
+  /**
+   * False for a `writeMode: "edit"` resource, whose rows can only come into being through
+   * the claim trigger on a real Google sign-in — so its empty state must not offer a
+   * control the engine has no way to honour.
+   */
+  canCreate?: boolean;
 }) {
   const dataColumns = useMemo<DataColumn<Row>[]>(() => {
     const built: DataColumn<Row>[] = columns.map((column) => ({
@@ -106,6 +113,7 @@ export function ResourceTable({
       urlKey={urlKey}
       unit={unit}
       empty={empty}
+      {...(spec && canCreate ? { emptyAction: <ResourceFormDialog spec={spec} /> } : {})}
       searchPlaceholder={`Filter ${unit}…`}
     />
   );

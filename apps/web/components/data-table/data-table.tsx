@@ -39,6 +39,7 @@ export function DataTable<Row>({
   rowMuted,
   proofLine,
   unit = "rows",
+  emptyAction,
 }: DataTableProps<Row>) {
   // Read the view's state out of the URL once, during the initial render rather than in
   // an effect: `useSearchParams` gives the same answer on the server and on the client, so
@@ -207,9 +208,10 @@ export function DataTable<Row>({
 
   if (rows.length === 0) {
     return (
-      <div className="border border-rule bg-tape-raised">
-        <div className="px-6 py-14 text-center">
-          <p className="mx-auto max-w-prose text-sm leading-relaxed text-ink-2">{empty}</p>
+      <div className="overflow-hidden rounded-xl border border-rule bg-tape-raised">
+        <div className="mx-auto max-w-prose px-6 py-14 text-center">
+          <p className="text-sm leading-relaxed text-ink-2">{empty}</p>
+          {emptyAction ? <div className="mt-5 flex justify-center">{emptyAction}</div> : null}
         </div>
       </div>
     );
@@ -218,7 +220,7 @@ export function DataTable<Row>({
   const gutter = rowMark ? 1 : 0;
 
   return (
-    <div className="border border-rule bg-tape-raised">
+    <div className="overflow-hidden rounded-xl border border-rule bg-tape-raised">
       {/* ---- The filter slip: clipped to the top of the tape ------------------------ */}
       <div className="flex flex-wrap items-center gap-2 border-b border-rule bg-tape px-2.5 py-2">
         <div className="relative min-w-[13rem] flex-1 sm:max-w-xs">
@@ -240,7 +242,7 @@ export function DataTable<Row>({
             placeholder={searchPlaceholder}
             aria-label={searchPlaceholder}
             className={cn(
-              "h-8 w-full rounded-[2px] border border-rule-strong bg-tape-raised pl-8 pr-7 text-sm",
+              "h-8 w-full rounded-lg border border-rule-strong bg-tape-raised pl-8 pr-7 text-sm",
               "text-ink placeholder:text-ink-3 transition-colors duration-150",
               "hover:border-ink-3 focus:border-mark",
               "[&::-webkit-search-cancel-button]:appearance-none",
@@ -256,12 +258,12 @@ export function DataTable<Row>({
                 searchRef.current?.focus();
               }}
               aria-label="Clear the filter text"
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-[2px] p-1 text-ink-3 transition-colors duration-150 hover:bg-tape-sunk hover:text-ink"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-ink-3 transition-colors duration-150 hover:bg-tape-sunk hover:text-ink"
             >
               <X size={13} strokeWidth={2} />
             </button>
           ) : (
-            <kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 select-none rounded-[2px] border border-rule px-1 text-2xs text-ink-3 sm:block">
+            <kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 select-none rounded-md border border-rule px-1 text-2xs text-ink-3 sm:block">
               /
             </kbd>
           )}
@@ -282,7 +284,7 @@ export function DataTable<Row>({
               >
                 {column.label}
                 {chosen.length > 0 ? (
-                  <span className="rounded-[2px] bg-tape-raised px-1 text-2xs font-semibold text-chassis-900">
+                  <span className="rounded-md bg-tape-raised px-1 text-2xs font-semibold text-chassis-900">
                     {chosen.length}
                   </span>
                 ) : (
@@ -295,7 +297,7 @@ export function DataTable<Row>({
                   return (
                     <label
                       key={value}
-                      className="flex cursor-pointer items-center gap-2 rounded-[2px] px-2 py-1.5 text-sm text-ink transition-colors duration-150 hover:bg-tape-sunk"
+                      className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink transition-colors duration-150 hover:bg-tape-sunk"
                     >
                       <Checkbox
                         checked={checked}
@@ -365,7 +367,7 @@ export function DataTable<Row>({
                         type="button"
                         onClick={() => toggleSort(column)}
                         className={cn(
-                          "caption inline-flex items-center gap-1 rounded-[2px] transition-colors duration-150",
+                          "caption inline-flex items-center gap-1 rounded-md transition-colors duration-150",
                           "hover:text-ink",
                           active && "text-ink",
                           column.align === "right" && "flex-row-reverse",

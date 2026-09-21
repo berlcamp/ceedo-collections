@@ -17,7 +17,7 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <section className={cn("border border-rule bg-tape-raised", className)}>
+    <section className={cn("overflow-hidden rounded-xl border border-rule bg-tape-raised", className)}>
       <div className="border-b border-rule bg-tape px-4 py-2.5">
         <h2 className="text-sm font-semibold text-ink">{title}</h2>
         {note ? <div className="mt-1 text-xs leading-relaxed text-ink-2">{note}</div> : null}
@@ -41,7 +41,7 @@ export function Notice({
     <p
       role={tone === "error" ? "alert" : "status"}
       className={cn(
-        "border px-3 py-2 text-xs leading-relaxed",
+        "rounded-lg border px-3 py-2 text-xs leading-relaxed",
         tone === "error" && "border-ribbon/40 bg-ribbon-soft text-ribbon",
         tone === "success" && "border-proof/35 bg-proof-soft text-proof",
         tone === "warning" && "border-amber/40 bg-amber-soft text-amber",

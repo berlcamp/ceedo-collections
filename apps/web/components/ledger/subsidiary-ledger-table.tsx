@@ -102,7 +102,7 @@ export function SubsidiaryLedgerTable({
       unit="entries"
       searchPlaceholder="Filter by entry, OR number or reason…"
       rowMuted={(row) => row.cancelled}
-      empty="Nothing here yet."
+      empty="No entries on this lease yet. Charges land here as the nightly accrual bills each period, and payments as the collector's tablet syncs."
     />
   );
 }

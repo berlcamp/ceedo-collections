@@ -10,7 +10,7 @@ import { cn } from "./cn";
  * is the part that was left blank for you to write in.
  */
 export const controlClass =
-  "w-full rounded-[2px] border bg-tape-sunk px-2.5 text-sm text-ink " +
+  "w-full rounded-lg border bg-tape-sunk px-2.5 text-sm text-ink " +
   "border-rule-strong placeholder:text-ink-3 " +
   "transition-colors duration-150 hover:border-ink-3 " +
   "focus:border-mark focus:bg-tape-raised " +

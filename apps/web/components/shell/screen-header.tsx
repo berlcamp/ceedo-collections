@@ -22,14 +22,12 @@ export function ScreenHeader({
   aside?: ReactNode;
 }) {
   return (
-    <header className="mb-5 border-b border-rule pb-4">
+    <header className="mb-6">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="min-w-0 flex-1">
-          <h1 className="text-lg font-semibold leading-tight tracking-[-0.015em] text-ink">
-            {title}
-          </h1>
+          <h1 className="text-2xl font-bold leading-tight tracking-tight text-ink">{title}</h1>
           {note ? (
-            <p className="mt-1.5 max-w-[68ch] text-sm leading-relaxed text-ink-2">{note}</p>
+            <p className="mt-1 max-w-[68ch] text-sm leading-relaxed text-ink-3">{note}</p>
           ) : null}
         </div>
         {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}

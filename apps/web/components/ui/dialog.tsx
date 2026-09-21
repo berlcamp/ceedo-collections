@@ -65,8 +65,8 @@ export function DialogContent({
           width === "sm" && "sm:w-[22rem]",
           width === "md" && "sm:w-[30rem]",
           width === "lg" && "sm:w-[44rem]",
-          "rounded-[3px] border border-chassis-600 bg-tape-raised",
-          "shadow-[0_18px_44px_-12px_rgba(22,21,15,0.45)]",
+          "rounded-xl border border-chassis-600 bg-tape-raised",
+          "shadow-[0_18px_44px_-12px_rgba(12,18,26,0.45)]",
           "data-[state=open]:animate-[docket-in_180ms_cubic-bezier(0.16,1,0.3,1)]",
         )}
       >
@@ -98,7 +98,7 @@ export function DialogContent({
           <DialogPrimitive.Close
             aria-label="Close"
             className={cn(
-              "on-chassis -mr-1 mt-px shrink-0 rounded-[2px] p-1 transition-colors duration-150",
+              "on-chassis -mr-1 mt-px shrink-0 rounded-md p-1 transition-colors duration-150",
               tone === "danger"
                 ? "text-tape-raised/70 hover:bg-black/15 hover:text-tape-raised"
                 : "text-chassis-dim hover:bg-chassis-700 hover:text-chassis-ink",
