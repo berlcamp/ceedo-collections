@@ -1,7 +1,6 @@
 import { drizzle } from "drizzle-orm/expo-sqlite";
 import { sync, type SyncOutcome } from "@ceedo/sync-engine";
-import { openDeviceDb } from "../db/client";
-import { expoSqliteDriver } from "../db/driver";
+import { deviceDriver } from "../db/driver";
 import { httpTransport } from "./transport";
 import { apiConfig } from "./config";
 import { loadCredential } from "../auth/credential-store";
@@ -59,7 +58,11 @@ export async function runSync(
 ): Promise<SyncOutcome> {
   const config = apiConfig();
   return sync({
-    driver: expoSqliteDriver(openDeviceDb()),
+    // The memoized driver (ruling R11), not a fresh `expoSqliteDriver(openDeviceDb())`.
+    // This was the one call site the sweep missed. Harmless here -- it is not a render
+    // body, so the new object identity could not restart an effect -- but R11 was meant to
+    // be all of them, and one survivor is how the pattern comes back.
+    driver: deviceDriver(),
     transport: httpTransport(config),
     credentialId,
     secret,

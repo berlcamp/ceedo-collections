@@ -225,8 +225,18 @@ describe("the shift lifecycle", () => {
     );
 
     expect(outcome.status).toBe("mismatch");
+    if (outcome.status === "mismatch") expect(outcome.deviceTotal).toBe("200.00");
     const row = db.prepare("select status from local_shifts where id = ?").get(id);
     expect(row).toEqual({ status: "open" });
+
+    // The QUEUED PAYLOAD, not just the outcome. Parent §6.5 step 2 has the device send its
+    // own count and sum, and that figure is what close_shift compares against -- but until
+    // now nothing anywhere asserted the `device_total` that actually goes on the wire. A
+    // change that broke the wiring between deviceTotals and this payload (a hardcoded
+    // "0.00", the declared total substituted for the device total, a float) would have
+    // passed every test in this file while making every closeout mismatch.
+    const entry = (await pushable(driver)).find((r) => r.type === "shift_close");
+    expect(entry?.payload).toMatchObject({ device_count: 1, device_total: "200.00" });
   });
 
   it("writes closed_unsynced with no signal, and still queues the push", async () => {

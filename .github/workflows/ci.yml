@@ -48,7 +48,13 @@ jobs:
             # Must send the gateway credential AND match our own body. Kong answers 401 for a
             # missing apikey, so polling on the status code alone goes green as soon as the
             # gateway is up -- while the Function may be broken or not serving at all.
-            body=$(curl -s -X POST http://127.0.0.1:54321/functions/v1/sync-pull \
+            # $API_URL, never a hardcoded port. supabase/config.toml declares this
+            # project's non-default ports (api 56321 -- see the README), so the literal
+            # 127.0.0.1:54321 that used to be here polled nothing at all and this loop ran
+            # its full 60s before failing with "Edge Functions did not become ready" --
+            # blaming the Functions for a port. API_URL comes from the `supabase status`
+            # step above and follows config.toml wherever it goes next.
+            body=$(curl -s -X POST "$API_URL/functions/v1/sync-pull" \
                      -H "apikey: $ANON_KEY" \
                      -H "Authorization: Bearer $ANON_KEY" \
                      -H 'content-type: application/json' -d '{}' || true)
