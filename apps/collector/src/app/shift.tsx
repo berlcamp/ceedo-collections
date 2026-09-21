@@ -9,7 +9,13 @@ import {
   View,
 } from "react-native";
 import { randomUUID } from "expo-crypto";
-import { deviceTotals, openShift, pushable, type OutboxRow } from "@ceedo/sync-engine";
+import {
+  deviceTotals,
+  openShift,
+  purgeAcked,
+  pushable,
+  type OutboxRow,
+} from "@ceedo/sync-engine";
 import { deviceDriver } from "../db/driver";
 import { signedIn, signOut } from "../auth/session";
 import { businessDate, syncNow } from "../sync/device-sync";
@@ -117,6 +123,18 @@ export default function Shift() {
               `Synced${outcome.fullResync ? " (full re-sync)" : ""}. ` +
                 `${outcome.pushed} entr${outcome.pushed === 1 ? "y" : "ies"} pushed.`,
             );
+            // §6.4's retention rule had no caller until now; the outbox simply grew.
+            // Rejected entries are NOT purged -- they are kept until resolved, because a
+            // rejection never means discard (§6.3). Housekeeping runs only after a sync
+            // that already succeeded, and its own failure is swallowed rather than
+            // reported: a purge that failed to run this time will get another chance on
+            // the next sync, but a sync that failed because housekeeping threw would cost
+            // the collector the very thing this screen exists to guarantee.
+            try {
+              await purgeAcked(driver, 30);
+            } catch {
+              // Deliberately silent -- see comment above.
+            }
           } catch (error) {
             // Never fatal. A collector with no signal keeps working offline; that is the
             // whole design (parent §3).
