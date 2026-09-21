@@ -10,8 +10,7 @@ import {
 } from "react-native";
 import { randomUUID } from "expo-crypto";
 import { deviceTotals, openShift, pushable, type OutboxRow } from "@ceedo/sync-engine";
-import { openDeviceDb } from "../db/client";
-import { expoSqliteDriver } from "../db/driver";
+import { deviceDriver } from "../db/driver";
 import { signedIn, signOut } from "../auth/session";
 import { businessDate, syncNow } from "../sync/device-sync";
 
@@ -29,7 +28,7 @@ interface LocalShift {
  */
 export default function Shift() {
   const router = useRouter();
-  const driver = expoSqliteDriver(openDeviceDb());
+  const driver = deviceDriver();
   const collector = signedIn();
 
   const [shift, setShift] = useState<LocalShift | null>(null);

@@ -20,8 +20,7 @@ import {
 // Relative, not the `@/modules/...` alias the Expo docs show: this project maps `@/*` to
 // `./src/*`, so that alias would resolve to src/modules/ and silently miss.
 import { verify as nativeVerify, meetsExpectedCost } from "../../modules/ceedo-bcrypt";
-import { openDeviceDb } from "../db/client";
-import { expoSqliteDriver } from "../db/driver";
+import { deviceDriver } from "../db/driver";
 import { setSession } from "../auth/session";
 import { syncNow } from "../sync/device-sync";
 import type { Collector } from "../auth/types";
@@ -56,7 +55,7 @@ const MAX_PIN_FAILURES = 5;
 
 export default function SignIn() {
   const router = useRouter();
-  const driver = expoSqliteDriver(openDeviceDb());
+  const driver = deviceDriver();
 
   const [collectors, setCollectors] = useState<Collector[]>([]);
   const [collectorId, setCollectorId] = useState<string | null>(null);

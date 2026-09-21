@@ -12,8 +12,7 @@ import {
 } from "react-native";
 import { closeShift, deviceTotals, type CloseOutcome } from "@ceedo/sync-engine";
 import { parsePesoInput, toDecimalString } from "@ceedo/shared";
-import { openDeviceDb } from "../db/client";
-import { expoSqliteDriver } from "../db/driver";
+import { deviceDriver } from "../db/driver";
 import { businessDate } from "../sync/device-sync";
 import { apiConfig } from "../sync/config";
 import { httpTransport } from "../sync/transport";
@@ -30,7 +29,7 @@ import { loadCredential } from "../auth/credential-store";
 export default function Closeout() {
   const router = useRouter();
   const { shiftId } = useLocalSearchParams<{ shiftId: string }>();
-  const driver = expoSqliteDriver(openDeviceDb());
+  const driver = deviceDriver();
 
   const [totals, setTotals] = useState({ count: 0, total: "0.00" });
   const [declared, setDeclared] = useState("");

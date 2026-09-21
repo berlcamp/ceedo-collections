@@ -10,8 +10,7 @@ import {
   type OrEntryResult,
 } from "@ceedo/shared";
 import { commitReceipt, orEntryContext } from "@ceedo/sync-engine";
-import { openDeviceDb } from "../db/client";
-import { expoSqliteDriver } from "../db/driver";
+import { deviceDriver } from "../db/driver";
 import { signedIn } from "../auth/session";
 import { clearDraft, draft } from "../collect/draft";
 
@@ -29,32 +28,54 @@ import { clearDraft, draft } from "../collect/draft";
  */
 export default function Receipt() {
   const router = useRouter();
-  const driver = expoSqliteDriver(openDeviceDb());
+  const driver = deviceDriver();
   const collector = signedIn();
   const pending = draft();
 
   const [context, setContext] = useState<OrEntryContext | null>(null);
+  const [contextError, setContextError] = useState<string | null>(null);
   const [orText, setOrText] = useState("");
   const [check, setCheck] = useState<OrEntryResult | null>(null);
   const [acceptedSkip, setAcceptedSkip] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Named so the "Try again" button below can call the exact same load rather than
+  // duplicating it. If this read fails, `context` stays null and Record would otherwise
+  // stay disabled with nothing on screen saying why -- the same shape as the PIN-screen
+  // stranding bug from the previous phase, just relocated. So it always resolves one way
+  // or the other: either a context, or a stated reason plus a way to retry.
+  const loadContext = useCallback(() => {
     if (!collector) return;
-    void orEntryContext(driver, collector.id).then(setContext);
+    setContextError(null);
+    orEntryContext(driver, collector.id)
+      .then(setContext)
+      .catch((caught: unknown) => {
+        setContextError(`Could not load your booklets: ${String(caught)}`);
+      });
   }, [collector, driver]);
 
-  const validate = useCallback(
-    (text: string) => {
-      setOrText(text);
-      setAcceptedSkip(false);
-      const orNo = Number.parseInt(text, 10);
-      if (!context || !Number.isInteger(orNo) || orNo <= 0) return setCheck(null);
-      setCheck(validateOrEntry(context, orNo));
-    },
-    [context],
-  );
+  useEffect(() => {
+    loadContext();
+  }, [loadContext]);
+
+  // ONE effect drives validation, keyed on both the typed text and the booklet context,
+  // rather than validating only from the TextInput's onChangeText. `check === null` used
+  // to conflate two causes: "not a valid number yet" and "context has not loaded yet". A
+  // collector who types a complete, valid OR number before orEntryContext resolves would
+  // see a dead Record button that self-heals only on the NEXT keystroke -- there might not
+  // be one, since they already finished typing. Keying this off `context` too means a
+  // number already sitting in the field is evaluated the instant the booklets arrive, with
+  // no further input required.
+  useEffect(() => {
+    setAcceptedSkip(false);
+    const orNo = Number.parseInt(orText, 10);
+    if (!context || !Number.isInteger(orNo) || orNo <= 0) {
+      setCheck(null);
+      return;
+    }
+    setCheck(validateOrEntry(context, orNo));
+  }, [context, orText]);
 
   if (!collector) return <Text style={styles.note}>Sign in first.</Text>;
   if (!pending) return <Text style={styles.note}>Nothing to record. Start from the shift screen.</Text>;
@@ -103,8 +124,17 @@ export default function Receipt() {
         keyboardType="number-pad"
         placeholder="OR number"
         value={orText}
-        onChangeText={validate}
+        onChangeText={setOrText}
       />
+
+      {contextError ? (
+        <View style={styles.warnBox}>
+          <Text style={styles.error}>{contextError}</Text>
+          <Button title="Try again" onPress={loadContext} />
+        </View>
+      ) : !context ? (
+        <Text style={styles.note}>Loading your booklets…</Text>
+      ) : null}
 
       {check && !check.ok ? <Text style={styles.error}>{reason(check)}</Text> : null}
       {check?.ok && matchedBooklet ? (

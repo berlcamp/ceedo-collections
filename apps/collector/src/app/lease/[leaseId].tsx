@@ -11,8 +11,7 @@ import {
   type PeriodGroup,
 } from "@ceedo/shared";
 import { leaseLedgerDetail, ledgerStaleness } from "@ceedo/sync-engine";
-import { openDeviceDb } from "../../db/client";
-import { expoSqliteDriver } from "../../db/driver";
+import { deviceDriver } from "../../db/driver";
 import { setDraft } from "../../collect/draft";
 import { businessDate, syncNow } from "../../sync/device-sync";
 
@@ -46,7 +45,7 @@ interface Header {
 export default function Lease() {
   const { leaseId } = useLocalSearchParams<{ leaseId: string }>();
   const router = useRouter();
-  const driver = expoSqliteDriver(openDeviceDb());
+  const driver = deviceDriver();
 
   const [header, setHeader] = useState<Header | null>(null);
   const [groups, setGroups] = useState<PeriodGroup[]>([]);

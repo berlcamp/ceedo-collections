@@ -1,8 +1,7 @@
 import { useCallback, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { openDeviceDb } from "../db/client";
-import { expoSqliteDriver } from "../db/driver";
+import { deviceDriver } from "../db/driver";
 import { signedIn } from "../auth/session";
 
 interface LeaseHit {
@@ -25,7 +24,7 @@ interface LeaseHit {
  */
 export default function Leases() {
   const router = useRouter();
-  const driver = expoSqliteDriver(openDeviceDb());
+  const driver = deviceDriver();
   const collector = signedIn();
 
   const [query, setQuery] = useState("");
