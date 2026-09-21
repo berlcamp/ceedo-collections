@@ -217,12 +217,33 @@ Acked entries are the one case the overlay must eventually stop covering: once t
 own `collection_allocations` row arrives on the next pull, both rows describe the same
 settlement and the ledger must not subtract twice.
 
-The overlay therefore deduplicates on **`(collection_id, charge_id)`**, preferring the
-pulled row, and keeps the local one only where no pulled row carries that pair. Not on
-`charge_id` alone: `charge_balances` deliberately *sums* every allocation against a charge,
-because two collections allocating to one charge is the double-payment migration `0032`'s
-row lock exists to prevent — and a ledger that collapsed them would report that failure as
-correctly settled, hiding the exact condition the lock was built to make visible.
+The overlay therefore deduplicates **per `collection_id`**: a local allocation is kept only
+while the pull carries *no* `collection_allocations` row at all for that collection, and
+every local row of a collection the server has reported on is dropped in favour of the
+server's set.
+
+Not on `charge_id` alone: `charge_balances` deliberately *sums* every allocation against a
+charge, because two collections allocating to one charge is the double-payment migration
+`0032`'s row lock exists to prevent — and a ledger that collapsed them would report that
+failure as correctly settled, hiding the exact condition the lock was built to make
+visible. The per-collection key preserves that distinction exactly: a local collection with
+no pulled rows of its own is still subtracted, whichever charges some *other* collection
+has already claimed.
+
+And not on the `(collection_id, charge_id)` **pair** either, which is the stronger-looking
+key and is wrong. The pair assumes that when the server's rows for a collection arrive they
+name the same charges the device recorded. **F7 is the decision that says they may not**:
+`post_collection` resolves ranks *positionally at post time*, so when another tablet settles
+a group and the accrual raises a new period, the count still matches, the post is accepted,
+and the ranks name different periods. The device wrote `(k1, A)` and `(k1, B)`; the pull
+brings `(k1, C)` and `(k1, D)`. Under a pair key neither `A` nor `B` is suppressed and the
+ledger subtracts **four** settlements from one receipt — and `A` and `B` then read as
+settled on that device *permanently*, because nothing deletes `local_allocations` and an
+epoch reset wipes only the pulled tables. The collector is never shown those periods again,
+so they are never collected. The closeout still catches the shift's amount divergence and
+blocks (F7 working as designed), but reconciling a shift does not repair the device's
+ledger. Once *any* server row for a collection arrives, the server's set is authoritative
+for that collection and the device's guesses about it are dropped entirely.
 
 ### F5 in full — two writes that must not be separable
 

@@ -43,17 +43,37 @@ async function readLedgerInput(
   }>("select collection_id, charge_id, amount from collection_allocations");
 
   /*
-   * The overlay. Every local allocation whose outbox entry has NOT been superseded by a
-   * pulled row of the same (collection_id, charge_id) pair.
+   * The overlay. Every local allocation belonging to a collection the server has NOT yet
+   * reported any allocation for.
    *
    * `rejected` entries stay in. Parent §6.3 is explicit that a rejection never means
    * discard: by the time the server sees a problem the collector has handed a vendor a
    * paper official receipt and taken their money, and that serial is spent.
    *
-   * DEDUPLICATED ON THE PAIR, NOT ON charge_id. charge_balances SUMS every allocation
-   * against a charge, because two collections allocating to one charge is the double
-   * payment migration 0032's row lock exists to prevent -- a ledger that collapsed them
-   * would report that failure as correctly settled.
+   * DEDUPLICATED PER COLLECTION, NOT PER (collection_id, charge_id) PAIR, AND NOT ON
+   * charge_id. Each of those three keys is wrong in a different direction:
+   *
+   *   - charge_id alone would collapse TWO DIFFERENT collections settling one charge.
+   *     charge_balances deliberately SUMS those, because that is the double payment
+   *     migration 0032's row lock exists to make visible -- a ledger that collapsed them
+   *     would report that failure as correctly settled. Keying per COLLECTION keeps that
+   *     distinction intact: a local collection with no pulled rows of its own is still
+   *     subtracted, whichever charges some other collection already claimed.
+   *
+   *   - the PAIR silently assumes that when the server's rows for a collection arrive they
+   *     name the same charges the device recorded. F7 is the decision that says they may
+   *     not: post_collection resolves ranks POSITIONALLY at post time, so if another tablet
+   *     settled a group and the accrual raised a new one, the count still matches and the
+   *     ranks name different periods. The server then allocates k1 to charges C and D while
+   *     the device wrote A and B; under a pair key neither A nor B is suppressed and the
+   *     ledger subtracts FOUR settlements from one receipt. A and B then read as settled on
+   *     that device permanently -- nothing deletes local_allocations, and an epoch reset
+   *     only wipes the pulled tables -- so the collector is never shown them again and they
+   *     are never collected. The closeout catches the shift's amount divergence and blocks,
+   *     which is F7 working as designed, but reconciling a shift does not repair this.
+   *
+   * Once ANY server row for a collection has arrived, the server's set is authoritative for
+   * that collection and the device's guesses about it are dropped entirely.
    */
   const local = await driver.select<{
     collection_id: string;
@@ -67,14 +87,14 @@ async function readLedgerInput(
     [leaseId],
   );
 
-  const seen = new Set(pulled.map((r) => `${r.collection_id}|${r.charge_id}`));
+  const settled = new Set(pulled.map((r) => r.collection_id));
   const allocations: LedgerAllocation[] = pulled.map((r) => ({
     collectionId: r.collection_id,
     chargeId: r.charge_id,
     amount: parsePesoInput(r.amount),
   }));
   for (const r of local) {
-    if (seen.has(`${r.collection_id}|${r.charge_id}`)) continue;
+    if (settled.has(r.collection_id)) continue;
     allocations.push({
       collectionId: r.collection_id,
       chargeId: r.charge_id,

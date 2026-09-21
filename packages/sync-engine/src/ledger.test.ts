@@ -103,10 +103,11 @@ describe("leaseLedger", () => {
   });
 
   it("does not subtract twice once the server's own row arrives", async () => {
-    // Same (collection_id, charge_id) pair from both sides. Deduplicated on the PAIR, not
-    // on charge_id alone: charge_balances deliberately SUMS two different collections
-    // against one charge, because that is the double payment migration 0032's row lock
-    // exists to make visible.
+    // The same collection from both sides. Deduplicated per COLLECTION, not on charge_id
+    // alone: charge_balances deliberately SUMS two different collections against one
+    // charge, because that is the double payment migration 0032's row lock exists to make
+    // visible -- see the "TWO DIFFERENT collections" test below, which stays green under
+    // the per-collection key precisely because k2 has no pulled row of its OWN.
     db.exec(`
       insert into local_collections
         (id, or_no, booklet_id, collector_id, shift_id, collected_at, fee_type_id,
@@ -123,6 +124,46 @@ describe("leaseLedger", () => {
 
     const groups = await leaseLedger(driver, "L1");
     expect(groups.map((g) => g.chargeIds)).toEqual([["r2"], ["r3"]]);
+  });
+
+  it("drops ALL of a collection's local rows once the server names its charges (F7)", async () => {
+    // The F7 race, and the reason the overlay cannot deduplicate on the PAIR.
+    //
+    // The device recorded k1 against ranks [1] and resolved that to charges r1 + s1.
+    // Before the push landed, another tablet settled group 1 and the nightly accrual
+    // raised a new period, so post_collection -- which resolves ranks POSITIONALLY at post
+    // time -- allocated k1 to a DIFFERENT charge (r2). The count still matched, so the
+    // server accepted: that is F7's own "third way it goes wrong".
+    //
+    // Under a (collection_id, charge_id) dedup key, neither (k1,r1) nor (k1,s1) is
+    // suppressed by the pulled (k1,r2), so the ledger subtracts THREE settlements from one
+    // receipt and r1/s1 read as paid on this device FOREVER -- nothing deletes
+    // local_allocations, and an epoch reset only wipes the pulled tables. The collector is
+    // never shown those periods again, so they are never collected.
+    //
+    // Once the server's rows for a receipt arrive, the server's set is authoritative FOR
+    // THAT RECEIPT and the device's guesses must be dropped entirely.
+    db.exec(`
+      insert into local_collections
+        (id, or_no, booklet_id, collector_id, shift_id, collected_at, fee_type_id,
+         lease_id, gross_amount, created_at)
+      values ('k1', 1, 'b1', 'c1', 'sh1', '2026-09-21T01:00:00.000Z', 'f1', 'L1',
+              '1545.00', '2026-09-21T01:00:00.000Z');
+      insert into local_allocations (collection_id, charge_id, amount)
+      values ('k1','r1','1500.00'), ('k1','s1','45.00');
+      insert into collection_allocations (id, collection_id, charge_id, amount)
+      values ('a1','k1','r2','1500.00');
+      insert into outbox (id, type, payload, collector_id, created_at, state, attempts, seq)
+      values ('k1','collection','{}','c1','2026-09-21T01:00:00.000Z','acked',1,1);
+    `);
+
+    const groups = await leaseLedger(driver, "L1");
+    expect(groups.map((g) => g.chargeIds)).toEqual([["r1", "s1"], ["r3"]]);
+
+    const { perCharge } = await leaseLedgerDetail(driver, "L1");
+    expect(perCharge.get("r1")).toBe(150_000);
+    expect(perCharge.get("s1")).toBe(4_500);
+    expect(perCharge.has("r2")).toBe(false);
   });
 
   it("counts TWO DIFFERENT collections against one charge, pulled and local both", async () => {
