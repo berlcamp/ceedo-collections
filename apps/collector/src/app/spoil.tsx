@@ -28,6 +28,7 @@ export default function Spoil() {
   const [contextError, setContextError] = useState<string | null>(null);
   const [orText, setOrText] = useState("");
   const [reason, setReason] = useState("");
+  const [acceptedSkip, setAcceptedSkip] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -60,6 +61,14 @@ export default function Spoil() {
     context && Number.isInteger(orNo) && orNo > 0 ? validateOrEntry(context, orNo) : null;
   const reasonGiven = reason.trim() !== "";
 
+  // A skip is a warning here for the same reason it is on receipt.tsx -- booklets
+  // legitimately get skipped -- but the cost of a mistyped serial is worse on THIS
+  // screen: a wrong-serial receipt disagrees with a cash trail (amount, tenant,
+  // closeout); a wrong-serial spoil leaves no trail at all until the booklet is
+  // reconciled, much later, by someone else. So an out-of-sequence serial is
+  // confirmable, never silent and never a hard block.
+  const skipUnconfirmed = check?.ok === true && check.warning === "sequence_skipped" && !acceptedSkip;
+
   return (
     <View style={styles.screen}>
       <Text style={styles.heading}>Spoil a form</Text>
@@ -75,6 +84,7 @@ export default function Spoil() {
         value={orText}
         onChangeText={(text) => {
           setOrText(text);
+          setAcceptedSkip(false);
           setError(null);
         }}
       />
@@ -82,7 +92,10 @@ export default function Spoil() {
         style={styles.input}
         placeholder="Why (torn, misprinted, wrong amount…)"
         value={reason}
-        onChangeText={setReason}
+        onChangeText={(text) => {
+          setReason(text);
+          setError(null);
+        }}
       />
 
       {contextError ? (
@@ -105,6 +118,15 @@ export default function Spoil() {
                 : "That number is not inside any booklet assigned to you."}
         </Text>
       ) : null}
+      {skipUnconfirmed ? (
+        <View style={styles.warnBox}>
+          <Text style={styles.warn}>
+            This skips one or more numbers in the booklet. That is allowed — confirm the
+            number you typed matches the form you are holding.
+          </Text>
+          <Button title="Yes, that is the form in my hand" onPress={() => setAcceptedSkip(true)} />
+        </View>
+      ) : null}
       {check?.ok && !reasonGiven ? (
         <Text style={styles.note}>Give a reason before this form can be marked spoiled.</Text>
       ) : null}
@@ -112,9 +134,9 @@ export default function Spoil() {
 
       <Button
         title="Mark spoiled"
-        disabled={busy || !check?.ok || !reasonGiven}
+        disabled={busy || !check?.ok || !reasonGiven || skipUnconfirmed}
         onPress={async () => {
-          if (!check?.ok || !reasonGiven) return;
+          if (!check?.ok || !reasonGiven || skipUnconfirmed) return;
           setBusy(true);
           setError(null);
           try {
@@ -148,5 +170,6 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderColor: "#999", borderRadius: 6, padding: 12, fontSize: 18 },
   error: { color: "#b71c1c", fontSize: 15 },
   warnBox: { backgroundColor: "#fff8e1", padding: 10, borderRadius: 6, gap: 8 },
+  warn: { fontSize: 14 },
   note: { padding: 16, fontSize: 15, color: "#666" },
 });
