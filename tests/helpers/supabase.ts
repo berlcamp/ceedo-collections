@@ -10,7 +10,10 @@ import { Client as PgClient } from "pg";
 // `supabase status -o env` emits API_URL / ANON_KEY / SERVICE_ROLE_KEY. Accept those
 // as well as SUPABASE_-prefixed names so `eval $(supabase status -o env)` just works
 // locally while CI and hosted environments can use the explicit names.
-const URL = process.env.SUPABASE_URL ?? process.env.API_URL ?? "http://127.0.0.1:54321";
+// 56321, not the 54321 default. The comment above is right and the old default
+// contradicted it: school-management owns 54321 on this machine, so falling through
+// to it silently hit that project's gateway instead of failing.
+const URL = process.env.SUPABASE_URL ?? process.env.API_URL ?? "http://127.0.0.1:56321";
 const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? process.env.ANON_KEY ?? "";
 const SERVICE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SERVICE_ROLE_KEY ?? "";
@@ -25,10 +28,13 @@ if (!ANON_KEY || !SERVICE_KEY) {
 const SCHEMA = "ceedo_collections";
 // `supabase status -o env` also emits DB_URL, the direct Postgres connection used only by
 // createGoogleAuthUser below (see its doc comment for why).
+// 56322, not the 54322 default: this project declares its own ports in
+// supabase/config.toml because another stack on the development machine owns the
+// defaults. A fallback pointing at 54322 reaches that other project's Postgres.
 const PG_URL =
   process.env.SUPABASE_DB_URL ??
   process.env.DB_URL ??
-  "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+  "postgresql://postgres:postgres@127.0.0.1:56322/postgres";
 
 /**
  * The direct Postgres connection string. Exported for tests that must run inside a

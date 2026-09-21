@@ -7,8 +7,11 @@
  * risks falling through to the hardcoded default and silently hitting the wrong project's
  * gateway.
  */
+// 56321, not the 54321 default. The comment above is right and the old default
+// contradicted it: school-management owns 54321 on this machine, so falling through
+// to it silently hit that project's gateway instead of failing.
 export const GATEWAY_URL =
-  process.env.SUPABASE_URL ?? process.env.API_URL ?? "http://127.0.0.1:54321";
+  process.env.SUPABASE_URL ?? process.env.API_URL ?? "http://127.0.0.1:56321";
 
 const BASE = process.env.FUNCTIONS_URL ?? `${GATEWAY_URL}/functions/v1`;
 

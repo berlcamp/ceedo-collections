@@ -26,9 +26,49 @@ import { Client as PgClient } from "pg";
  * A harness built on `set role` would look like it closed this bug class while leaving
  * three of the five mechanisms unreproduced.
  */
+/**
+ * DERIVED FROM `DB_URL`, NOT HARDCODED.
+ *
+ * This read the literal `127.0.0.1:54322` — the Supabase DEFAULT port — while this
+ * project declares 56322 in `supabase/config.toml`, because more than one stack runs on
+ * the development machine. Nothing ever sets `SUPABASE_AUTHENTICATOR_URL`:
+ * `supabase status -o env` does not emit it, and neither does CI. So the fallback was the
+ * only value that ever applied, and it pointed at ANOTHER PROJECT'S POSTGRES.
+ *
+ * It failed loudly rather than silently, which is the one mercy here — `role "ceedo_app"
+ * does not exist`, because that role belongs to this project and not to whatever answers
+ * on 54322. But it read as a schema or migration defect, and the two files that use this
+ * helper (`first-sync-budget`, `role-exemptions`) failed on every local run for a reason
+ * that had nothing to do with either.
+ *
+ * Deriving the URL from the same `DB_URL` that `supabase.ts` already reads means the port
+ * can never drift from the project's own config again: `eval $(supabase status -o env)`
+ * now configures both helpers from one value. Only the role changes — `authenticator` is
+ * the login PostgREST uses, and its password is fixed at `postgres` by the local stack.
+ *
+ * Same class as `5d69970`, where the port change missed both env examples and cost a real
+ * sign-in. This is the last copy of that default in the repo.
+ */
+function asAuthenticator(dbUrl: string): string {
+  try {
+    const url = new URL(dbUrl);
+    url.username = "authenticator";
+    url.password = "postgres";
+    return url.toString();
+  } catch {
+    // A malformed DB_URL is the caller's problem to see, not ours to paper over: hand it
+    // back untouched so `pg` reports it rather than this helper swallowing it.
+    return dbUrl;
+  }
+}
+
 const AUTHENTICATOR_URL =
   process.env.SUPABASE_AUTHENTICATOR_URL ??
-  "postgresql://authenticator:postgres@127.0.0.1:54322/postgres";
+  asAuthenticator(
+    process.env.SUPABASE_DB_URL ??
+      process.env.DB_URL ??
+      "postgresql://postgres:postgres@127.0.0.1:56322/postgres",
+  );
 
 export async function authenticatorClient(): Promise<PgClient> {
   const client = new PgClient({ connectionString: AUTHENTICATOR_URL });

@@ -150,7 +150,16 @@ describe("sync_pull first-sync budget", () => {
     // round trip the first time this fixture was wrong.
     await app?.end();
     await fixtures?.end();
-  });
+    // THE SAME BUDGET `beforeAll` GETS, AND FOR THE SAME REASON. This hook deletes the
+    // largest fixture in the suite -- 1,461 charges plus their collections and
+    // allocations -- and it was left on vitest's 10s default while the beforeAll that
+    // BUILDS that fixture was given 120s. It passed while the shared database was light
+    // and began timing out once it was not, which reads as a sync_pull regression and is
+    // nothing of the kind: every test in the file passes, and only the cleanup runs out
+    // of time. A teardown that gives up half way is also the worst outcome here, since
+    // the comment above explains at length why leaving this fixture behind corrupts
+    // surcharge.test.ts.
+  }, 120_000);
 
   it("completes a cursor-0 pull inside half the production statement_timeout", async () => {
     const started = Date.now();

@@ -11,7 +11,9 @@ const service = serviceClient();
 const PG_URL =
   process.env.SUPABASE_DB_URL ??
   process.env.DB_URL ??
-  "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+  // 56322, not the 54322 default: another stack on this machine owns the defaults
+  // (school-management holds 54321/54322), so that fallback reaches its Postgres.
+  "postgresql://postgres:postgres@127.0.0.1:56322/postgres";
 
 describe("audit log", () => {
   let adminClient: Awaited<ReturnType<typeof createAppUser>>["client"];
