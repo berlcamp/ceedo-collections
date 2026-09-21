@@ -1411,7 +1411,7 @@ Expected: **FAIL** on "subtracts THIS DEVICE's unsynced allocations" and "keeps 
 
 ```bash
 git add packages/sync-engine/src/ledger.ts packages/sync-engine/src/ledger.test.ts \
-        packages/sync-engine/src/index.ts
+        packages/sync-engine/src/index.ts packages/shared/src/outstanding.ts
 git commit -m "feat(sync-engine): the local ledger, and the overlay that keeps it honest
 
 leaseLedger reads the pulled ledger tables plus this device's own unsynced
