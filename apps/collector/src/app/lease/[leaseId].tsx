@@ -198,7 +198,9 @@ export default function Lease() {
       ) : null}
 
       <Text style={styles.total}>Receipt total {format(gross)}</Text>
-      {change > 0 ? <Text style={styles.change}>Change {format(change)}</Text> : null}
+      {ranks.length > 0 && change > 0 ? (
+        <Text style={styles.change}>Change {format(change)}</Text>
+      ) : null}
 
       <Button
         title="Proceed to payment"
