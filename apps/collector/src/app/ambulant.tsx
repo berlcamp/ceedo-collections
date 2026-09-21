@@ -99,6 +99,20 @@ export default function Ambulant() {
 
   const gross = sum(lines.map((l) => l.amount));
 
+  // One fee type per receipt (review R12). parent §10's Abstract of Collections totals by
+  // fee type off the collections row, and this screen's own `choices` query is not scoped
+  // to one fee type -- it offers every non-accruing fee active on the tablet -- so nothing
+  // upstream stops a collector tapping a different fee between "Add to receipt" presses.
+  // Locking here, once the first line exists, is what makes that true rather than assumed.
+  // A vehicle class (parent §2, Phase 5's terminal receipt) is a `rate_class` of ONE fee
+  // type, so this still allows several classes of the SAME fee on one receipt -- only a
+  // second fee type is refused.
+  const lockedFeeTypeId = lines.length > 0 ? lines[0]!.feeTypeId : null;
+  const lockedFeeName =
+    lockedFeeTypeId === null
+      ? null
+      : (choices.find((c) => c.fee_type_id === lockedFeeTypeId)?.fee_name ?? lockedFeeTypeId);
+
   const addLine = () => {
     if (!pick) return;
     // Strict digit-string check, not just Number.parseInt: parseInt("3abc", 10) returns 3,
@@ -142,18 +156,41 @@ export default function Ambulant() {
     <ScrollView style={styles.screen}>
       <Text style={styles.heading}>On-the-spot fee</Text>
 
-      {choices.map((choice) => (
-        <Pressable
-          key={`${choice.fee_type_id}|${choice.rate_class ?? ""}`}
-          style={[styles.choice, pick === choice && styles.choiceOn]}
-          onPress={() => setPick(choice)}
-        >
-          <Text style={styles.choiceText}>
-            {choice.fee_name}
-            {choice.rate_class ? ` · ${choice.rate_class}` : ""}
-          </Text>
-        </Pressable>
-      ))}
+      {choices.map((choice) => {
+        // Field comparison, not `pick === choice` (review, minor): `choices` is a fresh
+        // array after every `load()` -- including the "Sync now" retry below -- so a
+        // reference check would drop the highlight on a still-valid pick and, now that a
+        // mismatched tap is refused rather than a no-op, could read as that refusal to a
+        // collector who never actually lost their selection.
+        const isPicked =
+          pick !== null &&
+          pick.fee_type_id === choice.fee_type_id &&
+          pick.rate_class === choice.rate_class;
+        const isLockedOut = lockedFeeTypeId !== null && choice.fee_type_id !== lockedFeeTypeId;
+        return (
+          <Pressable
+            key={`${choice.fee_type_id}|${choice.rate_class ?? ""}`}
+            style={[styles.choice, isPicked && styles.choiceOn, isLockedOut && styles.choiceLocked]}
+            onPress={() => {
+              if (isLockedOut) {
+                // Named, not a silent no-op -- the stranding pattern this phase keeps
+                // finding. Says which fee the receipt is already for and what to do.
+                setError(
+                  `This receipt is already for ${lockedFeeName}. ${choice.fee_name} needs its own receipt -- add it after this one is recorded.`,
+                );
+                return;
+              }
+              setError(null);
+              setPick(choice);
+            }}
+          >
+            <Text style={styles.choiceText}>
+              {choice.fee_name}
+              {choice.rate_class ? ` · ${choice.rate_class}` : ""}
+            </Text>
+          </Pressable>
+        );
+      })}
 
       <Text style={styles.label}>Quantity</Text>
       <TextInput
@@ -194,8 +231,11 @@ export default function Ambulant() {
         onPress={() => {
           setDraft({
             kind: "lines",
-            // Every line on one receipt shares the receipt's fee type; the per-line type
-            // is what post_collection prices from.
+            // Enforced by the choice guard above, not assumed: a tap on a different fee
+            // type is refused before `pick` -- and so a line -- can hold it, so every line
+            // here already shares one fee type by construction. That is what makes
+            // lines[0] a safe stand-in for "the receipt's fee type", which is what parent
+            // §10's Abstract of Collections totals by.
             feeTypeId: lines[0]!.feeTypeId,
             label: "On-the-spot fee",
             lines,
@@ -213,6 +253,7 @@ const styles = StyleSheet.create({
   heading: { fontSize: 22, fontWeight: "700", marginBottom: 12 },
   choice: { padding: 12, borderWidth: 1, borderColor: "#ddd", borderRadius: 6, marginBottom: 6 },
   choiceOn: { backgroundColor: "#e3f2fd", borderColor: "#1976d2" },
+  choiceLocked: { opacity: 0.4 },
   choiceText: { fontSize: 16 },
   label: { marginTop: 12, fontSize: 14, color: "#666" },
   input: { borderWidth: 1, borderColor: "#999", borderRadius: 6, padding: 12, fontSize: 22 },
