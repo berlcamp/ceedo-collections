@@ -46,6 +46,17 @@
   another project would connect as `authenticator` to a database that has no such role.
 - **After every `supabase db reset`:** `psql "$DB_URL" -v label="'llejo android'" -v pin="'123456'" -f scripts/dev-wire-tablet.sql`, and re-issue the device credential on `/devices` and re-enrol by QR.
 - **Rebuild vs reload:** if it lands in the JS bundle, reload; if it lands in the APK, rebuild. `modules/ceedo-bcrypt` fails silently on a stale build.
+- **Run the full suite with `pnpm test`, never `npx vitest run` with no file argument.**
+  `pnpm test` is `vitest run --no-file-parallelism`, and `tests/vitest.config.ts` sets
+  `fileParallelism: false` for a stated reason: the suite shares one Postgres database and
+  one single-row `settings` table, so file-level concurrency over that shared mutable state
+  is flake, not signal. A parallel full run reports 13–21 failures that vary between runs
+  and are caused by the invocation, not the code. `npx vitest run <specific files>` is fine
+  — parallelism is moot with one file.
+- **Prefer fixtures scoped to your own lease over the global jobs.** `run_accrual()` and
+  `run_surcharge()` scan *every* active lease in the database, and this suite never cleans
+  up between files, so calling them corrupts unrelated files' expectations. Build the
+  charges you need with direct INSERTs against your own fixture's lease.
 - **`apps/collector` is NOT in the vitest workspace** (`vitest.workspace.ts` is `["packages/*", "apps/web", "tests"]`). Any logic that needs a test goes in `packages/sync-engine` or `packages/shared`. Screens are verified by `pnpm typecheck`, a clean `npx expo export`, and the device session in Task 12.
 
 ---
