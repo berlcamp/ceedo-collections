@@ -53,6 +53,15 @@
   is flake, not signal. A parallel full run reports 13–21 failures that vary between runs
   and are caused by the invocation, not the code. `npx vitest run <specific files>` is fine
   — parallelism is moot with one file.
+- **Run `supabase db reset` before any full-suite run whose result you intend to report.**
+  The suite never cleans up between files, so fixtures accumulate in the long-lived local
+  database and the slowest teardowns start exceeding their timeouts. Measured three times
+  on this branch: an accumulated database gives 4–21 failures that look alarming and are
+  not real; immediately after a reset the same commit is **809/809 across 76 files**.
+  `tests/db/first-sync-budget.test.ts` is the canary — 12.2s and a hook timeout when dirty,
+  767ms when fresh. A reset costs about a minute and removes a whole class of false alarm.
+  Note it destroys the device row, its credential and its assignments, so the tablet needs
+  re-enrolling afterwards (see Operational notes).
 - **Prefer fixtures scoped to your own lease over the global jobs.** `run_accrual()` and
   `run_surcharge()` scan *every* active lease in the database, and this suite never cleans
   up between files, so calling them corrupts unrelated files' expectations. Build the
