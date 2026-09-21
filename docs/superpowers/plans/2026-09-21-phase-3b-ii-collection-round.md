@@ -27,14 +27,23 @@
   unrelated project's database. Confirm with `docker ps --format '{{.Names}}\t{{.Ports}}'`
   before trusting any port, because `supabase status` reports the config file's values,
   not the running containers'.
+  The complete set — **every one of these is needed**, because three separate helpers
+  resolve their own variable and each falls back to a default port this project does not own:
   ```
-  API_URL=http://127.0.0.1:56321 SUPABASE_URL=http://127.0.0.1:56321 \
-  ANON_KEY=<anon> SERVICE_ROLE_KEY=<service> \
-  DB_URL=postgresql://postgres:postgres@127.0.0.1:56322/postgres pnpm test
+  API_URL=http://127.0.0.1:56321 \
+  SUPABASE_URL=http://127.0.0.1:56321 \
+  ANON_KEY=<anon> \
+  SERVICE_ROLE_KEY=<service> \
+  DB_URL=postgresql://postgres:postgres@127.0.0.1:56322/postgres \
+  SUPABASE_AUTHENTICATOR_URL=postgresql://authenticator:postgres@127.0.0.1:56322/postgres \
+  pnpm test
   ```
-  `SUPABASE_URL` is required as well as `API_URL`: two cases in
-  `tests/http/functions.test.ts` read `SUPABASE_URL` and fall back to a hardcoded
-  `127.0.0.1:54321`. Task 2 fixes that fallback; until it lands, set both.
+  `SUPABASE_URL` is needed as well as `API_URL` because two cases in
+  `tests/http/functions.test.ts` read only `SUPABASE_URL` before falling back — unlike
+  their sibling helpers, which chain `SUPABASE_URL ?? API_URL ?? default`. Task 2 repairs
+  that chain. `SUPABASE_AUTHENTICATOR_URL` is needed because `tests/helpers/authenticator.ts`
+  reads nothing else, and 3b-i E5 makes that harness mandatory — silently pointing it at
+  another project would connect as `authenticator` to a database that has no such role.
 - **After every `supabase db reset`:** `psql "$DB_URL" -v label="'llejo android'" -v pin="'123456'" -f scripts/dev-wire-tablet.sql`, and re-issue the device credential on `/devices` and re-enrol by QR.
 - **Rebuild vs reload:** if it lands in the JS bundle, reload; if it lands in the APK, rebuild. `modules/ceedo-bcrypt` fails silently on a stale build.
 - **`apps/collector` is NOT in the vitest workspace** (`vitest.workspace.ts` is `["packages/*", "apps/web", "tests"]`). Any logic that needs a test goes in `packages/sync-engine` or `packages/shared`. Screens are verified by `pnpm typecheck`, a clean `npx expo export`, and the device session in Task 12.
