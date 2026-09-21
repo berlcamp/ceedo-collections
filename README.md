@@ -39,6 +39,25 @@ Consequences worth knowing before you debug something else:
   `supabase status -o env` (`API_URL`, `DB_URL`) instead of writing one down. The fallbacks
   in `tests/helpers/*` still name the 543xx defaults, so they are a fallback for a stack on
   default ports, never the value this project runs against.
+- **Google sign-in needs the port registered with Google, not just here.** Supabase's OAuth
+  callback is `<API_URL>/auth/v1/callback`, so moving the API port changes the redirect URI
+  Google is asked to honour. The CEEDO OAuth client (APIs & Services → Credentials) must
+  list:
+
+  ```
+  http://127.0.0.1:56321/auth/v1/callback
+  ```
+
+  Without it Google answers **"Access blocked: This app's request is invalid"** before
+  Supabase is ever reached. Keep the old `54321` entry alongside it — an extra authorized
+  URI costs nothing and keeps an older checkout working.
+
+  Worse than the outright block: with the web app pointed at `54321` while ANOTHER project
+  answers there, sign-in *succeeds* against that project's GoTrue and the app then reports
+  **"not registered with CEEDO Collections. Ask an administrator to add your email
+  address."** Every word of that is true and none of it mentions a port. If you see it,
+  check `NEXT_PUBLIC_SUPABASE_URL` before you check the invite.
+
 - **Check what is actually listening before blaming the code:**
 
   ```bash
