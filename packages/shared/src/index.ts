@@ -3,6 +3,7 @@ export * from "./charges";
 export * from "./enrollment-payload";
 export * from "./fifo";
 export * from "./money";
+export * from "./outstanding";
 export * from "./rates";
 export * from "./reason-codes";
 export * from "./roles";

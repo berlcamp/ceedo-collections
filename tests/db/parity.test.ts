@@ -6,7 +6,9 @@ import {
   fromCentavos,
   generatePeriods,
   isContiguousPrefix,
+  parsePesoInput,
   REJECT_REASONS,
+  unpaidPeriodGroups,
   type PeriodGroup,
 } from "@ceedo/shared";
 import {
@@ -426,5 +428,187 @@ describe("post_collection()'s reason vocabulary agrees with REJECT_REASONS", () 
     for (const reason of found) {
       expect(REJECT_REASONS).toContain(reason);
     }
+  });
+});
+
+describe("ledger parity: unpaid_period_groups", () => {
+  it("SQL and TypeScript agree on a lease carrying all four inputs", async () => {
+    // A lease with several overdue monthly periods, so a prefix is meaningful.
+    const fx = await createCollectionFixture(db, {
+      accrualPeriod: "monthly",
+      startDate: "2026-01-01",
+      dueDay: 5,
+      rateAmount: "1500.00",
+    });
+
+    // The charges are inserted directly rather than raised through run_accrual() /
+    // run_surcharge(). Those two functions are NOT scoped to one lease: run_accrual's
+    // loop is `for v_lease in select ... from leases where status = 'active' ...` over
+    // EVERY active lease in the database, and run_surcharge similarly scans every
+    // unsettled rental via charge_balances. This suite's fixtures are never cleaned up
+    // between files (tests/helpers/supabase.ts, "Nothing clears auth.users..."), so
+    // every earlier test file's still-active lease is also sitting in that scan.
+    // A first attempt here called run_accrual('2027-02-01') to get several overdue
+    // months for JUST this lease, and it did -- but it also raised new rental charges
+    // for every other fixture lease left active by every other test file, all the way
+    // through February 2027. That corrupted global state for tests never touched by
+    // this file: db/sync-pull.test.ts's "returns nothing new when the cursor is
+    // current" saw surprise charges, db/sync-payload-size.test.ts's first-sync budget
+    // blew past 8 MB, and db/accrual-schedule.test.ts's run_nightly assertions on exact
+    // counts broke -- none of them about this task at all. charge_balances and
+    // unpaid_period_groups() (the actual object under test here) only care that valid
+    // charge rows exist for this lease; how they got there is not part of what this
+    // test pins. Direct INSERT produces the identical shape with zero blast radius.
+    const periods = [
+      { start: "2026-10-01", end: "2026-10-31", due: "2026-10-05" },
+      { start: "2026-11-01", end: "2026-11-30", due: "2026-11-05" },
+      { start: "2026-12-01", end: "2026-12-31", due: "2026-12-05" },
+      { start: "2027-01-01", end: "2027-01-31", due: "2027-01-05" },
+    ];
+    const chargeRows: { id: string }[] = [];
+    for (const p of periods) {
+      const { rows } = await db.query<{ id: string }>(
+        `insert into ceedo_collections.charges
+           (lease_id, fee_type_id, charge_type, period_start, period_end, due_date,
+            amount, surcharge_bps, source)
+         values ($1, $2, 'rental', $3, $4, $5, '1500.00', 0, 'accrual')
+         returning id`,
+        [fx.leaseId, fx.feeTypeId, p.start, p.end, p.due],
+      );
+      chargeRows.push(rows[0]!);
+    }
+    // A surcharge on the two oldest periods only (Oct, Nov) -- enough to satisfy the
+    // fixture's own "carries a surcharge" assertion below while leaving Dec and Jan
+    // as plain rentals, which is closer to what a real overdue ledger looks like than
+    // surcharging everything.
+    for (const parent of chargeRows.slice(0, 2)) {
+      await db.query(
+        `insert into ceedo_collections.charges
+           (lease_id, fee_type_id, charge_type, parent_charge_id, period_start,
+            period_end, due_date, amount, surcharge_bps, source)
+         select lease_id, fee_type_id, 'surcharge', id, period_start, period_end,
+                due_date, '45.00', 300, 'accrual'
+           from ceedo_collections.charges where id = $1`,
+        [parent.id],
+      );
+    }
+    expect(chargeRows.length).toBe(4);
+
+    // A condonation on one charge, and a collection that is then cancelled. Without these
+    // the fixture exercises neither subtraction and the comparison is vacuous.
+    await db.query(
+      `insert into ceedo_collections.charge_condonations
+         (charge_id, amount, reason, authority_ref, condoned_by)
+       values ($1, '100.00', 'parity fixture', 'ORD-PARITY', $2)`,
+      [chargeRows[1]!.id, fx.collectorId],
+    );
+
+    const cancelledId = randomUUID();
+    // 1000, not an out-of-range literal: createCollectionFixture's booklet always runs
+    // FIXTURE_BOOKLET_START_NO..FIXTURE_BOOKLET_END_NO (1000-1999), and this fixture's
+    // booklet is otherwise untouched.
+    await db.query("select ceedo_collections.post_collection($1::jsonb)", [
+      JSON.stringify({
+        id: cancelledId,
+        or_no: 1000,
+        booklet_id: fx.bookletId,
+        collector_id: fx.collectorId,
+        device_id: fx.deviceId,
+        collected_at: new Date().toISOString(),
+        fee_type_id: fx.feeTypeId,
+        lease_id: fx.leaseId,
+        allocations: [{ group_rank: 1 }],
+        lines: [],
+      }),
+    ]);
+    await db.query(
+      `insert into ceedo_collections.collection_cancellations
+         (collection_id, reason, cancelled_by) values ($1, 'parity fixture', $2)`,
+      [cancelledId, fx.collectorId],
+    );
+
+    // --- the SQL side ---
+    const { rows: sqlGroups } = await db.query<{
+      group_rank: number;
+      due_date: string;
+      period_start: string;
+      charge_ids: string[];
+      outstanding: string;
+    }>(
+      `select group_rank, due_date::text, period_start::text, charge_ids, outstanding::text
+         from ceedo_collections.unpaid_period_groups($1) order by group_rank`,
+      [fx.leaseId],
+    );
+
+    // --- the TypeScript side, fed the same rows the device would hold ---
+    //
+    // `order by due_date desc` -- the NEWEST period first, the opposite of FIFO order --
+    // deliberately, so that a correct answer can only come from unpaidPeriodGroups()
+    // doing its own sort. A device's local rows arrive in no particular order (sync,
+    // not a single ordered query), and a query here that happened to already return
+    // due-date order would let a broken comparator (falsification 8a) pass by
+    // coincidence rather than by being exercised.
+    const { rows: charges } = await db.query(
+      `select id, lease_id, charge_type, due_date::text as due_date,
+              period_start::text as period_start, period_end::text as period_end,
+              amount::text as amount
+         from ceedo_collections.charges where lease_id = $1
+        order by due_date desc`,
+      [fx.leaseId],
+    );
+    const { rows: allocations } = await db.query(
+      `select collection_id, charge_id, amount::text as amount
+         from ceedo_collections.collection_allocations`,
+    );
+    const { rows: condonations } = await db.query(
+      `select charge_id, amount::text as amount from ceedo_collections.charge_condonations`,
+    );
+    const { rows: cancelled } = await db.query(
+      `select collection_id from ceedo_collections.collection_cancellations`,
+    );
+
+    const tsGroups = unpaidPeriodGroups(
+      {
+        charges: charges.map((r) => ({
+          id: r.id,
+          leaseId: r.lease_id,
+          chargeType: r.charge_type,
+          dueDate: r.due_date,
+          periodStart: r.period_start,
+          periodEnd: r.period_end,
+          amount: parsePesoInput(r.amount),
+        })),
+        allocations: allocations.map((r) => ({
+          collectionId: r.collection_id,
+          chargeId: r.charge_id,
+          amount: parsePesoInput(r.amount),
+        })),
+        condonations: condonations.map((r) => ({
+          chargeId: r.charge_id,
+          amount: parsePesoInput(r.amount),
+        })),
+        cancelledCollectionIds: new Set(cancelled.map((r) => r.collection_id)),
+      },
+      fx.leaseId,
+    );
+
+    // The fixture is only meaningful if it produced several groups AND exercised all four
+    // inputs. Asserting that here stops a future change quietly emptying it.
+    expect(sqlGroups.length).toBeGreaterThan(2);
+    expect(condonations.length).toBeGreaterThan(0);
+    expect(cancelled.length).toBeGreaterThan(0);
+    expect(
+      charges.some((r: { charge_type: string }) => r.charge_type === "surcharge"),
+    ).toBe(true);
+
+    expect(tsGroups).toEqual(
+      sqlGroups.map((g) => ({
+        groupRank: g.group_rank,
+        dueDate: g.due_date,
+        periodStart: g.period_start,
+        chargeIds: g.charge_ids,
+        outstanding: parsePesoInput(g.outstanding),
+      })),
+    );
   });
 });
