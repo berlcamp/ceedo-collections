@@ -990,14 +990,28 @@ Spec F4. Without the overlay a collector who settles periods offline is shown th
 - Create: `packages/sync-engine/src/ledger.ts`
 - Create: `packages/sync-engine/src/ledger.test.ts`
 - Modify: `packages/sync-engine/src/index.ts`
+- Modify: `packages/shared/src/outstanding.ts` (adds `chargeOutstanding` — ruling R3)
 
 **Interfaces:**
 - Consumes: `SqliteDriver` from `./driver`; `unpaidPeriodGroups`, `LedgerInput`, `parsePesoInput`, `PeriodGroup` from `@ceedo/shared`.
 - Produces:
   ```ts
   export async function leaseLedger(driver: SqliteDriver, leaseId: string): Promise<PeriodGroup[]>
+  export async function leaseLedgerDetail(
+    driver: SqliteDriver, leaseId: string,
+  ): Promise<{ groups: PeriodGroup[]; perCharge: Map<string, Centavos> }>
   export async function ledgerStaleness(driver: SqliteDriver): Promise<{ lastFullSyncDate: string | null; pendingCount: number }>
   ```
+  and, added to `packages/shared/src/outstanding.ts`:
+  ```ts
+  export function chargeOutstanding(
+    input: LedgerInput, leaseId: string,
+  ): { chargeId: string; outstanding: Centavos }[]
+  ```
+  **Ruling R3 moved these here from Task 7.** They are engine code, and `apps/collector` is
+  outside the vitest workspace, so defining them in a screens task would leave them untested
+  and would have shipped a knowingly-wrong `fromCentavos(0)` placeholder in one step to
+  repair it in the next.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1007,7 +1021,7 @@ Create `packages/sync-engine/src/ledger.test.ts`:
 import Database from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
 import { betterSqliteDriver } from "./testing/better-sqlite-driver";
-import { leaseLedger } from "./ledger";
+import { leaseLedger, leaseLedgerDetail } from "./ledger";
 import type { SqliteDriver } from "./driver";
 
 const SCHEMA = `
@@ -1131,6 +1145,25 @@ describe("leaseLedger", () => {
     expect(groups.map((g) => g.chargeIds)).toEqual([["r2"], ["r3"]]);
   });
 
+  it("reports each unpaid charge's own outstanding", async () => {
+    // The lease screen settles a GROUP, but local_allocations stores one row per CHARGE
+    // (spec F1), so the device needs the split the group hides. One reader produces both.
+    const { groups, perCharge } = await leaseLedgerDetail(driver, "L1");
+    expect(groups[0]!.chargeIds).toEqual(["r1", "s1"]);
+    expect(perCharge.get("r1")).toBe(150_000);
+    expect(perCharge.get("s1")).toBe(4_500);
+  });
+
+  it("omits settled charges from the per-charge map", async () => {
+    db.exec(`
+      insert into collection_allocations (id, collection_id, charge_id, amount)
+      values ('a1','k9','r1','1500.00');
+    `);
+    const { perCharge } = await leaseLedgerDetail(driver, "L1");
+    expect(perCharge.has("r1")).toBe(false);
+    expect(perCharge.get("s1")).toBe(4_500);
+  });
+
   it("stops counting a cancelled collection's allocations", async () => {
     db.exec(`
       insert into collection_allocations (id, collection_id, charge_id, amount)
@@ -1153,13 +1186,38 @@ Expected: FAIL — `Failed to resolve import "./ledger"`.
 
 - [ ] **Step 3: Implement**
 
-Create `packages/sync-engine/src/ledger.ts`:
+First add `chargeOutstanding` to `packages/shared/src/outstanding.ts` — `ledger.ts` imports it, and it is the per-charge view the group-level `unpaidPeriodGroups` deliberately hides:
+
+```ts
+/**
+ * Per-charge outstanding within one lease, for callers that must settle charge by charge.
+ *
+ * `unpaidPeriodGroups` answers "what does this tenant owe, in the order it must be paid";
+ * this answers "and how does one group's total divide across its rows". The device needs
+ * both: it SELECTS a group and it RECORDS per charge, because `local_allocations` is keyed
+ * (collection_id, charge_id) so the overlay can subtract exactly what was settled.
+ */
+export function chargeOutstanding(
+  input: LedgerInput,
+  leaseId: string,
+): { chargeId: string; outstanding: Centavos }[] {
+  return input.charges
+    .filter((c) => c.leaseId === leaseId)
+    .map((c) => ({ chargeId: c.id, outstanding: chargeBalance(c, input) }))
+    .filter((r) => r.outstanding > 0);
+}
+```
+
+Then create `packages/sync-engine/src/ledger.ts`:
 
 ```ts
 import {
+  chargeOutstanding,
   parsePesoInput,
   unpaidPeriodGroups,
+  type Centavos,
   type LedgerAllocation,
+  type LedgerInput,
   type PeriodGroup,
 } from "@ceedo/shared";
 import type { SqliteDriver } from "./driver";
@@ -1173,10 +1231,10 @@ import type { SqliteDriver } from "./driver";
  * shown March as unpaid, and takes the money twice -- after the paper receipt is written
  * and the serial spent.
  */
-export async function leaseLedger(
+async function readLedgerInput(
   driver: SqliteDriver,
   leaseId: string,
-): Promise<PeriodGroup[]> {
+): Promise<LedgerInput> {
   const charges = await driver.select<{
     id: string;
     lease_id: string;
@@ -1244,26 +1302,52 @@ export async function leaseLedger(
     "select collection_id from collection_cancellations",
   );
 
-  return unpaidPeriodGroups(
-    {
-      charges: charges.map((r) => ({
-        id: r.id,
-        leaseId: r.lease_id,
-        chargeType: r.charge_type,
-        dueDate: r.due_date,
-        periodStart: r.period_start,
-        periodEnd: r.period_end,
-        amount: parsePesoInput(r.amount),
-      })),
-      allocations,
-      condonations: condonations.map((r) => ({
-        chargeId: r.charge_id,
-        amount: parsePesoInput(r.amount),
-      })),
-      cancelledCollectionIds: new Set(cancelled.map((r) => r.collection_id)),
-    },
-    leaseId,
-  );
+  return {
+    charges: charges.map((r) => ({
+      id: r.id,
+      leaseId: r.lease_id,
+      chargeType: r.charge_type,
+      dueDate: r.due_date,
+      periodStart: r.period_start,
+      periodEnd: r.period_end,
+      amount: parsePesoInput(r.amount),
+    })),
+    allocations,
+    condonations: condonations.map((r) => ({
+      chargeId: r.charge_id,
+      amount: parsePesoInput(r.amount),
+    })),
+    cancelledCollectionIds: new Set(cancelled.map((r) => r.collection_id)),
+  };
+}
+
+/** The FIFO groups the lease screen lists and the picker selects from. */
+export async function leaseLedger(
+  driver: SqliteDriver,
+  leaseId: string,
+): Promise<PeriodGroup[]> {
+  return unpaidPeriodGroups(await readLedgerInput(driver, leaseId), leaseId);
+}
+
+/**
+ * The groups AND each unpaid charge's own outstanding, from ONE read.
+ *
+ * The screen settles a whole period group, but `local_allocations` stores one row per
+ * charge (spec F1), because the overlay in this same file subtracts per charge. So the
+ * caller needs the split the group hides, and getting it from a second read would let the
+ * two views disagree about the same lease.
+ */
+export async function leaseLedgerDetail(
+  driver: SqliteDriver,
+  leaseId: string,
+): Promise<{ groups: PeriodGroup[]; perCharge: Map<string, Centavos> }> {
+  const input = await readLedgerInput(driver, leaseId);
+  return {
+    groups: unpaidPeriodGroups(input, leaseId),
+    perCharge: new Map(
+      chargeOutstanding(input, leaseId).map((r) => [r.chargeId, r.outstanding]),
+    ),
+  };
 }
 
 /**
@@ -1296,7 +1380,7 @@ export async function ledgerStaleness(
 In `packages/sync-engine/src/index.ts`, add:
 
 ```ts
-export { leaseLedger, ledgerStaleness } from "./ledger";
+export { leaseLedger, leaseLedgerDetail, ledgerStaleness } from "./ledger";
 ```
 
 - [ ] **Step 5: Run to verify it passes**
@@ -2218,7 +2302,7 @@ import {
   type Centavos,
   type PeriodGroup,
 } from "@ceedo/shared";
-import { leaseLedger, ledgerStaleness } from "@ceedo/sync-engine";
+import { leaseLedgerDetail, ledgerStaleness } from "@ceedo/sync-engine";
 import { openDeviceDb } from "../../db/client";
 import { expoSqliteDriver } from "../../db/driver";
 import { setDraft } from "../../collect/draft";
@@ -2253,6 +2337,7 @@ export default function Lease() {
 
   const [header, setHeader] = useState<Header | null>(null);
   const [groups, setGroups] = useState<PeriodGroup[]>([]);
+  const [perCharge, setPerCharge] = useState<Map<string, Centavos>>(new Map());
   const [ranks, setRanks] = useState<number[]>([]);
   const [tendered, setTendered] = useState("");
   const [stale, setStale] = useState<{ lastFullSyncDate: string | null; pendingCount: number }>({
@@ -2271,7 +2356,9 @@ export default function Lease() {
       [leaseId],
     );
     setHeader(rows[0] ?? null);
-    setGroups(await leaseLedger(driver, leaseId));
+    const detail = await leaseLedgerDetail(driver, leaseId);
+    setGroups(detail.groups);
+    setPerCharge(detail.perCharge);
     setStale(await ledgerStaleness(driver));
   }, [driver, leaseId]);
 
@@ -2397,13 +2484,14 @@ export default function Lease() {
             tenantName: header.tenant_name,
             groups,
             ranks,
+            // Per CHARGE, not per group: local_allocations is keyed
+            // (collection_id, charge_id) so Task 4's overlay subtracts exactly what was
+            // settled. perCharge comes from leaseLedgerDetail, the same read that
+            // produced these groups, so the two cannot disagree.
             allocations: selected.flatMap((g) =>
               g.chargeIds.map((chargeId) => ({
                 chargeId,
-                // One group settles in full; the split across its charges is the server's
-                // to make from charge_balances. The local figure exists so the device's
-                // own ledger can subtract it, and the group total is what matters there.
-                amount: fromCentavos(0),
+                amount: perCharge.get(chargeId) ?? fromCentavos(0),
               })),
             ),
             grossAmount: gross,
@@ -2436,57 +2524,7 @@ const styles = StyleSheet.create({
 });
 ```
 
-**Note the allocation-amount problem left in that code.** The device knows each *group's* outstanding but not how the server will split it across the group's rental and surcharge rows. Resolve it in Step 4 rather than shipping the `fromCentavos(0)` placeholder.
-
-- [ ] **Step 4: Resolve the per-charge split properly**
-
-The overlay in Task 4 subtracts per charge, so a zero amount would leave the group looking unpaid. `leaseLedger` already computes each charge's outstanding internally; expose it.
-
-In `packages/shared/src/outstanding.ts`, extend `PeriodGroup` usage by adding a second export:
-
-```ts
-/** Per-charge outstanding within one lease, for callers that must settle charge by charge. */
-export function chargeOutstanding(
-  input: LedgerInput,
-  leaseId: string,
-): { chargeId: string; outstanding: Centavos }[] {
-  return input.charges
-    .filter((c) => c.leaseId === leaseId)
-    .map((c) => ({ chargeId: c.id, outstanding: chargeBalance(c, input) }))
-    .filter((r) => r.outstanding > 0);
-}
-```
-
-In `packages/sync-engine/src/ledger.ts`, add a sibling that returns both, sharing one read:
-
-```ts
-export async function leaseLedgerDetail(
-  driver: SqliteDriver,
-  leaseId: string,
-): Promise<{ groups: PeriodGroup[]; perCharge: Map<string, Centavos> }> {
-  const input = await readLedgerInput(driver, leaseId);
-  return {
-    groups: unpaidPeriodGroups(input, leaseId),
-    perCharge: new Map(
-      chargeOutstanding(input, leaseId).map((r) => [r.chargeId, r.outstanding]),
-    ),
-  };
-}
-```
-
-Refactor `leaseLedger`'s body into `readLedgerInput(driver, leaseId): Promise<LedgerInput>` and have both call it, so there is one reader. Export `leaseLedgerDetail` from `index.ts`. Add a test to `ledger.test.ts`:
-
-```ts
-it("reports each unpaid charge's own outstanding", async () => {
-  const { perCharge } = await leaseLedgerDetail(driver, "L1");
-  expect(perCharge.get("r1")).toBe(150_000);
-  expect(perCharge.get("s1")).toBe(4_500);
-});
-```
-
-Then in the lease screen, replace the placeholder with `perCharge.get(chargeId) ?? fromCentavos(0)` from a `leaseLedgerDetail` call, and store `perCharge` in state alongside `groups`.
-
-- [ ] **Step 5: Add the entry points to the shift screen**
+- [ ] **Step 4: Add the entry points to the shift screen**
 
 In `apps/collector/src/app/shift.tsx`, inside the open-shift branch, add three buttons and show this shift's receipt figures (which `deviceTotals` already returns):
 
@@ -2499,7 +2537,7 @@ In `apps/collector/src/app/shift.tsx`, inside the open-shift branch, add three b
 </Text>
 ```
 
-- [ ] **Step 6: Typecheck and bundle**
+- [ ] **Step 5: Typecheck and bundle**
 
 ```bash
 pnpm typecheck
@@ -2508,21 +2546,11 @@ cd apps/collector && npx expo export --platform android
 
 Expected: both clean. The export is what catches an unresolvable import under pnpm's isolated layout — the same class of failure that ruled out `disableHierarchicalLookup` in 3b-i.
 
-- [ ] **Step 7: Run the engine suite**
-
-```bash
-npx vitest run packages/sync-engine packages/shared
-```
-
-Expected: PASS, including the new `leaseLedgerDetail` test.
-
-- [ ] **Step 8: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add apps/collector/src/collect/draft.ts apps/collector/src/app/leases.tsx \
-        apps/collector/src/app/lease apps/collector/src/app/shift.tsx \
-        packages/shared/src/outstanding.ts packages/sync-engine/src/ledger.ts \
-        packages/sync-engine/src/ledger.test.ts packages/sync-engine/src/index.ts
+        apps/collector/src/app/lease apps/collector/src/app/shift.tsx
 git commit -m "feat(collector): lease browse, and both ways to choose what is being paid
 
 Manual search is not a fallback: parent §9.4 makes it mandatory, because
