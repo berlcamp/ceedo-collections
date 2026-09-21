@@ -36,12 +36,19 @@ interface FeeChoice {
  * rate row must say so rather than price the receipt itself.
  *
  * RateRow.rateClass is `string`, never null -- "" means unclassified (rates.ts:14). The
- * `rates` column IS nullable, so the load below normalises with `?? ""` when mapping rows
- * out of SQLite. DraftLine.rateClass, by contrast, is `string | null`, and the wire cares
- * about the difference: CollectionPayload's `rate_class` is optional, not nullable, and
- * commitReceipt omits the key entirely for `null` but would send a real (wrong) empty-
- * string rate class for "". So a picked fee's `rate_class` -- read straight off the nullable
- * SQLite column, never re-normalised -- is what flows into every DraftLine here.
+ * `rates` column IS nullable in the local SQLite mirror, so the load below normalises with
+ * `?? ""` when mapping rows out of it. DraftLine.rateClass, by contrast, is
+ * `string | null`, and commitReceipt omits `rate_class` from the payload entirely for
+ * `null` while sending it verbatim for a string -- including the empty one.
+ *
+ * IN PRACTICE AN UNCLASSIFIED LINE SHIPS `rate_class: ""`, NOT AN OMITTED KEY. Server-side
+ * `rates.rate_class` is `text not null default ''`, so nothing upstream ever produces a
+ * genuine null and the `?? ""` above is defensive rather than load-bearing. That is
+ * harmless -- `post_collection` coalesces, and CollectionPayload declares
+ * `z.string().optional()`, which "" satisfies -- but it is worth stating plainly, because
+ * this comment used to claim the null path was the real one and a reader could build on a
+ * guarantee the data does not give. A picked fee's `rate_class` is passed through to its
+ * DraftLine unchanged either way, which is what keeps the two representations honest.
  */
 export default function Ambulant() {
   const router = useRouter();
@@ -53,7 +60,11 @@ export default function Ambulant() {
   const [pick, setPick] = useState<FeeChoice | null>(null);
   const [qty, setQty] = useState("1");
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
+  // THROWS. Every caller must say so when it fails -- `useFocusEffect` below and the "Sync
+  // now" retry both used to let the rejection vanish, and a collector cannot tell a failed
+  // load from a failed sync from a screen that simply has no fee types on it.
   const load = useCallback(async () => {
     // Non-accruing fee types only: an accruing one raises charges and belongs on a lease.
     // fee_types.accrues / .active are integer-mode booleans in SQLite, hence `= 0` / `= 1`.
@@ -93,7 +104,9 @@ export default function Ambulant() {
 
   useFocusEffect(
     useCallback(() => {
-      void load();
+      load().catch((caught: unknown) => {
+        setError(`Could not load the fee list: ${String(caught)}`);
+      });
     }, [load]),
   );
 
@@ -204,10 +217,25 @@ export default function Ambulant() {
         <View style={styles.errorBox}>
           <Text style={styles.error}>{error}</Text>
           <Button
-            title="Sync now"
+            title={busy ? "Syncing…" : "Sync now"}
+            disabled={busy}
             onPress={async () => {
-              await syncNow();
-              await load();
+              // `syncNow()` THROWS -- no signal, or no credential -- and this button is
+              // the remedy resolveRate's own message directs the collector to, so it fails
+              // in exactly the situation it exists for. Unhandled, the rate error simply
+              // stayed on screen and the collector could not tell whether the sync had
+              // happened. The busy flag is the other half: without it a double-tap sent
+              // two syncs. Same wording as shift.tsx; never fatal, parent §3.
+              setBusy(true);
+              try {
+                await syncNow();
+                await load();
+                setError(null);
+              } catch (caught) {
+                setError(`Could not sync: ${String(caught)}. You can keep working offline.`);
+              } finally {
+                setBusy(false);
+              }
             }}
           />
         </View>
@@ -220,6 +248,22 @@ export default function Ambulant() {
             {line.rateClass ? ` · ${line.rateClass}` : ""}
           </Text>
           <Text style={styles.lineAmount}>{format(line.amount)}</Text>
+          {/*
+            A mistyped quantity used to be unescapable. Combined with the one-fee-type lock
+            above, the FIRST line fixed both the fee type and its own wrong amount for the
+            lifetime of the screen -- the only way out was navigating away and starting the
+            receipt over. Removing the last line empties `lines`, which releases the lock
+            naturally, because the lock is derived from `lines[0]` rather than stored.
+          */}
+          <Pressable
+            style={styles.remove}
+            onPress={() => {
+              setLines(lines.filter((_, i) => i !== index));
+              setError(null);
+            }}
+          >
+            <Text style={styles.removeText}>Remove</Text>
+          </Pressable>
         </View>
       ))}
 
@@ -259,8 +303,10 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderColor: "#999", borderRadius: 6, padding: 12, fontSize: 22 },
   errorBox: { backgroundColor: "#ffebee", padding: 10, borderRadius: 6, marginTop: 10, gap: 8 },
   error: { color: "#b71c1c", fontSize: 14 },
-  line: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 10 },
-  lineText: { fontSize: 15 },
+  line: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 10, gap: 12 },
+  lineText: { fontSize: 15, flexShrink: 1 },
   lineAmount: { fontSize: 15, fontWeight: "600" },
+  remove: { paddingVertical: 8, paddingHorizontal: 12 },
+  removeText: { fontSize: 15, color: "#b71c1c", fontWeight: "600" },
   total: { marginTop: 16, fontSize: 24, fontWeight: "700", marginBottom: 12 },
 });

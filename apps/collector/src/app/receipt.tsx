@@ -5,6 +5,7 @@ import { randomUUID } from "expo-crypto";
 import {
   format,
   formatSerial,
+  parseOrNo,
   validateOrEntry,
   type OrEntryContext,
   type OrEntryResult,
@@ -67,10 +68,15 @@ export default function Receipt() {
   // be one, since they already finished typing. Keying this off `context` too means a
   // number already sitting in the field is evaluated the instant the booklets arrive, with
   // no further input required.
+  //
+  // `parseOrNo`, never `Number.parseInt`: parseInt("1005x", 10) is 1005, and this screen
+  // would then have ENABLED Record and written 1005 against whatever the paper actually
+  // says. The non-empty-but-not-a-number state gets its own message below rather than
+  // leaving the button dead with nothing said.
   useEffect(() => {
     setAcceptedSkip(false);
-    const orNo = Number.parseInt(orText, 10);
-    if (!context || !Number.isInteger(orNo) || orNo <= 0) {
+    const orNo = parseOrNo(orText);
+    if (!context || orNo === null) {
       setCheck(null);
       return;
     }
@@ -102,6 +108,11 @@ export default function Receipt() {
   // throwing -- the Record button is still gated on `check.ok`, not on this lookup.
   const matchedBooklet =
     check?.ok ? context?.booklets.find((b) => b.id === check.bookletId) : undefined;
+
+  // Parsed once and reused, so the echoed serial, the recorded serial and the validated
+  // serial cannot be three different numbers.
+  const orNo = parseOrNo(orText);
+  const notANumber = orText.trim() !== "" && orNo === null;
 
   const blocked =
     check === null ||
@@ -136,11 +147,14 @@ export default function Receipt() {
         <Text style={styles.note}>Loading your booklets…</Text>
       ) : null}
 
-      {check && !check.ok ? <Text style={styles.error}>{reason(check)}</Text> : null}
-      {check?.ok && matchedBooklet ? (
-        <Text style={styles.ok}>
-          {formatSerial(matchedBooklet.serialPrefix, Number.parseInt(orText, 10))}
+      {notANumber ? (
+        <Text style={styles.error}>
+          An OR number is digits only. Type the number exactly as it is printed on the form.
         </Text>
+      ) : null}
+      {check && !check.ok ? <Text style={styles.error}>{reason(check)}</Text> : null}
+      {check?.ok && matchedBooklet && orNo !== null ? (
+        <Text style={styles.ok}>{formatSerial(matchedBooklet.serialPrefix, orNo)}</Text>
       ) : null}
       {check?.ok && check.warning === "sequence_skipped" && !acceptedSkip ? (
         <View style={styles.warnBox}>
@@ -157,7 +171,7 @@ export default function Receipt() {
         title="Record this receipt"
         disabled={blocked || busy}
         onPress={async () => {
-          if (!check?.ok) return;
+          if (!check?.ok || orNo === null) return;
           setBusy(true);
           setError(null);
           try {
@@ -175,7 +189,7 @@ export default function Receipt() {
               driver,
               {
                 id: randomUUID(),
-                orNo: Number.parseInt(orText, 10),
+                orNo,
                 bookletId: check.bookletId,
                 collectorId: collector.id,
                 shiftId,

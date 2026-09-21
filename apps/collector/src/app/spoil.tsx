@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "expo-router";
 import { Button, StyleSheet, Text, TextInput, View } from "react-native";
 import { randomUUID } from "expo-crypto";
-import { validateOrEntry, type OrEntryContext } from "@ceedo/shared";
+import { parseOrNo, validateOrEntry, type OrEntryContext } from "@ceedo/shared";
 import { enqueue, orEntryContext } from "@ceedo/sync-engine";
 import { deviceDriver } from "../db/driver";
 import { signedIn } from "../auth/session";
@@ -53,12 +53,14 @@ export default function Spoil() {
 
   if (!collector) return <Text style={styles.note}>Sign in first.</Text>;
 
-  // Guards against a lone "-" or "." on the number pad: parseInt on a non-numeric partial
-  // yields NaN, which the Number.isInteger check below simply treats as "not ready yet"
-  // rather than throwing.
-  const orNo = Number.parseInt(orText, 10);
-  const check =
-    context && Number.isInteger(orNo) && orNo > 0 ? validateOrEntry(context, orNo) : null;
+  // `parseOrNo`, never `Number.parseInt`. parseInt("1005x", 10) is 1005, and THIS screen
+  // echoes nothing back, so a truncated serial here would be marked spoiled with no cash
+  // trail to contradict it -- it surfaces only at booklet reconciliation, much later, by
+  // someone else. So a non-empty field that is not a number says so, rather than leaving
+  // the button dead and unexplained.
+  const orNo = parseOrNo(orText);
+  const notANumber = orText.trim() !== "" && orNo === null;
+  const check = context && orNo !== null ? validateOrEntry(context, orNo) : null;
   const reasonGiven = reason.trim() !== "";
 
   // A skip is a warning here for the same reason it is on receipt.tsx -- booklets
@@ -107,6 +109,11 @@ export default function Spoil() {
         <Text style={styles.note}>Loading your booklets…</Text>
       ) : null}
 
+      {notANumber ? (
+        <Text style={styles.error}>
+          An OR number is digits only. Type the number exactly as it is printed on the form.
+        </Text>
+      ) : null}
       {check && !check.ok ? (
         <Text style={styles.error}>
           {check.reason === "already_consumed"
@@ -136,7 +143,7 @@ export default function Spoil() {
         title="Mark spoiled"
         disabled={busy || !check?.ok || !reasonGiven || skipUnconfirmed}
         onPress={async () => {
-          if (!check?.ok || !reasonGiven || skipUnconfirmed) return;
+          if (!check?.ok || orNo === null || !reasonGiven || skipUnconfirmed) return;
           setBusy(true);
           setError(null);
           try {

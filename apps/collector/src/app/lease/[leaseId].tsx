@@ -57,6 +57,7 @@ export default function Lease() {
     pendingCount: 0,
   });
   const [busy, setBusy] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const rows = await driver.select<Header>(
@@ -147,20 +148,30 @@ export default function Lease() {
           {stale.pendingCount > 0 ? ` ${stale.pendingCount} receipt(s) still queued.` : ""}
         </Text>
         <Button
-          title="Sync now"
+          title={busy ? "Syncing…" : "Sync now"}
           disabled={busy}
           onPress={async () => {
             setBusy(true);
+            setSyncMessage(null);
             try {
               await syncNow();
               await load();
               setRanks([]);
               setTendered("");
+            } catch (error) {
+              // `syncNow()` THROWS, and it throws in exactly the situation this button
+              // exists for: no signal, or no credential. This is F7's disclosure remedy --
+              // the collector taps it BECAUSE the line above worried them -- so swallowing
+              // the failure leaves the same stale date on screen with nothing said, and
+              // they write the paper receipt from figures they now believe are fresh.
+              // Same wording as shift.tsx: never fatal, parent §3.
+              setSyncMessage(`Could not sync: ${String(error)}. You can keep working offline.`);
             } finally {
               setBusy(false);
             }
           }}
         />
+        {syncMessage ? <Text style={styles.warn}>{syncMessage}</Text> : null}
       </View>
 
       {groups.length === 0 ? (

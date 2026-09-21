@@ -50,13 +50,38 @@ export interface DraftReceipt {
  * again would put two receipts on one number -- which the server would catch, but only
  * after both vendors had walked away with paper.
  *
+ * `spoiled` is likewise the UNION of the pulled `spoiled_forms` and this device's OWN
+ * spoils, read out of the outbox. `spoiled_forms` is a PULLED table, so without the outbox
+ * half a form this device spoiled is invisible to this device until it round-trips -- and
+ * that serial could then be entered as a RECEIPT serial offline. `validateOrEntry` would
+ * see it as neither consumed nor spoiled and accept; on push `post_collection` answers
+ * `or_spoiled`, a non-retryable rejection, so it becomes a `sync_exception` with a vendor
+ * holding paper and the cash already taken. That is precisely the mistake the point-of-sale
+ * check exists to catch, blind for the collector's own work.
+ *
+ * EVERY `spoiled_form` OUTBOX ENTRY COUNTS, WHATEVER ITS STATE, not just the pushable ones.
+ * `sync()` pulls BEFORE it pushes, so an entry acked during sync N does not appear in
+ * `spoiled_forms` until sync N+1 -- which on a tablet with no signal can be hours. Reading
+ * only `pending`/`in_flight` would reopen the gap for exactly that window. `rejected`
+ * counts too: the paper form is physically spoiled whatever the server made of the message,
+ * and §6.4 keeps acked entries 30 days and rejected ones until resolved, by which time the
+ * pulled row has long since arrived.
+ *
+ * NO `local_spoiled_forms` TABLE, deliberately, and not for lack of symmetry with F1. F1
+ * exists because a `collection` outbox entry carries NO AMOUNT (invariant #3 forbids it),
+ * so `deviceTotals` had nothing to read and needed device-authored rows of its own. A spoil
+ * payload carries `booklet_id` and `or_no` -- everything this set needs -- and the outbox is
+ * already device-authored, so it survives an epoch reset exactly as a new table would. The
+ * gap F1 was written to close does not exist here; adding a table would only add a second
+ * write to keep in step with the first.
+ *
  * BOOKLET-SCOPED, per ruling R9: `consumed_serials` is keyed `(booklet_id, or_no)`, and a
  * device pulls the booklet assignments of EVERY collector permitted to sign in to it
  * (parent spec §6.1), so this set routinely spans booklets that are not this collector's
- * candidates at all. All three sources -- `consumed_serials`, `local_collections`, and
- * `spoiled_forms` -- carry a `booklet_id`, so each key is built from the pair, not the
- * bare `or_no`. Without this, a serial spent in one booklet would refuse the same numeral
- * in an entirely different one.
+ * candidates at all. All four sources -- `consumed_serials`, `local_collections`,
+ * `spoiled_forms` and the queued spoils -- carry a `booklet_id`, so each key is built from
+ * the pair, not the bare `or_no`. Without this, a serial spent in one booklet would refuse
+ * the same numeral in an entirely different one.
  */
 export async function orEntryContext(
   driver: SqliteDriver,
@@ -87,6 +112,12 @@ export async function orEntryContext(
   const spoiled = await driver.select<{ booklet_id: string; or_no: number }>(
     "select booklet_id, or_no from spoiled_forms",
   );
+  // This device's own spoils, which cannot be in the pulled table yet. Not scoped to this
+  // collector, for the same reason `mine` above is not: on a shared tablet a previous
+  // collector's spoil in a booklet they still hold is still a spoiled form.
+  const queuedSpoils = await driver.select<{ payload: string }>(
+    "select payload from outbox where type = 'spoiled_form'",
+  );
 
   return {
     booklets: booklets.map((b) => ({
@@ -98,8 +129,33 @@ export async function orEntryContext(
     consumed: new Set(
       [...pulled, ...mine].map((r) => orKey(r.booklet_id, r.or_no)),
     ),
-    spoiled: new Set(spoiled.map((r) => orKey(r.booklet_id, r.or_no))),
+    spoiled: new Set([
+      ...spoiled.map((r) => orKey(r.booklet_id, r.or_no)),
+      ...queuedSpoils.flatMap((r) => spoilKey(r.payload)),
+    ]),
   };
+}
+
+/**
+ * The `orKey` of a queued spoil, or nothing if its payload cannot supply one.
+ *
+ * A payload this device wrote itself always can; the tolerance is here because the
+ * alternative -- throwing out of `orEntryContext` -- strands the whole entry screen behind
+ * "Could not load your booklets" over a single unreadable row, refusing every serial rather
+ * than one. `[]` degrades to the behaviour this function was written to replace, for that
+ * row only, which is the smaller failure.
+ */
+function spoilKey(payload: string): string[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return [];
+  }
+  if (typeof parsed !== "object" || parsed === null) return [];
+  const { booklet_id: bookletId, or_no: orNo } = parsed as Record<string, unknown>;
+  if (typeof bookletId !== "string" || typeof orNo !== "number") return [];
+  return [orKey(bookletId, orNo)];
 }
 
 /**

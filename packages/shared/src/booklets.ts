@@ -42,6 +42,28 @@ export function formatSerial(prefix: string, orNo: number): string {
 }
 
 /**
+ * The OR serial a collector typed, or `null` if what they typed is not one.
+ *
+ * NEVER `Number.parseInt`. `parseInt("12a", 10)` is `12`; `"1005x"` is `1005`; `"12.9"` is
+ * `12`; `"1e3"` is `1`. Only a lone "-" or "." yields NaN, so every other kind of garbage
+ * TRUNCATES SILENTLY -- the entry screen's button enables and the truncated number is
+ * recorded against a real paper receipt the tenant is holding. A number-pad keyboard is not
+ * a guarantee either: a paste, a hardware keyboard or an accessibility input all reach the
+ * same field.
+ *
+ * The digit-string test is the one ambulant.tsx already applies to a quantity, for the same
+ * reason and with the same shape: test first, `Number()` second, never `parseInt`.
+ * `isSafeInteger` catches the absurdly long paste that `/^\d+$/` would otherwise accept and
+ * float arithmetic would then round.
+ */
+export function parseOrNo(text: string): number | null {
+  const trimmed = text.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const orNo = Number(trimmed);
+  return Number.isSafeInteger(orNo) && orNo > 0 ? orNo : null;
+}
+
+/**
  * Validates an OR number at the point of sale.
  *
  * These checks exist to catch honest mistakes while the vendor is still standing
@@ -67,10 +89,25 @@ export function validateOrEntry(context: OrEntryContext, orNo: number): OrEntryR
 
   // Booklet-scoped and exact, now that a serial's identity carries its booklet: no more
   // filtering bare numbers by numeric range as an approximation of "within this booklet".
+  //
+  // SPOILED SERIALS COUNT AS USED HERE, and leaving them out made this warning fire on the
+  // canonical correct behaviour. `consumed_serials` is built server-side from the
+  // `collections` table and never carries a spoiled serial, but §1.2 makes spoil-then-
+  // reissue THE remedy for a wrongly written form: spoil 1003, write 1004, and a
+  // consumed-only highest of 1002 makes `1004 > 1002 + 1` true. Permanently, on every
+  // device, online or offline -- and the same warning now sits on the spoil screen too, so
+  // two bad forms in a row warn on the second. F8 states the rule verbatim: "a warning that
+  // fires on correct behaviour is a warning that gets ignored, including on the day it is
+  // right."
+  //
+  // The serial is taken from after the LAST colon, not from `prefix.length`. Unreachable
+  // today -- booklet ids are UUIDs -- but a booklet id that was itself a string-prefix of
+  // another followed by ':' would have this slice a second key's tail and hand `Number` a
+  // string it answers NaN to, which then poisons `Math.max`.
   const prefix = `${booklet.id}:`;
-  const usedInBooklet = [...context.consumed]
+  const usedInBooklet = [...context.consumed, ...context.spoiled]
     .filter((entry) => entry.startsWith(prefix))
-    .map((entry) => Number(entry.slice(prefix.length)));
+    .map((entry) => Number(entry.slice(entry.lastIndexOf(":") + 1)));
   const highestUsed = usedInBooklet.length > 0 ? Math.max(...usedInBooklet) : booklet.startNo - 1;
 
   return orNo > highestUsed + 1

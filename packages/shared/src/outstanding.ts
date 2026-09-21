@@ -93,13 +93,17 @@ export function chargeBalance(charge: LedgerCharge, input: LedgerInput): Centavo
  * `opening_balance` sorts FIRST (before `rental`), but the enum -- and the SQL -- puts it
  * LAST.
  *
- * THIS MAP MUST STAY IN STEP WITH MIGRATION 0011's DECLARATION. If a future migration
- * adds a charge_type or reorders these three, update this map in the same commit --
- * otherwise `chargeIds` silently stops matching the SQL for any group containing the
- * changed type, and nothing but a hand-built fixture (see outstanding.test.ts) would ever
- * catch it, because the database rarely produces a group mixing all three types.
+ * THIS MAP MUST STAY IN STEP WITH MIGRATION 0011's DECLARATION, and that is now CHECKED
+ * rather than asserted here in capitals. tests/db/parity.test.ts reads `enum_range` off the
+ * live type and compares it against this map's own ordering, so a migration that adds or
+ * reorders a charge_type fails the suite instead of silently diverging. It is exported for
+ * exactly that test: the unit test in outstanding.test.ts pins the ordering against a
+ * hardcoded assumption of what the enum order IS, which cannot catch drift, and the parity
+ * fixture contains only `rental` and `surcharge` -- the one pairing that sorts identically
+ * under the enum and a naive string sort, which is the same coincidence that already fooled
+ * a `localeCompare` implementation on this branch.
  */
-const CHARGE_TYPE_ORDER: Record<string, number> = {
+export const CHARGE_TYPE_ORDER: Record<string, number> = {
   rental: 0,
   surcharge: 1,
   opening_balance: 2,

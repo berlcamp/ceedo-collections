@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import {
+  CHARGE_TYPE_ORDER,
   computeSurcharge,
   fromCentavos,
   generatePeriods,
@@ -428,6 +429,36 @@ describe("post_collection()'s reason vocabulary agrees with REJECT_REASONS", () 
     for (const reason of found) {
       expect(REJECT_REASONS).toContain(reason);
     }
+  });
+});
+
+/**
+ * `CHARGE_TYPE_ORDER` agrees with the `charge_type` enum's DECLARATION order.
+ *
+ * `unpaid_period_groups()` builds `charge_ids` with `array_agg(b.id order by b.charge_type)`
+ * and a Postgres enum sorts by declaration position, not alphabetically. outstanding.ts
+ * mirrors that with a hand-written map whose doc comment says in capitals that it must stay
+ * in step with migration 0011 -- and until now nothing checked it. The unit test pins the
+ * ordering against a hardcoded assumption of what the enum order is, which cannot catch
+ * drift, and the fixture in the block below contains only `rental` and `surcharge`: the one
+ * pairing that sorts identically under the enum AND a naive string sort, which is exactly
+ * the coincidence that let a `localeCompare` implementation pass every test on this branch
+ * while disagreeing with the SQL for any group containing an `opening_balance`.
+ *
+ * `enum_range` is read off the live type rather than parsed out of the migration file, so
+ * adding a value, reordering values or dropping one all fail here.
+ */
+describe("CHARGE_TYPE_ORDER agrees with the charge_type enum", () => {
+  it("the enum's own sort order is this map's order, value for value", async () => {
+    const { rows } = await db.query<{ types: string[] }>(
+      `select array_agg(t::text order by t) as types
+         from unnest(enum_range(null::ceedo_collections.charge_type)) t`,
+    );
+
+    const mapped = Object.keys(CHARGE_TYPE_ORDER).sort(
+      (a, b) => (CHARGE_TYPE_ORDER[a] ?? 0) - (CHARGE_TYPE_ORDER[b] ?? 0),
+    );
+    expect(rows[0]!.types).toEqual(mapped);
   });
 });
 

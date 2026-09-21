@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
-import { CollectionPayload, fromCentavos, orKey } from "@ceedo/shared";
+import { CollectionPayload, fromCentavos, orKey, validateOrEntry } from "@ceedo/shared";
 import { betterSqliteDriver } from "./testing/better-sqlite-driver";
 import { commitReceipt, orEntryContext, type DraftReceipt } from "./collect";
 import type { SqliteDriver } from "./driver";
@@ -97,6 +97,38 @@ describe("orEntryContext", () => {
     db.exec(`insert into spoiled_forms (id, booklet_id, or_no, reason) values ('sp1','b1',1003,'torn');`);
     const ctx = await orEntryContext(driver, "c1");
     expect([...ctx.spoiled]).toEqual([orKey("b1", 1003)]);
+  });
+
+  it("treats a form THIS DEVICE spoiled as spoiled before it round-trips", async () => {
+    // `spoiled_forms` is a PULLED table, so a spoil this device just made cannot be in it.
+    // Without the outbox half, that serial reads as neither consumed nor spoiled and
+    // validateOrEntry ACCEPTS it as a receipt serial offline -- caught only on push, by
+    // post_collection answering `or_spoiled`, with a vendor holding paper and the cash
+    // taken.
+    db.exec(`
+      insert into outbox (id, type, payload, collector_id, created_at, state, attempts, seq)
+      values ('sp1','spoiled_form',
+              '{"booklet_id":"b1","or_no":1004,"collector_id":"c1","reason":"torn"}',
+              'c1','2026-09-21T01:00:00.000Z','pending',0,1);
+    `);
+
+    const ctx = await orEntryContext(driver, "c1");
+    expect(ctx.spoiled.has(orKey("b1", 1004))).toBe(true);
+    expect(validateOrEntry(ctx, 1004)).toEqual({ ok: false, reason: "marked_spoiled" });
+  });
+
+  it("keeps counting a queued spoil after the push is acked but before the pull lands", async () => {
+    // sync() pulls BEFORE it pushes, so an entry acked during sync N does not reach
+    // `spoiled_forms` until sync N+1 -- hours, on a tablet with no signal. A set built from
+    // pending/in_flight alone would reopen the gap for exactly that window.
+    db.exec(`
+      insert into outbox (id, type, payload, collector_id, created_at, state, attempts, seq)
+      values ('sp1','spoiled_form','{"booklet_id":"b1","or_no":1004}','c1',
+              '2026-09-21T01:00:00.000Z','acked',1,1);
+    `);
+
+    const ctx = await orEntryContext(driver, "c1");
+    expect(validateOrEntry(ctx, 1004)).toEqual({ ok: false, reason: "marked_spoiled" });
   });
 
   it("keeps a serial consumed in a DIFFERENT booklet from colliding with this one (ruling R9)", async () => {

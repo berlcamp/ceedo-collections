@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orKey, validateOrEntry, type OrEntryContext } from "./booklets.js";
+import { orKey, parseOrNo, validateOrEntry, type OrEntryContext } from "./booklets.js";
 
 const context = (over: Partial<OrEntryContext> = {}): OrEntryContext => ({
   booklets: [{ id: "b1", serialPrefix: "OR", startNo: 1001, endNo: 1050 }],
@@ -43,6 +43,34 @@ describe("validateOrEntry", () => {
   it("does not warn when the serial follows the last consumed one", () => {
     const ctx = context({ consumed: new Set([orKey("b1", 1001), orKey("b1", 1002)]) });
     expect(validateOrEntry(ctx, 1003)).toEqual({ ok: true, bookletId: "b1" });
+  });
+
+  it("does not warn when the skipped serial is one this booklet SPOILED", () => {
+    // Spec §1.2 makes spoil-then-reissue THE remedy for a wrongly written form, and
+    // `consumed_serials` is built server-side from the `collections` table, so it never
+    // carries a spoiled serial. Computing highestUsed from `consumed` alone made 1003's
+    // spoil invisible and fired `sequence_skipped` on 1004 -- permanently, on every device,
+    // online or offline. F8: "a warning that fires on correct behaviour is a warning that
+    // gets ignored, including on the day it is right."
+    const ctx = context({
+      consumed: new Set([orKey("b1", 1001), orKey("b1", 1002)]),
+      spoiled: new Set([orKey("b1", 1003)]),
+    });
+    expect(validateOrEntry(ctx, 1004)).toEqual({ ok: true, bookletId: "b1" });
+  });
+
+  it("still warns on a genuine skip past a spoiled serial", () => {
+    // The other direction, so the fix above cannot be "never warn". 1003 is spoiled, 1004
+    // is simply missing, and 1005 skips it.
+    const ctx = context({
+      consumed: new Set([orKey("b1", 1001), orKey("b1", 1002)]),
+      spoiled: new Set([orKey("b1", 1003)]),
+    });
+    expect(validateOrEntry(ctx, 1005)).toEqual({
+      ok: true,
+      bookletId: "b1",
+      warning: "sequence_skipped",
+    });
   });
 
   it("picks the correct booklet when several are assigned", () => {
@@ -122,5 +150,39 @@ describe("validateOrEntry", () => {
       bookletId: "b2",
       warning: "sequence_skipped",
     });
+  });
+});
+
+describe("parseOrNo", () => {
+  it("accepts a plain digit string", () => {
+    expect(parseOrNo("1005")).toBe(1005);
+    expect(parseOrNo(" 1005 ")).toBe(1005);
+  });
+
+  it("REFUSES what Number.parseInt would silently truncate", () => {
+    // Every one of these is a parseInt success: 12, 1005, 12, 1. On the entry screens that
+    // meant the button enabled and a truncated number was recorded against a real paper
+    // receipt in the tenant's hand.
+    expect(Number.parseInt("12a", 10)).toBe(12);
+    expect(Number.parseInt("1005x", 10)).toBe(1005);
+    expect(Number.parseInt("12.9", 10)).toBe(12);
+    expect(Number.parseInt("1e3", 10)).toBe(1);
+
+    expect(parseOrNo("12a")).toBeNull();
+    expect(parseOrNo("1005x")).toBeNull();
+    expect(parseOrNo("12.9")).toBeNull();
+    expect(parseOrNo("1e3")).toBeNull();
+  });
+
+  it("refuses the empty, partial and non-positive cases", () => {
+    expect(parseOrNo("")).toBeNull();
+    expect(parseOrNo("-")).toBeNull();
+    expect(parseOrNo(".")).toBeNull();
+    expect(parseOrNo("-5")).toBeNull();
+    expect(parseOrNo("0")).toBeNull();
+  });
+
+  it("refuses a paste too long to survive float arithmetic", () => {
+    expect(parseOrNo("99999999999999999999")).toBeNull();
   });
 });
