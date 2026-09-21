@@ -172,3 +172,21 @@ export function unpaidPeriodGroups(input: LedgerInput, leaseId: string): PeriodG
       outstanding: fromCentavos(bucket.outstanding),
     }));
 }
+
+/**
+ * Per-charge outstanding within one lease, for callers that must settle charge by charge.
+ *
+ * `unpaidPeriodGroups` answers "what does this tenant owe, in the order it must be paid";
+ * this answers "and how does one group's total divide across its rows". The device needs
+ * both: it SELECTS a group and it RECORDS per charge, because `local_allocations` is keyed
+ * (collection_id, charge_id) so the overlay can subtract exactly what was settled.
+ */
+export function chargeOutstanding(
+  input: LedgerInput,
+  leaseId: string,
+): { chargeId: string; outstanding: Centavos }[] {
+  return input.charges
+    .filter((c) => c.leaseId === leaseId)
+    .map((c) => ({ chargeId: c.id, outstanding: chargeBalance(c, input) }))
+    .filter((r) => r.outstanding > 0);
+}
