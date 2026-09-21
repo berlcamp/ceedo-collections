@@ -125,6 +125,37 @@ describe("leaseLedger", () => {
     expect(groups.map((g) => g.chargeIds)).toEqual([["r2"], ["r3"]]);
   });
 
+  it("counts TWO DIFFERENT collections against one charge, pulled and local both", async () => {
+    // The point of this test is that k9 and k2 are DIFFERENT collection ids allocating to
+    // the SAME charge (r1). A dedup key of charge_id alone would treat k2's local row as
+    // "already seen" because k9's pulled row already claimed r1, and silently drop it --
+    // reporting r1 as still owing 500.00 when it is actually fully paid. Do not "simplify"
+    // this back to one collection id: that collapses exactly the distinction this test
+    // exists to pin. See migration 20260918000032_stale_allocations.sql's row lock, which
+    // exists because two collections settling one charge is a real double-payment race,
+    // and charge_balances deliberately SUMS them so that race stays visible rather than
+    // being reported as correctly settled.
+    db.exec(`
+      insert into collection_allocations (id, collection_id, charge_id, amount)
+      values ('a1','k9','r1','1000.00');
+      insert into local_collections
+        (id, or_no, booklet_id, collector_id, shift_id, collected_at, fee_type_id,
+         lease_id, gross_amount, created_at)
+      values ('k2', 2, 'b1', 'c1', 'sh1', '2026-09-21T02:00:00.000Z', 'f1', 'L1',
+              '500.00', '2026-09-21T02:00:00.000Z');
+      insert into local_allocations (collection_id, charge_id, amount)
+      values ('k2','r1','500.00');
+      insert into outbox (id, type, payload, collector_id, created_at, state, attempts, seq)
+      values ('k2','collection','{}','c1','2026-09-21T02:00:00.000Z','pending',0,2);
+    `);
+
+    const groups = await leaseLedger(driver, "L1");
+    expect(groups.map((g) => g.chargeIds)).toEqual([["s1"], ["r2"], ["r3"]]);
+
+    const { perCharge } = await leaseLedgerDetail(driver, "L1");
+    expect(perCharge.has("r1")).toBe(false);
+  });
+
   it("reports each unpaid charge's own outstanding", async () => {
     // The lease screen settles a GROUP, but local_allocations stores one row per CHARGE
     // (spec F1), so the device needs the split the group hides. One reader produces both.
