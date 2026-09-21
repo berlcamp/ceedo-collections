@@ -18,9 +18,17 @@ describe("the device schema's two halves", () => {
     expect(overlap).toEqual([]);
   });
 
-  it("holds the outbox, local shifts, PIN attempts and sync state as device-authored", () => {
+  it("holds the outbox, local shifts, PIN attempts, sync state and the receipt tables as device-authored", () => {
     expect([...DEVICE_AUTHORED_TABLES].sort()).toEqual(
-      ["outbox", "local_shifts", "pin_attempts", "sync_state"].sort(),
+      [
+        "outbox",
+        "local_shifts",
+        "pin_attempts",
+        "sync_state",
+        "local_collections",
+        "local_allocations",
+        "local_lines",
+      ].sort(),
     );
   });
 
@@ -38,4 +46,18 @@ describe("the device schema's two halves", () => {
       ].sort(),
     );
   });
+});
+
+describe("device-authored receipts", () => {
+  // Spec F1. The reset (3b-i E8) empties every PULLED table. A receipt sitting in the
+  // outbox with its only local record in `collections` would be destroyed by a supervisor
+  // changing a device assignment -- silently, because the outbox entry carries no amount
+  // to notice its absence by.
+  it.each(["local_collections", "local_allocations", "local_lines"])(
+    "%s is device-authored and never pulled",
+    (table) => {
+      expect(DEVICE_AUTHORED_TABLES).toContain(table);
+      expect(PULLED_TABLES).not.toContain(table);
+    },
+  );
 });
