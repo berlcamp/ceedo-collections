@@ -90,6 +90,17 @@ export default function Shift() {
         <Text style={styles.body}>No shift is open on this tablet for you.</Text>
       )}
 
+      {shift ? (
+        <View style={styles.card}>
+          <Button title="Collect" onPress={() => router.push("/leases")} />
+          <Button title="Ambulant fee" onPress={() => router.push("/ambulant")} />
+          <Button title="Spoil a form" onPress={() => router.push("/spoil")} />
+          <Text style={styles.totals}>
+            {totals.count} receipt{totals.count === 1 ? "" : "s"} · {totals.total}
+          </Text>
+        </View>
+      ) : null}
+
       {blocked ? (
         <Text style={styles.warn}>
           {queued.length} entr{queued.length === 1 ? "y" : "ies"} still waiting to reach the
@@ -181,4 +192,5 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   warn: { fontSize: 13, lineHeight: 18, color: "#92400e" },
+  totals: { fontSize: 14, color: "#475569" },
 });
