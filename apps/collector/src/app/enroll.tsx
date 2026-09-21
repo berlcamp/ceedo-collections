@@ -1,18 +1,24 @@
 import { useState } from "react";
-import {
-  ActivityIndicator,
-  Button,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { useRouter } from "expo-router";
+import { StyleSheet, View } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";
 import { drizzle } from "drizzle-orm/expo-sqlite";
 import { decodeEnrollment, encodeEnrollment } from "@ceedo/shared";
+import {
+  Action,
+  Body,
+  Field,
+  Label,
+  Note,
+  Punch,
+  RackHead,
+  Rift,
+  Screen,
+  Statement,
+  color,
+  missing,
+} from "../ui";
 import migrations from "../../drizzle/migrations";
 import { openDeviceDb } from "../db/client";
 import { saveCredential, type Credential } from "../auth/credential-store";
@@ -27,6 +33,7 @@ import { runSync } from "../sync/device-sync";
  * `decodeEnrollment`, so the fallback is a fallback rather than a second feature.
  */
 export default function Enroll() {
+  const router = useRouter();
   const db = openDeviceDb();
   // The schema must exist before the first sync writes into it, and enrollment is the
   // earliest moment a tablet touches the database at all.
@@ -39,11 +46,14 @@ export default function Enroll() {
   const [secret, setSecret] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [statusDetail, setStatusDetail] = useState<string | null>(null);
+  const [failedSync, setFailedSync] = useState(false);
 
   async function accept(text: string) {
     setScanning(false);
     setError(null);
     setStatus(null);
+    setStatusDetail(null);
 
     const decoded = decodeEnrollment(text);
     if (!decoded) {
@@ -63,15 +73,19 @@ export default function Enroll() {
       // tablet has no collectors at all and cannot be signed into. Discovering that at 5am
       // at a market is the failure this forces into the office instead.
       await runSync(decoded.credentialId, decoded.secret);
+      setFailedSync(false);
+      setStatusDetail(null);
       setStatus("Enrolled and synced. This tablet is ready.");
     } catch (e) {
       // The credential is KEPT, not rolled back. It may well be correct and the network
       // merely absent, and discarding it would make the retry below impossible -- the
       // secret is shown once on the web and cannot be read back.
+      setFailedSync(true);
       setStatus(
         "Enrolled, but the first sync failed. Stay on the office network and retry — " +
-          `this tablet cannot be signed into until it syncs once. (${String(e)})`,
+          "this tablet cannot be signed into until it syncs once.",
       );
+      setStatusDetail(String(e));
     } finally {
       setBusy(false);
     }
@@ -87,10 +101,6 @@ export default function Enroll() {
   function acceptTyped() {
     const id = credentialId.trim();
     const sec = secret.trim();
-    if (!id || !sec) {
-      setError("Both the credential ID and the secret are needed.");
-      return;
-    }
     if (id.includes(":") || sec.includes(":")) {
       setError("Neither value contains a colon — check for a stray paste.");
       return;
@@ -103,30 +113,65 @@ export default function Enroll() {
   }
 
   if (migrationError) {
-    return <Text style={styles.body}>Migration error: {migrationError.message}</Text>;
+    return (
+      <Screen head={<RackHead title="Enrol this tablet" onBack={() => router.back()} />}>
+        <Statement tone="refusal">{`Migration error: ${migrationError.message}`}</Statement>
+      </Screen>
+    );
   }
-  if (!success) return <Text style={styles.body}>Preparing the device database…</Text>;
+  if (!success) {
+    return (
+      <Screen head={<RackHead title="Enrol this tablet" onBack={() => router.back()} />}>
+        <Note>Preparing the device database…</Note>
+      </Screen>
+    );
+  }
 
   return (
-    <ScrollView contentContainerStyle={styles.screen}>
-      <Text style={styles.body}>
+    <Screen
+      head={
+        <RackHead
+          title="Enrol this tablet"
+          subtitle="Once, at the office"
+          onBack={() => router.back()}
+        />
+      }
+      shelf={
+        <Punch
+          label="Enrol with these values"
+          busy={busy}
+          busyLabel="Enrolling"
+          blocked={missing(
+            credentialId.trim() === "" && "Enter the credential ID.",
+            secret.trim() === "" && "Enter the secret.",
+          )}
+          onPress={acceptTyped}
+        />
+      }
+    >
+      <Body>
         Scan the QR code on the admin&apos;s Device credential screen, or type the two values
         from it. The secret is shown there once and cannot be read back.
-      </Text>
+      </Body>
+
+      <Rift />
 
       {scanning && permission?.granted ? (
-        <View style={styles.camera}>
-          <CameraView
-            style={StyleSheet.absoluteFill}
-            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-            onBarcodeScanned={({ data }) => void accept(data)}
-          />
-        </View>
+        <>
+          <View style={camera.frame}>
+            <CameraView
+              style={StyleSheet.absoluteFill}
+              barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+              onBarcodeScanned={({ data }) => void accept(data)}
+            />
+          </View>
+          <Rift h={12} />
+        </>
       ) : null}
 
-      <Button
-        title={scanning ? "Stop scanning" : "Scan the QR code"}
-        disabled={busy}
+      <Action
+        label={scanning ? "Stop scanning" : "Scan the QR code"}
+        blocked={busy ? "Waiting for the current enrolment to finish." : null}
         onPress={async () => {
           if (scanning) {
             setScanning(false);
@@ -135,9 +180,7 @@ export default function Enroll() {
           const granted = permission?.granted ? permission : await requestPermission();
           if (!granted.granted) {
             // Not a dead end: the whole reason manual entry exists.
-            setError(
-              "Camera permission was refused. Type the credential ID and secret instead.",
-            );
+            setError("Camera permission was refused. Type the credential ID and secret instead.");
             return;
           }
           setError(null);
@@ -145,46 +188,56 @@ export default function Enroll() {
         }}
       />
 
-      <Text style={styles.heading}>Or type it</Text>
-      <TextInput
+      <Rift />
+
+      {/* 24, not 12: a section label sitting twelve pixels above a field label reads as
+          one four-word heading rather than as two levels. */}
+      <Label>Or type it</Label>
+      <Rift h={24} />
+
+      <Field
+        label="Credential ID"
+        voice="mono"
         value={credentialId}
         onChangeText={setCredentialId}
         placeholder="Credential ID"
         autoCapitalize="none"
         autoCorrect={false}
-        style={styles.input}
       />
-      <TextInput
+      <Rift h={16} />
+      <Field
+        label="Secret"
+        voice="mono"
         value={secret}
         onChangeText={setSecret}
         placeholder="Secret"
         autoCapitalize="none"
         autoCorrect={false}
-        style={styles.input}
       />
-      <Button title="Enrol with these values" onPress={acceptTyped} disabled={busy} />
 
-      {busy ? <ActivityIndicator /> : null}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      {status ? <Text style={styles.status}>{status}</Text> : null}
-    </ScrollView>
+      {error ? (
+        <>
+          <Rift h={16} />
+          <Statement tone="refusal">{error}</Statement>
+        </>
+      ) : null}
+      {status ? (
+        <>
+          <Rift h={16} />
+          <Statement tone={failedSync ? "warning" : "confirmed"} detail={statusDetail}>
+            {status}
+          </Statement>
+        </>
+      ) : null}
+    </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { padding: 24, gap: 12 },
-  heading: { fontSize: 16, fontWeight: "600", color: "#0f172a", marginTop: 12 },
-  body: { fontSize: 14, lineHeight: 20, color: "#475569" },
-  camera: { height: 280, borderRadius: 8, overflow: "hidden", backgroundColor: "#000" },
-  input: {
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontFamily: Platform.select({ android: "monospace", default: "Menlo" }),
-    fontSize: 13,
+const camera = StyleSheet.create({
+  frame: {
+    height: 300,
+    borderRadius: 4,
+    overflow: "hidden",
+    backgroundColor: color.ink,
   },
-  error: { color: "#b91c1c", fontSize: 13, lineHeight: 18 },
-  status: { color: "#166534", fontSize: 13, lineHeight: 18 },
 });

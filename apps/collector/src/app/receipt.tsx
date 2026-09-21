@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "expo-router";
-import { Button, StyleSheet, Text, TextInput, View } from "react-native";
 import { randomUUID } from "expo-crypto";
 import {
   format,
@@ -11,6 +10,20 @@ import {
   type OrEntryResult,
 } from "@ceedo/shared";
 import { commitReceipt, orEntryContext } from "@ceedo/sync-engine";
+import {
+  Action,
+  Amount,
+  Field,
+  Figure,
+  Group,
+  Note,
+  Punch,
+  PunchMark,
+  RackHead,
+  Rift,
+  Screen,
+  Statement,
+} from "../ui";
 import { deviceDriver } from "../db/driver";
 import { signedIn } from "../auth/session";
 import { clearDraft, draft } from "../collect/draft";
@@ -26,6 +39,10 @@ import { clearDraft, draft } from "../collect/draft";
  * booklets legitimately get skipped, and a warning that fires on correct behaviour is one
  * that gets ignored on the day it is right. `ambiguous_booklet` IS a hard stop, because a
  * silently wrong booklet id on a real receipt is unrecoverable once the vendor walks away.
+ *
+ * THE PUNCH IS HERE. A serial that validates settles into the spent state with a punch
+ * mark -- the conductor's punch biting the ticket. It is the only motion in the app, and
+ * it marks the one genuinely irreversible moment in the round.
  */
 export default function Receipt() {
   const router = useRouter();
@@ -35,11 +52,13 @@ export default function Receipt() {
 
   const [context, setContext] = useState<OrEntryContext | null>(null);
   const [contextError, setContextError] = useState<string | null>(null);
+  const [contextDetail, setContextDetail] = useState<string | null>(null);
   const [orText, setOrText] = useState("");
   const [check, setCheck] = useState<OrEntryResult | null>(null);
   const [acceptedSkip, setAcceptedSkip] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
 
   // Named so the "Try again" button below can call the exact same load rather than
   // duplicating it. If this read fails, `context` stays null and Record would otherwise
@@ -49,10 +68,12 @@ export default function Receipt() {
   const loadContext = useCallback(() => {
     if (!collector) return;
     setContextError(null);
+    setContextDetail(null);
     orEntryContext(driver, collector.id)
       .then(setContext)
       .catch((caught: unknown) => {
-        setContextError(`Could not load your booklets: ${String(caught)}`);
+        setContextError("Could not load your booklets.");
+        setContextDetail(String(caught));
       });
   }, [collector, driver]);
 
@@ -83,8 +104,20 @@ export default function Receipt() {
     setCheck(validateOrEntry(context, orNo));
   }, [context, orText]);
 
-  if (!collector) return <Text style={styles.note}>Sign in first.</Text>;
-  if (!pending) return <Text style={styles.note}>Nothing to record. Start from the shift screen.</Text>;
+  if (!collector) {
+    return (
+      <Screen head={<RackHead title="Record a receipt" onBack={() => router.back()} />}>
+        <Note>Sign in first.</Note>
+      </Screen>
+    );
+  }
+  if (!pending) {
+    return (
+      <Screen head={<RackHead title="Record a receipt" onBack={() => router.back()} />}>
+        <Note>Nothing to record. Start from the shift screen.</Note>
+      </Screen>
+    );
+  }
 
   const reason = (result: OrEntryResult): string => {
     if (result.ok) return "";
@@ -113,124 +146,172 @@ export default function Receipt() {
   // serial cannot be three different numbers.
   const orNo = parseOrNo(orText);
   const notANumber = orText.trim() !== "" && orNo === null;
+  const skipUnconfirmed = check?.ok === true && check.warning === "sequence_skipped" && !acceptedSkip;
 
-  const blocked =
-    check === null ||
-    !check.ok ||
-    (check.warning === "sequence_skipped" && !acceptedSkip);
+  /**
+   * Why the receipt cannot be recorded yet, naming only what this screen has actually
+   * checked. `check === null` conflates three different situations and each one gets its
+   * own sentence: the booklets failed to load, the booklets have not arrived yet, or
+   * nothing usable has been typed. Saying "enter the OR number" to a collector whose
+   * booklet read just failed would name a cause that is not the cause.
+   */
+  const blocked: string | null = contextError
+    ? "Your booklets could not be loaded. Try again above."
+    : !context
+      ? "Waiting for your booklets to load."
+      : notANumber
+        ? "An OR number is digits only."
+        : orNo === null
+          ? "Enter the number printed on the receipt you just wrote."
+          : check === null
+            ? "Checking that number against your booklets."
+            : !check.ok
+              ? reason(check)
+              : skipUnconfirmed
+                ? "Confirm the skipped number above."
+                : null;
 
   return (
-    <View style={styles.screen}>
-      <Text style={styles.heading}>
-        {pending.kind === "lease" ? `${pending.stallNo} · ${pending.tenantName}` : pending.label}
-      </Text>
-      <Text style={styles.amount}>{format(pending.grossAmount)}</Text>
-      {pending.kind === "lease" && pending.change > 0 ? (
-        <Text style={styles.change}>Change {format(pending.change)}</Text>
-      ) : null}
+    <Screen
+      head={
+        <RackHead
+          title={pending.kind === "lease" ? pending.stallNo : "On-the-spot fee"}
+          subtitle={pending.kind === "lease" ? pending.tenantName : pending.label}
+          onBack={() => router.back()}
+        />
+      }
+      shelf={
+        <Punch
+          label="Record this receipt"
+          blocked={blocked}
+          busy={busy}
+          busyLabel="Recording"
+          onPress={async () => {
+            if (!check?.ok || orNo === null) return;
+            setBusy(true);
+            setError(null);
+            setErrorDetail(null);
+            try {
+              const shifts = await driver.select<{ id: string }>(
+                "select id from local_shifts where collector_id = ? and status = 'open' order by opened_at desc",
+                [collector.id],
+              );
+              const shiftId = shifts[0]?.id;
+              if (!shiftId) {
+                setError("This shift is no longer open. Open one from the shift screen.");
+                return;
+              }
 
-      <Text style={styles.label}>Write the receipt, then enter its number</Text>
-      <TextInput
-        style={styles.input}
+              await commitReceipt(
+                driver,
+                {
+                  id: randomUUID(),
+                  orNo,
+                  bookletId: check.bookletId,
+                  collectorId: collector.id,
+                  shiftId,
+                  collectedAt: new Date().toISOString(),
+                  feeTypeId: pending.feeTypeId,
+                  leaseId: pending.kind === "lease" ? pending.leaseId : null,
+                  grossAmount: pending.grossAmount,
+                  ranks: pending.kind === "lease" ? pending.ranks : [],
+                  allocations: pending.kind === "lease" ? pending.allocations : [],
+                  lines: pending.kind === "lines" ? pending.lines : [],
+                  payerRef: null,
+                  notes: null,
+                },
+                pending.kind === "lines" ? pending.lines.map(() => randomUUID()) : [],
+              );
+
+              clearDraft();
+              router.replace("/shift");
+            } catch (caught) {
+              // Nothing was written -- commitReceipt is one transaction. Saying so matters:
+              // the collector needs to know whether to write another paper receipt.
+              setError(
+                "Not recorded, and nothing was saved. Write the paper receipt again on a new form, or try once more.",
+              );
+              setErrorDetail(String(caught));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      }
+    >
+      {/* The amount leads: it is what the collector has just counted and is about to
+          write onto the paper, and this screen exists only because that paper is real. */}
+      <Group gap={10}>
+        <Figure label="Amount received" value={format(pending.grossAmount)} />
+        {pending.kind === "lease" && pending.change > 0 ? (
+          <Amount label="Change" value={format(pending.change)} tone="confirmed" />
+        ) : null}
+      </Group>
+
+      <Rift />
+
+      <Field
+        label="Write the receipt, then enter its number"
+        voice="figure"
         keyboardType="number-pad"
         placeholder="OR number"
         value={orText}
         onChangeText={setOrText}
       />
 
+      <Rift h={16} />
+
       {contextError ? (
-        <View style={styles.warnBox}>
-          <Text style={styles.error}>{contextError}</Text>
-          <Button title="Try again" onPress={loadContext} />
-        </View>
+        <Statement
+          tone="refusal"
+          detail={contextDetail}
+          action={<Action label="Try again" onPress={loadContext} />}
+        >
+          {contextError}
+        </Statement>
       ) : !context ? (
-        <Text style={styles.note}>Loading your booklets…</Text>
+        <Note>Loading your booklets…</Note>
       ) : null}
 
       {notANumber ? (
-        <Text style={styles.error}>
+        <Statement tone="refusal">
           An OR number is digits only. Type the number exactly as it is printed on the form.
-        </Text>
+        </Statement>
       ) : null}
-      {check && !check.ok ? <Text style={styles.error}>{reason(check)}</Text> : null}
+
+      {check && !check.ok ? <Statement tone="refusal">{reason(check)}</Statement> : null}
+
+      {/* THE PUNCH. The serial validated; the ticket is bitten. */}
       {check?.ok && matchedBooklet && orNo !== null ? (
-        <Text style={styles.ok}>{formatSerial(matchedBooklet.serialPrefix, orNo)}</Text>
+        <PunchMark serial={formatSerial(matchedBooklet.serialPrefix, orNo)} />
       ) : null}
-      {check?.ok && check.warning === "sequence_skipped" && !acceptedSkip ? (
-        <View style={styles.warnBox}>
-          <Text style={styles.warn}>
+
+      {skipUnconfirmed ? (
+        <>
+          <Rift h={12} />
+          <Statement
+            tone="warning"
+            action={
+              <Action
+                label="Yes, that is the number written"
+                onPress={() => setAcceptedSkip(true)}
+              />
+            }
+          >
             This skips one or more numbers in the booklet. That is allowed — confirm it is
             what the paper shows.
-          </Text>
-          <Button title="Yes, that is the number written" onPress={() => setAcceptedSkip(true)} />
-        </View>
+          </Statement>
+        </>
       ) : null}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <Button
-        title="Record this receipt"
-        disabled={blocked || busy}
-        onPress={async () => {
-          if (!check?.ok || orNo === null) return;
-          setBusy(true);
-          setError(null);
-          try {
-            const shifts = await driver.select<{ id: string }>(
-              "select id from local_shifts where collector_id = ? and status = 'open' order by opened_at desc",
-              [collector.id],
-            );
-            const shiftId = shifts[0]?.id;
-            if (!shiftId) {
-              setError("This shift is no longer open. Open one from the shift screen.");
-              return;
-            }
-
-            await commitReceipt(
-              driver,
-              {
-                id: randomUUID(),
-                orNo,
-                bookletId: check.bookletId,
-                collectorId: collector.id,
-                shiftId,
-                collectedAt: new Date().toISOString(),
-                feeTypeId: pending.feeTypeId,
-                leaseId: pending.kind === "lease" ? pending.leaseId : null,
-                grossAmount: pending.grossAmount,
-                ranks: pending.kind === "lease" ? pending.ranks : [],
-                allocations: pending.kind === "lease" ? pending.allocations : [],
-                lines: pending.kind === "lines" ? pending.lines : [],
-                payerRef: null,
-                notes: null,
-              },
-              pending.kind === "lines" ? pending.lines.map(() => randomUUID()) : [],
-            );
-
-            clearDraft();
-            router.replace("/shift");
-          } catch (caught) {
-            // Nothing was written -- commitReceipt is one transaction. Saying so matters:
-            // the collector needs to know whether to write another paper receipt.
-            setError(`Not recorded, and nothing was saved: ${String(caught)}`);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      />
-    </View>
+      {error ? (
+        <>
+          <Rift h={12} />
+          <Statement tone="refusal" detail={errorDetail}>
+            {error}
+          </Statement>
+        </>
+      ) : null}
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, padding: 16, gap: 10 },
-  heading: { fontSize: 20, fontWeight: "700" },
-  amount: { fontSize: 34, fontWeight: "800" },
-  change: { fontSize: 18, color: "#1b5e20" },
-  label: { marginTop: 12, fontSize: 14, color: "#666" },
-  input: { borderWidth: 1, borderColor: "#999", borderRadius: 6, padding: 12, fontSize: 24 },
-  ok: { fontSize: 18, color: "#1b5e20", fontWeight: "600" },
-  error: { color: "#b71c1c", fontSize: 15 },
-  warnBox: { backgroundColor: "#fff8e1", padding: 10, borderRadius: 6, gap: 8 },
-  warn: { fontSize: 14 },
-  note: { padding: 16, fontSize: 15, color: "#666" },
-});

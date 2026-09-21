@@ -1,9 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "expo-router";
-import { Button, StyleSheet, Text, TextInput, View } from "react-native";
 import { randomUUID } from "expo-crypto";
 import { parseOrNo, validateOrEntry, type OrEntryContext } from "@ceedo/shared";
 import { enqueue, orEntryContext } from "@ceedo/sync-engine";
+import {
+  Action,
+  Body,
+  Field,
+  Note,
+  Punch,
+  RackHead,
+  Rift,
+  Screen,
+  Statement,
+  missing,
+} from "../ui";
 import { deviceDriver } from "../db/driver";
 import { signedIn } from "../auth/session";
 
@@ -26,10 +37,12 @@ export default function Spoil() {
 
   const [context, setContext] = useState<OrEntryContext | null>(null);
   const [contextError, setContextError] = useState<string | null>(null);
+  const [contextDetail, setContextDetail] = useState<string | null>(null);
   const [orText, setOrText] = useState("");
   const [reason, setReason] = useState("");
   const [acceptedSkip, setAcceptedSkip] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // Named so the "Try again" button can call the exact same load rather than duplicating
@@ -40,10 +53,12 @@ export default function Spoil() {
   const loadContext = useCallback(() => {
     if (!collector) return;
     setContextError(null);
+    setContextDetail(null);
     orEntryContext(driver, collector.id)
       .then(setContext)
       .catch((caught: unknown) => {
-        setContextError(`Could not load your booklets: ${String(caught)}`);
+        setContextError("Could not load your booklets.");
+        setContextDetail(String(caught));
       });
   }, [collector, driver]);
 
@@ -51,7 +66,13 @@ export default function Spoil() {
     loadContext();
   }, [loadContext]);
 
-  if (!collector) return <Text style={styles.note}>Sign in first.</Text>;
+  if (!collector) {
+    return (
+      <Screen head={<RackHead title="Spoil a form" onBack={() => router.back()} />}>
+        <Note>Sign in first.</Note>
+      </Screen>
+    );
+  }
 
   // `parseOrNo`, never `Number.parseInt`. parseInt("1005x", 10) is 1005, and THIS screen
   // echoes nothing back, so a truncated serial here would be marked spoiled with no cash
@@ -69,18 +90,91 @@ export default function Spoil() {
   // closeout); a wrong-serial spoil leaves no trail at all until the booklet is
   // reconciled, much later, by someone else. So an out-of-sequence serial is
   // confirmable, never silent and never a hard block.
-  const skipUnconfirmed = check?.ok === true && check.warning === "sequence_skipped" && !acceptedSkip;
+  const skipUnconfirmed =
+    check?.ok === true && check.warning === "sequence_skipped" && !acceptedSkip;
+
+  const refusal =
+    check && !check.ok
+      ? check.reason === "already_consumed"
+        ? "That number carries a receipt already. It cannot be spoiled."
+        : check.reason === "marked_spoiled"
+          ? "That number is already marked spoiled."
+          : check.reason === "ambiguous_booklet"
+            ? "That number falls inside two of your booklets. Check the form type before spoiling it."
+            : "That number is not inside any booklet assigned to you."
+      : null;
+
+  /**
+   * BOTH REASONS, NOT WHICHEVER IS CHECKED FIRST. A collector who has typed a good serial
+   * but no reason, and a collector who has typed neither, need different sentences — and
+   * the second needs both of them, or they fix one thing and the button stays dead.
+   */
+  const blocked = contextError
+    ? "Your booklets could not be loaded. Try again above."
+    : !context
+      ? "Waiting for your booklets to load."
+      : missing(
+          notANumber
+            ? "An OR number is digits only."
+            : orNo === null
+              ? "Enter the number printed on the form you are spoiling."
+              : (refusal ?? (skipUnconfirmed ? "Confirm the skipped number above." : null)),
+          !reasonGiven && "Give a reason.",
+        );
 
   return (
-    <View style={styles.screen}>
-      <Text style={styles.heading}>Spoil a form</Text>
-      <Text style={styles.body}>
+    <Screen
+      head={
+        <RackHead
+          title="Spoil a form"
+          subtitle="Accounted for on return"
+          onBack={() => router.back()}
+        />
+      }
+      shelf={
+        <Punch
+          label="Mark spoiled"
+          blocked={blocked}
+          busy={busy}
+          busyLabel="Recording"
+          onPress={async () => {
+            if (!check?.ok || orNo === null || !reasonGiven || skipUnconfirmed) return;
+            setBusy(true);
+            setError(null);
+            setErrorDetail(null);
+            try {
+              await enqueue(driver, {
+                id: randomUUID(),
+                type: "spoiled_form",
+                payload: {
+                  booklet_id: check.bookletId,
+                  or_no: orNo,
+                  collector_id: collector.id,
+                  reason: reason.trim(),
+                },
+                collectorId: collector.id,
+              });
+              router.replace("/shift");
+            } catch (caught) {
+              setError("Not recorded. Nothing was saved — try again.");
+              setErrorDetail(String(caught));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      }
+    >
+      <Body>
         The form stays in the booklet and is accounted for on return: used + spoiled +
         unused must equal the total serials.
-      </Text>
+      </Body>
 
-      <TextInput
-        style={styles.input}
+      <Rift />
+
+      <Field
+        label="OR number"
+        voice="figure"
         keyboardType="number-pad"
         placeholder="OR number"
         value={orText}
@@ -90,9 +184,12 @@ export default function Spoil() {
           setError(null);
         }}
       />
-      <TextInput
-        style={styles.input}
-        placeholder="Why (torn, misprinted, wrong amount…)"
+
+      <Rift h={16} />
+
+      <Field
+        label="Why"
+        placeholder="Torn, misprinted…"
         value={reason}
         onChangeText={(text) => {
           setReason(text);
@@ -100,83 +197,54 @@ export default function Spoil() {
         }}
       />
 
+      <Rift h={16} />
+
       {contextError ? (
-        <View style={styles.warnBox}>
-          <Text style={styles.error}>{contextError}</Text>
-          <Button title="Try again" onPress={loadContext} />
-        </View>
+        <Statement
+          tone="refusal"
+          detail={contextDetail}
+          action={<Action label="Try again" onPress={loadContext} />}
+        >
+          {contextError}
+        </Statement>
       ) : !context ? (
-        <Text style={styles.note}>Loading your booklets…</Text>
+        <Note>Loading your booklets…</Note>
       ) : null}
 
       {notANumber ? (
-        <Text style={styles.error}>
+        <Statement tone="refusal">
           An OR number is digits only. Type the number exactly as it is printed on the form.
-        </Text>
+        </Statement>
       ) : null}
-      {check && !check.ok ? (
-        <Text style={styles.error}>
-          {check.reason === "already_consumed"
-            ? "That number carries a receipt already. It cannot be spoiled."
-            : check.reason === "marked_spoiled"
-              ? "That number is already marked spoiled."
-              : check.reason === "ambiguous_booklet"
-                ? "That number falls inside two of your booklets. Check the form type before spoiling it."
-                : "That number is not inside any booklet assigned to you."}
-        </Text>
-      ) : null}
+
+      {refusal ? <Statement tone="refusal">{refusal}</Statement> : null}
+
       {skipUnconfirmed ? (
-        <View style={styles.warnBox}>
-          <Text style={styles.warn}>
+        <>
+          <Rift h={12} />
+          <Statement
+            tone="warning"
+            action={
+              <Action
+                label="Yes, that is the form in my hand"
+                onPress={() => setAcceptedSkip(true)}
+              />
+            }
+          >
             This skips one or more numbers in the booklet. That is allowed — confirm the
             number you typed matches the form you are holding.
-          </Text>
-          <Button title="Yes, that is the form in my hand" onPress={() => setAcceptedSkip(true)} />
-        </View>
+          </Statement>
+        </>
       ) : null}
-      {check?.ok && !reasonGiven ? (
-        <Text style={styles.note}>Give a reason before this form can be marked spoiled.</Text>
-      ) : null}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <Button
-        title="Mark spoiled"
-        disabled={busy || !check?.ok || !reasonGiven || skipUnconfirmed}
-        onPress={async () => {
-          if (!check?.ok || orNo === null || !reasonGiven || skipUnconfirmed) return;
-          setBusy(true);
-          setError(null);
-          try {
-            await enqueue(driver, {
-              id: randomUUID(),
-              type: "spoiled_form",
-              payload: {
-                booklet_id: check.bookletId,
-                or_no: orNo,
-                collector_id: collector.id,
-                reason: reason.trim(),
-              },
-              collectorId: collector.id,
-            });
-            router.replace("/shift");
-          } catch (caught) {
-            setError(`Not recorded: ${String(caught)}`);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      />
-    </View>
+      {error ? (
+        <>
+          <Rift h={12} />
+          <Statement tone="refusal" detail={errorDetail}>
+            {error}
+          </Statement>
+        </>
+      ) : null}
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, padding: 16, gap: 10 },
-  heading: { fontSize: 22, fontWeight: "700" },
-  body: { fontSize: 14, color: "#666" },
-  input: { borderWidth: 1, borderColor: "#999", borderRadius: 6, padding: 12, fontSize: 18 },
-  error: { color: "#b71c1c", fontSize: 15 },
-  warnBox: { backgroundColor: "#fff8e1", padding: 10, borderRadius: 6, gap: 8 },
-  warn: { fontSize: 14 },
-  note: { padding: 16, fontSize: 15, color: "#666" },
-});

@@ -1,16 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
-import {
-  ActivityIndicator,
-  Button,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { View } from "react-native";
 import {
   canSignIn,
   clearPinFailures,
@@ -20,6 +10,21 @@ import {
 // Relative, not the `@/modules/...` alias the Expo docs show: this project maps `@/*` to
 // `./src/*`, so that alias would resolve to src/modules/ and silently miss.
 import { verify as nativeVerify, meetsExpectedCost } from "../../modules/ceedo-bcrypt";
+import {
+  Action,
+  Body,
+  Field,
+  Label,
+  Punch,
+  RackHead,
+  Rift,
+  Rule,
+  Screen,
+  Slot,
+  Statement,
+  missing,
+} from "../ui";
+import { syncFailure } from "../ui/failures";
 import { deviceDriver } from "../db/driver";
 import { setSession } from "../auth/session";
 import { syncNow } from "../sync/device-sync";
@@ -63,6 +68,13 @@ export default function SignIn() {
   const [verifying, setVerifying] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  /**
+   * TWO CHANNELS, NOT ONE. `notice` used to carry both "the sync finished" and "this
+   * PIN was stored with a weaker setting than expected", and both rendered amber -- so a
+   * successful sync announced itself in the colour this app reserves for a problem.
+   */
+  const [done, setDone] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   /**
    * Why sign-in is blocked before anyone has typed anything, or null if it is not.
@@ -71,7 +83,7 @@ export default function SignIn() {
    * collectors on this tablet at all -- are visible before the collector touches the screen,
    * and making them tap a name and type six digits to be told so is a small cruelty at 5am.
    */
-  const [blocked, setBlocked] = useState<SignInBlock | null>(null);
+  const [blockedReason, setBlockedReason] = useState<SignInBlock | null>(null);
 
   const load = useCallback(async () => {
     const rows = await driver.select<Collector>(
@@ -86,7 +98,7 @@ export default function SignIn() {
     // rather than re-deriving a reason from `rows.length` -- which is how this screen came
     // to claim "not synced yet" about a tablet that had just synced perfectly well.
     const gate = await canSignIn(driver, rows[0]?.id ?? "");
-    setBlocked(gate.ok ? null : gate.reason);
+    setBlockedReason(gate.ok ? null : gate.reason);
   }, [driver]);
 
   // Re-read on every focus. A sync that runs while this screen is backgrounded can add the
@@ -109,6 +121,7 @@ export default function SignIn() {
     }
     setError(null);
     setNotice(null);
+    setDone(null);
 
     const gate = await canSignIn(driver, collectorId);
     if (!gate.ok) {
@@ -160,11 +173,43 @@ export default function SignIn() {
     router.replace("/shift");
   }
 
+  /**
+   * A DISABLED BUTTON THAT DOES NOT SAY WHY IS A DEAD END WITH NO SIGN ON IT. This caught
+   * a real person: with two collectors in scope neither is auto-selected (see load()), so
+   * a PIN typed without first tapping a name left the button inert with nothing on screen
+   * explaining it. `missing` says BOTH when both are missing rather than whichever is
+   * checked first, and `Punch` has no way to be disabled without a reason at all.
+   */
+  const blocked = verifying
+    ? null
+    : syncing
+      ? "Waiting for the sync to finish."
+      : collectors.length === 0
+        ? "No collectors on this tablet yet — sync first."
+        : missing(
+            !collectorId && "Tap your name above.",
+            pin.length === 0 && "Enter your PIN.",
+          );
+
   return (
-    <ScrollView contentContainerStyle={styles.screen}>
+    <Screen
+      head={<RackHead title="Sign in" subtitle="CEEDO Collector" />}
+      shelf={
+        <Punch
+          label="Sign in"
+          blocked={blocked}
+          busy={verifying}
+          busyLabel="Checking"
+          onPress={() => void submit()}
+        />
+      }
+    >
       {/* The accurate reason, from canSignIn -- never a guess made from an empty list. */}
-      {collectors.length === 0 && blocked ? (
-        <Text style={styles.error}>{MESSAGES[blocked]}</Text>
+      {collectors.length === 0 && blockedReason ? (
+        <>
+          <Statement tone="refusal">{MESSAGES[blockedReason]}</Statement>
+          <Rift h={16} />
+        </>
       ) : null}
 
       {/*
@@ -175,21 +220,27 @@ export default function SignIn() {
         that tablet can only be recovered by re-enrolling it, which needs a credential that
         is shown once and cannot be read back.
       */}
-      <Button
-        title={syncing ? "Syncing…" : "Sync now"}
-        disabled={syncing || verifying}
+      <Action
+        label="Sync now"
+        busy={syncing}
+        busyLabel="Syncing"
+        blocked={verifying ? "Waiting for the PIN check to finish." : null}
         onPress={async () => {
           setSyncing(true);
           setError(null);
+          setErrorDetail(null);
           setNotice(null);
+          setDone(null);
           try {
             const outcome = await syncNow();
-            setNotice(
+            setDone(
               `Synced${outcome.fullResync ? " (full re-sync)" : ""}. ` +
-                "Pull down the collector list below.",
+                "The collector list below is up to date.",
             );
           } catch (e) {
-            setError(`Could not sync: ${String(e)}`);
+            const said = syncFailure(e);
+            setError(said.said);
+            setErrorDetail(said.detail);
           } finally {
             setSyncing(false);
             await load();
@@ -197,85 +248,68 @@ export default function SignIn() {
         }}
       />
 
-      <Text style={styles.heading}>Collector</Text>
-      {collectors.map((collector) => (
-        <Pressable
-          key={collector.id}
-          onPress={() => setCollectorId(collector.id)}
-          style={[styles.row, collectorId === collector.id ? styles.rowSelected : null]}
-        >
-          <Text style={styles.rowText}>
-            {collector.full_name ?? collector.id}
-            {collector.employee_no ? `  ·  ${collector.employee_no}` : ""}
-          </Text>
-        </Pressable>
-      ))}
+      <Rift />
 
-      <Text style={styles.heading}>PIN</Text>
-      <TextInput
+      {/* No heading when there is nothing under it. An empty "COLLECTOR" label above an
+          empty space is a section that looks broken rather than one that is simply not
+          populated yet -- and the refusal above has already said why it is empty. */}
+      {collectors.length === 0 ? null : (
+        <>
+          <Label>Collector</Label>
+          <View style={{ height: 8 }} />
+          <Rule />
+          {collectors.map((collector) => (
+            <View key={collector.id}>
+              <Slot
+                selected={collectorId === collector.id}
+                suppressed={collectorId !== null && collectorId !== collector.id}
+                onPress={() => setCollectorId(collector.id)}
+                left={
+                  <View style={{ gap: 2 }}>
+                    <Body>{collector.full_name ?? collector.id}</Body>
+                    {collector.employee_no ? <Label>{collector.employee_no}</Label> : null}
+                  </View>
+                }
+              />
+              <Rule />
+            </View>
+          ))}
+        </>
+      )}
+
+      <Rift />
+
+      <Field
+        label="PIN"
+        voice="mono"
         value={pin}
         onChangeText={setPin}
         placeholder="6 digits"
         keyboardType="number-pad"
         secureTextEntry
         maxLength={6}
-        style={styles.input}
       />
 
-      <Button
-        title={verifying ? "Checking…" : "Sign in"}
-        onPress={() => void submit()}
-        disabled={verifying || syncing || !collectorId || pin.length === 0}
-      />
-      {/*
-        A DISABLED BUTTON THAT DOES NOT SAY WHY IS A DEAD END WITH NO SIGN ON IT. This one
-        caught a real person: with two collectors in scope neither is auto-selected (see
-        load()), so a PIN typed without first tapping a name leaves the button inert and
-        nothing on screen explaining it.
-      */}
-      {!verifying && !syncing && (!collectorId || pin.length === 0) ? (
-        <Text style={styles.hint}>
-          {!collectorId && collectors.length > 0
-            ? "Tap your name above first."
-            : collectors.length === 0
-              ? "No collectors on this tablet yet — sync first."
-              : "Enter your PIN."}
-        </Text>
+      {error ? (
+        <>
+          <Rift h={16} />
+          <Statement tone="refusal" detail={errorDetail}>
+            {error}
+          </Statement>
+        </>
       ) : null}
-      {/* ~482 ms is under the 800 ms line, so an indicator is not required by the Task 2
-          decision table -- but it is perceptible, and a collector who taps twice because
-          nothing moved spends two of five attempts. */}
-      {verifying ? <ActivityIndicator /> : null}
-
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
-    </ScrollView>
+      {done ? (
+        <>
+          <Rift h={12} />
+          <Statement tone="confirmed">{done}</Statement>
+        </>
+      ) : null}
+      {notice ? (
+        <>
+          <Rift h={12} />
+          <Statement tone="warning">{notice}</Statement>
+        </>
+      ) : null}
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: { padding: 24, gap: 12 },
-  heading: { fontSize: 16, fontWeight: "600", color: "#0f172a", marginTop: 8 },
-  row: {
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  rowSelected: { borderColor: "#1d4ed8", backgroundColor: "#eff6ff" },
-  rowText: { fontSize: 15, color: "#0f172a" },
-  input: {
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontFamily: Platform.select({ android: "monospace", default: "Menlo" }),
-    fontSize: 18,
-    letterSpacing: 6,
-  },
-  error: { color: "#b91c1c", fontSize: 13, lineHeight: 18 },
-  notice: { color: "#92400e", fontSize: 13, lineHeight: 18 },
-  hint: { color: "#64748b", fontSize: 13, lineHeight: 18 },
-});

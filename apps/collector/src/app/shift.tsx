@@ -1,13 +1,6 @@
 import { useCallback, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
-import {
-  ActivityIndicator,
-  Button,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { View } from "react-native";
 import { randomUUID } from "expo-crypto";
 import {
   deviceTotals,
@@ -16,6 +9,27 @@ import {
   pushable,
   type OutboxRow,
 } from "@ceedo/sync-engine";
+import {
+  Action,
+  Body,
+  Figure,
+  Group,
+  Label,
+  Note,
+  Punch,
+  RackHead,
+  Register,
+  Rift,
+  Rule,
+  Screen,
+  Slot,
+  Statement,
+  color,
+} from "../ui";
+import { syncFailure } from "../ui/failures";
+import { fromWire } from "../ui/money";
+import { clockTime } from "../ui/time";
+import { freshness, type Freshness } from "../ui/staleness";
 import { deviceDriver } from "../db/driver";
 import { signedIn, signOut } from "../auth/session";
 import { businessDate, syncNow } from "../sync/device-sync";
@@ -29,8 +43,14 @@ interface LocalShift {
 }
 
 /**
- * The shift a collector works in. Phase 3b-i's shift contains zero receipts by design --
- * the collection flow is 3b-ii -- so this screen is the spine: open, sync, close out.
+ * The shift a collector works in: open, collect, sync, close out.
+ *
+ * MONEY HERE GOES THROUGH `format()` LIKE EVERYWHERE ELSE. `deviceTotals` returns the wire
+ * form -- a plain decimal string with no peso sign and no separators -- and this screen
+ * used to render it as `₱{totals.total}`. That is interpolation, which the money rule
+ * forbids, and the visible cost was real: the shift total printed `₱1250.00` where the
+ * lease screen printed `₱1,250.00`, in the one place in the app whose whole purpose is
+ * for two figures to be compared. `fromWire` routes it back through `format()`.
  */
 export default function Shift() {
   const router = useRouter();
@@ -42,6 +62,9 @@ export default function Shift() {
   const [queued, setQueued] = useState<OutboxRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [detail, setDetail] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [fresh, setFresh] = useState<Freshness | null>(null);
 
   const load = useCallback(async () => {
     if (!collector) return;
@@ -56,6 +79,7 @@ export default function Shift() {
     setShift(mine);
     setTotals(mine ? await deviceTotals(driver, mine.id) : { count: 0, total: "0.00" });
     setQueued(await pushable(driver));
+    setFresh(await freshness(driver, businessDate()));
   }, [collector, driver]);
 
   useFocusEffect(
@@ -66,10 +90,12 @@ export default function Shift() {
 
   if (!collector) {
     return (
-      <View style={styles.screen}>
-        <Text style={styles.body}>Not signed in.</Text>
-        <Button title="Go to sign-in" onPress={() => router.replace("/sign-in")} />
-      </View>
+      <Screen
+        head={<RackHead title="Shift" />}
+        shelf={<Punch label="Go to sign-in" onPress={() => router.replace("/sign-in")} />}
+      >
+        <Note>Not signed in.</Note>
+      </Screen>
     );
   }
 
@@ -77,133 +103,179 @@ export default function Shift() {
   // assumed, because a closeout pushed while receipts are still queued compares the
   // device's figures against a server that has not seen them yet -- and answers `mismatch`
   // for a shift that is in fact perfectly balanced.
-  const blocked = queued.length > 0;
+  const stillQueued = queued.length > 0;
+
+  const sync = async () => {
+    setBusy(true);
+    setMessage(null);
+    setDetail(null);
+    setFailed(false);
+    try {
+      const outcome = await syncNow();
+      setMessage(
+        `Synced${outcome.fullResync ? " (full re-sync)" : ""}. ` +
+          `${outcome.pushed} entr${outcome.pushed === 1 ? "y" : "ies"} pushed.`,
+      );
+      // §6.4's retention rule had no caller until now; the outbox simply grew.
+      // Rejected entries are NOT purged -- they are kept until resolved, because a
+      // rejection never means discard (§6.3). Housekeeping runs only after a sync
+      // that already succeeded, and its own failure is swallowed rather than
+      // reported: a purge that failed to run this time will get another chance on
+      // the next sync, but a sync that failed because housekeeping threw would cost
+      // the collector the very thing this screen exists to guarantee.
+      try {
+        await purgeAcked(driver, 30);
+      } catch {
+        // Deliberately silent -- see comment above.
+      }
+    } catch (error) {
+      // Never fatal. A collector with no signal keeps working offline; that is the
+      // whole design (parent §3).
+      const said = syncFailure(error);
+      setMessage(said.said);
+      setDetail(said.detail);
+      setFailed(true);
+    } finally {
+      setBusy(false);
+      await load();
+    }
+  };
 
   return (
-    <ScrollView contentContainerStyle={styles.screen}>
-      <Text style={styles.heading}>{collector.full_name ?? collector.id}</Text>
-      <Text style={styles.body}>Business date {businessDate()}</Text>
-
+    <Screen
+      head={
+        <RackHead
+          title={collector.full_name ?? collector.id}
+          subtitle={`Business date ${businessDate()}`}
+          register={
+            fresh ? <Register state={fresh.state} detail={fresh.short} /> : undefined
+          }
+        />
+      }
+      shelf={
+        shift ? (
+          <>
+          {/* THE REMEDY SITS WITH THE REASON. "Sync now" was in the body, and at 360dp
+              the warning above it pushed the control that resolves the block clean off
+              the bottom of the scroll -- a stated reason with its fix out of sight. */}
+          {stillQueued ? (
+            <Action label="Sync now" busy={busy} busyLabel="Syncing" onPress={() => void sync()} />
+          ) : null}
+          <Punch
+            label="Close out"
+            // Short, and NOT a repeat of the statement in the body. The body explains the
+            // consequence and carries the Sync control; the shelf names what is missing,
+            // which is all a reason attached to a dead button owes.
+            blocked={
+              stillQueued
+                ? `${queued.length} entr${queued.length === 1 ? "y has" : "ies have"} not reached the server yet.`
+                : null
+            }
+            onPress={() =>
+              router.push({ pathname: "/closeout", params: { shiftId: shift.id } })
+            }
+          />
+          </>
+        ) : (
+          <Punch
+            label="Open a shift"
+            busy={busy}
+            busyLabel="Opening"
+            onPress={async () => {
+              setBusy(true);
+              try {
+                await openShift(driver, {
+                  // expo-crypto, because `crypto.randomUUID` is a Node global that Hermes
+                  // does not have. The engine requires this id rather than defaulting it,
+                  // so that the missing global is a type error here instead of a crash in
+                  // a market.
+                  id: randomUUID(),
+                  collectorId: collector.id,
+                  businessDate: businessDate(),
+                });
+              } finally {
+                setBusy(false);
+                await load();
+              }
+            }}
+          />
+        )
+      }
+    >
       {shift ? (
-        <View style={styles.card}>
-          <Text style={styles.body}>Shift open since {shift.opened_at}</Text>
-          <Text style={styles.figure}>
-            {totals.count} receipt{totals.count === 1 ? "" : "s"} · ₱{totals.total}
-          </Text>
-        </View>
+        <>
+          <Figure
+            label={`Taken this shift · ${totals.count} receipt${totals.count === 1 ? "" : "s"}`}
+            value={fromWire(totals.total)}
+            absent="This tablet cannot read its own total for this shift. Do not close out — tell the office."
+          />
+          <Rift h={10} />
+          {/* A clock time, not the wire value. `clockTime` returns null rather than a
+              guess, and then the screen says it has no time instead of printing one. */}
+          <Body>
+            {clockTime(shift.opened_at)
+              ? `Open since ${clockTime(shift.opened_at)}`
+              : "Open on this tablet."}
+          </Body>
+        </>
       ) : (
-        <Text style={styles.body}>No shift is open on this tablet for you.</Text>
+        <Note>No shift is open on this tablet for you.</Note>
       )}
 
       {shift ? (
-        <View style={styles.card}>
-          <Button title="Collect" onPress={() => router.push("/leases")} />
-          <Button title="Ambulant fee" onPress={() => router.push("/ambulant")} />
-          <Button title="Spoil a form" onPress={() => router.push("/spoil")} />
-        </View>
+        <>
+          <Rift />
+          <Label>The round</Label>
+          <View style={{ height: 8 }} />
+          <Rule />
+          <Slot onPress={() => router.push("/leases")} left="Collect from a stall" />
+          <Rule />
+          <Slot onPress={() => router.push("/ambulant")} left="On-the-spot fee" />
+          <Rule />
+          <Slot onPress={() => router.push("/spoil")} left="Spoil a form" />
+          <Rule />
+        </>
       ) : null}
 
-      {blocked ? (
-        <Text style={styles.warn}>
-          {queued.length} entr{queued.length === 1 ? "y" : "ies"} still waiting to reach the
-          server. Sync before closing out — a closeout sent now would be compared against a
-          server that has not seen them.
-        </Text>
+      <Rift />
+
+      {/*
+        NO THIRD COPY. The shelf already carries the reason and, since the last round, the
+        Sync control that resolves it. A fuller warning here was the one getting clipped
+        mid-sentence, so the consequence moves to a single line beside the remedy rather
+        than competing with it.
+      */}
+      {stillQueued ? (
+        <>
+          <Body tone={color.muted}>
+            A closeout sent now would be compared against a server that has not seen these.
+          </Body>
+          <Rift h={12} />
+        </>
       ) : null}
 
-      <Button
-        title={busy ? "Syncing…" : "Sync now"}
-        disabled={busy}
-        onPress={async () => {
-          setBusy(true);
-          setMessage(null);
-          try {
-            const outcome = await syncNow();
-            setMessage(
-              `Synced${outcome.fullResync ? " (full re-sync)" : ""}. ` +
-                `${outcome.pushed} entr${outcome.pushed === 1 ? "y" : "ies"} pushed.`,
-            );
-            // §6.4's retention rule had no caller until now; the outbox simply grew.
-            // Rejected entries are NOT purged -- they are kept until resolved, because a
-            // rejection never means discard (§6.3). Housekeeping runs only after a sync
-            // that already succeeded, and its own failure is swallowed rather than
-            // reported: a purge that failed to run this time will get another chance on
-            // the next sync, but a sync that failed because housekeeping threw would cost
-            // the collector the very thing this screen exists to guarantee.
-            try {
-              await purgeAcked(driver, 30);
-            } catch {
-              // Deliberately silent -- see comment above.
-            }
-          } catch (error) {
-            // Never fatal. A collector with no signal keeps working offline; that is the
-            // whole design (parent §3).
-            setMessage(`Could not sync: ${String(error)}. You can keep working offline.`);
-          } finally {
-            setBusy(false);
-            await load();
-          }
-        }}
-      />
+      {message ? (
+        <>
+          <Statement tone={failed ? "refusal" : "confirmed"} detail={detail}>
+            {message}
+          </Statement>
+          <Rift h={12} />
+        </>
+      ) : null}
 
-      {shift ? (
-        <Button
-          title="Close out"
-          disabled={busy || blocked}
-          onPress={() => router.push({ pathname: "/closeout", params: { shiftId: shift.id } })}
-        />
-      ) : (
-        <Button
-          title="Open a shift"
-          disabled={busy}
-          onPress={async () => {
-            setBusy(true);
-            try {
-              await openShift(driver, {
-                // expo-crypto, because `crypto.randomUUID` is a Node global that Hermes
-                // does not have. The engine requires this id rather than defaulting it, so
-                // that the missing global is a type error here instead of a crash in a
-                // market.
-                id: randomUUID(),
-                collectorId: collector.id,
-                businessDate: businessDate(),
-              });
-            } finally {
-              setBusy(false);
-              await load();
-            }
+      <Group>
+        <Action label="Sync now" busy={busy} busyLabel="Syncing" onPress={() => void sync()} />
+        <Action
+          label="Sign out"
+          tone="danger"
+          onPress={() => {
+            // Clears a session, never data (parent §6.4). The outbox and every local shift
+            // stay exactly where they are.
+            signOut();
+            router.replace("/sign-in");
           }}
         />
-      )}
-
-      <Button
-        title="Sign out"
-        onPress={() => {
-          // Clears a session, never data (parent §6.4). The outbox and every local shift
-          // stay exactly where they are.
-          signOut();
-          router.replace("/sign-in");
-        }}
-      />
-
-      {busy ? <ActivityIndicator /> : null}
-      {message ? <Text style={styles.body}>{message}</Text> : null}
-    </ScrollView>
+      </Group>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: { padding: 24, gap: 12 },
-  heading: { fontSize: 20, fontWeight: "600", color: "#0f172a" },
-  body: { fontSize: 14, lineHeight: 20, color: "#475569" },
-  figure: { fontSize: 22, fontWeight: "600", color: "#0f172a" },
-  card: {
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    backgroundColor: "#f8fafc",
-    gap: 6,
-  },
-  warn: { fontSize: 13, lineHeight: 18, color: "#92400e" },
-});

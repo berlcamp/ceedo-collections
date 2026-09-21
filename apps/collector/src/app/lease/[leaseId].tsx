@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { Button, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { View } from "react-native";
 import {
   format,
   fromCentavos,
@@ -10,7 +10,27 @@ import {
   type Centavos,
   type PeriodGroup,
 } from "@ceedo/shared";
-import { leaseLedgerDetail, ledgerStaleness } from "@ceedo/sync-engine";
+import { leaseLedgerDetail } from "@ceedo/sync-engine";
+import {
+  Action,
+  Amount,
+  Body,
+  Field,
+  Figure,
+  Label,
+  Note,
+  Punch,
+  RackHead,
+  Register,
+  Rift,
+  Rule,
+  Screen,
+  Slot,
+  Statement,
+  missing,
+} from "../../ui";
+import { syncFailure } from "../../ui/failures";
+import { freshness, type Freshness } from "../../ui/staleness";
 import { deviceDriver } from "../../db/driver";
 import { setDraft } from "../../collect/draft";
 import { businessDate, syncNow } from "../../sync/device-sync";
@@ -35,12 +55,21 @@ interface Header {
  * the server path are then identical, so the second mode is a second way in rather than a
  * second code path to the wire.
  *
+ * THE RACK IS WHAT MAKES FIFO VISIBLE. The oldest period is anchored at the top and a
+ * selection fills downward as one unbroken ochre spine, so "you cannot pay March before
+ * February" is a physical property of the screen rather than a rule the code enforces
+ * where nobody can see it. Unselected periods drop back in ink once a run exists --
+ * suppressed, never hidden, because a period a collector cannot read is a period they
+ * cannot check.
+ *
  * THE STALENESS LINE IS NOT DECORATION (spec F7). The collector writes the paper OR by
  * hand from the figure on this screen, and the paper is what the tenant walks away
  * holding. If another tablet settled a group since this device last pulled, the ranks name
  * different periods than were quoted and the amount recorded will differ from the cash
  * taken. The device cannot detect that -- it is caught at closeout, which blocks -- so what
- * this screen owes is an honest statement of how old its numbers are.
+ * this screen owes is an honest statement of how old its numbers are. It is stated twice on
+ * purpose: a pip in the masthead that cannot scroll away, and the full sentence plus its
+ * remedy in the body.
  */
 export default function Lease() {
   const { leaseId } = useLocalSearchParams<{ leaseId: string }>();
@@ -52,12 +81,10 @@ export default function Lease() {
   const [perCharge, setPerCharge] = useState<Map<string, Centavos>>(new Map());
   const [ranks, setRanks] = useState<number[]>([]);
   const [tendered, setTendered] = useState("");
-  const [stale, setStale] = useState<{ lastFullSyncDate: string | null; pendingCount: number }>({
-    lastFullSyncDate: null,
-    pendingCount: 0,
-  });
+  const [fresh, setFresh] = useState<Freshness | null>(null);
   const [busy, setBusy] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncDetail, setSyncDetail] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const rows = await driver.select<Header>(
@@ -74,7 +101,7 @@ export default function Lease() {
     const detail = await leaseLedgerDetail(driver, leaseId);
     setGroups(detail.groups);
     setPerCharge(detail.perCharge);
-    setStale(await ledgerStaleness(driver));
+    setFresh(await freshness(driver, businessDate()));
   }, [driver, leaseId]);
 
   useFocusEffect(
@@ -125,75 +152,184 @@ export default function Lease() {
 
   const shortOfOldest = tenderedCentavos !== null && ranks.length === 0 && groups.length > 0;
 
-  if (!header) return <Text style={styles.note}>This lease is not on this tablet.</Text>;
+  if (!header) {
+    return (
+      <Screen head={<RackHead title="Lease" onBack={() => router.back()} />}>
+        <Note>This lease is not on this tablet.</Note>
+      </Screen>
+    );
+  }
 
   // See the Header comment: a lease with any outstanding group necessarily has at least
   // one charge, so fee_type_id is only null when groups is empty and the button below is
   // disabled anyway. Read once here so the onPress closure below is typed non-null.
   const feeTypeId = header.fee_type_id;
 
-  return (
-    <ScrollView style={styles.screen}>
-      <Text style={styles.stall}>{header.stall_no}</Text>
-      <Text style={styles.tenant}>{header.tenant_name}</Text>
-      <Text style={styles.balance}>Balance {format(balance)}</Text>
+  // Both reasons, never whichever is checked first: a collector told only "choose the
+  // periods" on a lease that has no charges on this tablet would tap rows that are not
+  // there until they gave up.
+  const blocked = missing(
+    ranks.length === 0 &&
+      "Choose the periods being paid, or enter the amount the tenant handed over.",
+    feeTypeId === null && "This lease has no charges on this tablet yet — sync first.",
+  );
 
-      <View style={styles.stale}>
-        <Text style={styles.staleText}>
-          {stale.lastFullSyncDate === null
-            ? "This tablet has never completed a full sync. These figures may be wrong."
-            : stale.lastFullSyncDate === businessDate()
-              ? "Synced today."
-              : `Last full sync ${stale.lastFullSyncDate}. Another tablet may have collected since.`}
-          {stale.pendingCount > 0 ? ` ${stale.pendingCount} receipt(s) still queued.` : ""}
-        </Text>
-        <Button
-          title={busy ? "Syncing…" : "Sync now"}
-          disabled={busy}
-          onPress={async () => {
-            setBusy(true);
-            setSyncMessage(null);
-            try {
-              await syncNow();
-              await load();
-              setRanks([]);
-              setTendered("");
-            } catch (error) {
-              // `syncNow()` THROWS, and it throws in exactly the situation this button
-              // exists for: no signal, or no credential. This is F7's disclosure remedy --
-              // the collector taps it BECAUSE the line above worried them -- so swallowing
-              // the failure leaves the same stale date on screen with nothing said, and
-              // they write the paper receipt from figures they now believe are fresh.
-              // Same wording as shift.tsx: never fatal, parent §3.
-              setSyncMessage(`Could not sync: ${String(error)}. You can keep working offline.`);
-            } finally {
-              setBusy(false);
-            }
-          }}
+  return (
+    <Screen
+      head={
+        <RackHead
+          title={header.stall_no}
+          subtitle={header.tenant_name}
+          onBack={() => router.back()}
+          register={fresh ? <Register state={fresh.state} detail={fresh.short} /> : undefined}
         />
-        {syncMessage ? <Text style={styles.warn}>{syncMessage}</Text> : null}
-      </View>
+      }
+      shelf={
+        <>
+          {/*
+            THE FARE PANEL LIVES ON THE SHELF, NOT IN THE SCROLL.
+
+            It was at the end of the body, and on a narrow screen that put it below the
+            fold at the exact moment it changed: tapping a period updated the one figure
+            the collector is about to hand-write onto a paper Official Receipt, and that
+            figure was half-clipped by this shelf when it did. Pinned here it is always
+            visible, at the largest type in the app, immediately above the control that
+            commits it.
+          */}
+          <Figure label="Receipt total" value={format(gross)} />
+          {ranks.length > 0 && change > 0 ? (
+            <Amount label="Change" value={format(change)} tone="confirmed" />
+          ) : null}
+          <Punch
+            label="Proceed to payment"
+            blocked={blocked}
+          onPress={() => {
+            if (feeTypeId === null) return;
+            setDraft({
+              kind: "lease",
+              leaseId,
+              feeTypeId,
+              stallNo: header.stall_no,
+              tenantName: header.tenant_name,
+              groups,
+              ranks,
+              // Per CHARGE, not per group: local_allocations is keyed
+              // (collection_id, charge_id) so Task 4's overlay subtracts exactly what was
+              // settled. perCharge comes from leaseLedgerDetail, the same read that
+              // produced these groups, so the two cannot disagree.
+              allocations: selected.flatMap((g) =>
+                g.chargeIds.map((chargeId) => ({
+                  chargeId,
+                  amount: perCharge.get(chargeId) ?? fromCentavos(0),
+                })),
+              ),
+              grossAmount: gross,
+              change,
+            });
+            router.push("/receipt");
+          }}
+          />
+        </>
+      }
+    >
+      <Amount label="Balance" value={format(balance)} />
+
+      {fresh && fresh.state !== "fresh" ? (
+        <>
+          <Rift h={16} />
+          <Statement
+            tone={fresh.state === "never" ? "refusal" : "warning"}
+            action={
+              <Action
+                label="Sync now"
+                busy={busy}
+                busyLabel="Syncing"
+                onPress={async () => {
+                  setBusy(true);
+                  setSyncMessage(null);
+                  try {
+                    await syncNow();
+                    await load();
+                    setRanks([]);
+                    setTendered("");
+                  } catch (error) {
+                    // `syncNow()` THROWS, and it throws in exactly the situation this
+                    // button exists for: no signal, or no credential. This is F7's
+                    // disclosure remedy -- the collector taps it BECAUSE the line above
+                    // worried them -- so swallowing the failure leaves the same stale date
+                    // on screen with nothing said, and they write the paper receipt from
+                    // figures they now believe are fresh. Same wording as shift.tsx:
+                    // never fatal, parent §3.
+                    const said = syncFailure(error);
+                    setSyncMessage(said.said);
+                    setSyncDetail(said.detail);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              />
+            }
+          >
+            {fresh.full}
+          </Statement>
+          {syncMessage ? (
+            <>
+              <Rift h={10} />
+              <Statement tone="refusal" detail={syncDetail}>
+                {syncMessage}
+              </Statement>
+            </>
+          ) : null}
+        </>
+      ) : fresh && fresh.pendingCount > 0 ? (
+        <>
+          <Rift h={16} />
+          <Statement tone="notice">{fresh.full}</Statement>
+        </>
+      ) : null}
+
+      <Rift h={24} />
+
+      <Label>Outstanding, oldest first</Label>
+      <View style={{ height: 8 }} />
 
       {groups.length === 0 ? (
-        <Text style={styles.note}>Nothing outstanding.</Text>
+        <Note>Nothing outstanding.</Note>
       ) : (
-        groups.map((group) => (
-          <Pressable
-            key={group.groupRank}
-            style={[styles.period, ranks.includes(group.groupRank) && styles.periodOn]}
-            onPress={() => tapRow(group.groupRank)}
-          >
-            <Text style={styles.periodText}>
-              {group.periodStart} · due {group.dueDate}
-            </Text>
-            <Text style={styles.periodAmount}>{format(group.outstanding)}</Text>
-          </Pressable>
-        ))
+        <>
+          <Rule />
+          {groups.map((group) => {
+            const on = ranks.includes(group.groupRank);
+            return (
+              <View key={group.groupRank}>
+                <Slot
+                  onPress={() => tapRow(group.groupRank)}
+                  selected={on}
+                  suppressed={ranks.length > 0 && !on}
+                  // Two lines by construction rather than by wrapping: one line held
+                  // "2026-06-01 · due 2026-06-05" beside an amount and broke mid-phrase
+                  // on a narrow screen, which put "due" on one line and its date on the
+                  // next.
+                  left={
+                    <View style={{ gap: 2 }}>
+                      <Body>{group.periodStart}</Body>
+                      <Label>{`Due ${group.dueDate}`}</Label>
+                    </View>
+                  }
+                  right={format(group.outstanding)}
+                />
+                <Rule />
+              </View>
+            );
+          })}
+        </>
       )}
 
-      <Text style={styles.label}>Or enter what the tenant is handing over</Text>
-      <TextInput
-        style={styles.input}
+      <Rift h={28} />
+
+      <Field
+        label="Or enter what the tenant is handing over"
+        voice="figure"
         keyboardType="decimal-pad"
         placeholder="0.00"
         value={tendered}
@@ -201,65 +337,30 @@ export default function Lease() {
       />
 
       {shortOfOldest && tenderedCentavos !== null ? (
-        <Text style={styles.warn}>
-          {format(tenderedCentavos)} does not cover the oldest period
-          ({format(groups[0]!.outstanding)}). Whole periods only — there is no part payment.
-        </Text>
+        <>
+          <Rift h={12} />
+          <Statement tone="refusal">
+            {`${format(tenderedCentavos)} does not cover the oldest period (${format(
+              groups[0]!.outstanding,
+            )}). Whole periods only — there is no part payment.`}
+          </Statement>
+        </>
       ) : null}
 
-      <Text style={styles.total}>Receipt total {format(gross)}</Text>
-      {ranks.length > 0 && change > 0 ? (
-        <Text style={styles.change}>Change {format(change)}</Text>
+      {/*
+        Change appears on the shelf only when a run is actually selected AND it is
+        positive. A "Change ₱200.00" line once appeared beside "Receipt total ₱0.00" and a
+        warning, all at once, because the change was computed from an empty selection -- a
+        figure derived from nothing, rendered as money.
+      */}
+      {ranks.length > 0 ? (
+        <>
+          <Rift h={12} />
+          <Body>
+            {`${ranks.length} period${ranks.length === 1 ? "" : "s"} selected, oldest first.`}
+          </Body>
+        </>
       ) : null}
-
-      <Button
-        title="Proceed to payment"
-        disabled={ranks.length === 0 || feeTypeId === null}
-        onPress={() => {
-          if (feeTypeId === null) return;
-          setDraft({
-            kind: "lease",
-            leaseId,
-            feeTypeId,
-            stallNo: header.stall_no,
-            tenantName: header.tenant_name,
-            groups,
-            ranks,
-            // Per CHARGE, not per group: local_allocations is keyed
-            // (collection_id, charge_id) so Task 4's overlay subtracts exactly what was
-            // settled. perCharge comes from leaseLedgerDetail, the same read that
-            // produced these groups, so the two cannot disagree.
-            allocations: selected.flatMap((g) =>
-              g.chargeIds.map((chargeId) => ({
-                chargeId,
-                amount: perCharge.get(chargeId) ?? fromCentavos(0),
-              })),
-            ),
-            grossAmount: gross,
-            change,
-          });
-          router.push("/receipt");
-        }}
-      />
-    </ScrollView>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, padding: 16 },
-  stall: { fontSize: 30, fontWeight: "800" },
-  tenant: { fontSize: 18 },
-  balance: { fontSize: 18, marginTop: 6, marginBottom: 12 },
-  stale: { backgroundColor: "#fff8e1", padding: 10, borderRadius: 6, marginBottom: 12, gap: 6 },
-  staleText: { fontSize: 13 },
-  period: { flexDirection: "row", justifyContent: "space-between", padding: 14, borderBottomWidth: 1, borderBottomColor: "#eee" },
-  periodOn: { backgroundColor: "#e3f2fd" },
-  periodText: { fontSize: 15 },
-  periodAmount: { fontSize: 15, fontWeight: "600" },
-  label: { marginTop: 16, fontSize: 14, color: "#666" },
-  input: { borderWidth: 1, borderColor: "#999", borderRadius: 6, padding: 12, fontSize: 22 },
-  warn: { marginTop: 8, color: "#b71c1c", fontSize: 14 },
-  total: { marginTop: 16, fontSize: 22, fontWeight: "700" },
-  change: { fontSize: 18, color: "#1b5e20" },
-  note: { padding: 16, fontSize: 15, color: "#666" },
-});

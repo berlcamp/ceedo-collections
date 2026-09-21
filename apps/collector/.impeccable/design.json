@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-21T00:00:00.000Z",
+  "title": "Design System: CEEDO Collector",
+  "platform": "android",
+  "extensions": {
+    "platformNotes": {
+      "runtime": "React Native 0.86 / Expo SDK 57 / expo-router. No CSS pipeline: tokens are TypeScript consts in src/ui/tokens.ts and styles are StyleSheet.create in src/ui/index.tsx. The html/css snippets below are web approximations for the panel only; they are not the shipped source.",
+      "units": "All sizes are dp; all type is sp and scales with the system font-size setting.",
+      "scheme": "One light scheme only (app.json userInterfaceStyle: light), confirmed product decision for daylight operation. No dark scheme, no Dynamic Color.",
+      "navigation": "Headerless expo-router Stack; RackHead is the Material 3 top app bar. System Back and the hardware button are untouched. android.predictiveBackGestureEnabled is false, so the predictive-back animation is not opted into.",
+      "typeFaces": "Native Android faces: sans-serif-condensed (Roboto Condensed), sans-serif (Roboto), monospace. Chosen because Material 3 names Roboto as the system face and asks brands to express through the type scale, and because Roboto digits are monospaced by default, giving every peso figure a decimal column for free. Offline load failure is NOT the reason — a self-hosted face ships inside the APK."
+    },
+    "colorMeta": {
+      "stock": { "role": "neutral", "displayName": "Ticket Stock", "canonical": "#F1F3F1", "note": "Ground of every screen. Deliberately cool, never cream. Also the on-rack text colour.", "tonalRamp": ["oklch(20% 0.005 150)", "oklch(31% 0.005 150)", "oklch(42% 0.005 150)", "oklch(53% 0.005 150)", "oklch(64% 0.005 150)", "oklch(75% 0.005 150)", "oklch(86% 0.005 150)", "oklch(96% 0.005 150)"] },
+      "stock-sunk": { "role": "neutral", "displayName": "Sunk Stock", "canonical": "#E4E8E5", "note": "Recessed inset: fields, quiet controls, blocked stubs, pressed slots.", "tonalRamp": ["oklch(20% 0.008 155)", "oklch(31% 0.008 155)", "oklch(42% 0.008 155)", "oklch(53% 0.008 155)", "oklch(64% 0.008 155)", "oklch(75% 0.008 155)", "oklch(86% 0.008 155)", "oklch(95% 0.008 155)"] },
+      "rack": { "role": "primary", "displayName": "Rack Board Teal", "canonical": "#0E4A44", "note": "The chrome: masthead strip and filled primary shelf control. 10.3:1 against stock.", "tonalRamp": ["oklch(18% 0.05 185)", "oklch(29% 0.06 185)", "oklch(35% 0.065 185)", "oklch(46% 0.07 185)", "oklch(57% 0.07 185)", "oklch(69% 0.06 185)", "oklch(82% 0.04 185)", "oklch(94% 0.02 185)"] },
+      "rack-lift": { "role": "primary", "displayName": "Lifted Rack", "canonical": "#14625A", "note": "Android ripple tone inside a filled primary control. Never a static fill.", "tonalRamp": ["oklch(18% 0.05 185)", "oklch(29% 0.06 185)", "oklch(40% 0.07 185)", "oklch(51% 0.075 185)", "oklch(62% 0.07 185)", "oklch(73% 0.055 185)", "oklch(85% 0.035 185)", "oklch(95% 0.015 185)"] },
+      "ink": { "role": "neutral", "displayName": "Punch Ink", "canonical": "#16181A", "note": "Body copy and every figure. 15.0:1 on stock.", "tonalRamp": ["oklch(17% 0.005 240)", "oklch(28% 0.005 240)", "oklch(39% 0.005 240)", "oklch(50% 0.005 240)", "oklch(61% 0.005 240)", "oklch(72% 0.005 240)", "oklch(84% 0.005 240)", "oklch(95% 0.005 240)"] },
+      "muted": { "role": "neutral", "displayName": "Muted Ink", "canonical": "#4A5450", "note": "Label voice and secondary copy. 7.1:1 on stock. Tinted from the rack hue, never gray.", "tonalRamp": ["oklch(20% 0.012 170)", "oklch(31% 0.012 170)", "oklch(40% 0.013 170)", "oklch(51% 0.013 170)", "oklch(62% 0.012 170)", "oklch(73% 0.01 170)", "oklch(85% 0.008 170)", "oklch(95% 0.005 170)"] },
+      "suppressed": { "role": "neutral", "displayName": "Suppressed Ink", "canonical": "#616B66", "note": "An unselected slot once a run is chosen, and blocked control text. 5.0:1 — dimmed, never washed.", "tonalRamp": ["oklch(21% 0.012 170)", "oklch(32% 0.012 170)", "oklch(43% 0.013 170)", "oklch(48% 0.013 170)", "oklch(60% 0.012 170)", "oklch(72% 0.01 170)", "oklch(84% 0.008 170)", "oklch(95% 0.005 170)"] },
+      "rule": { "role": "neutral", "displayName": "Hairline", "canonical": "#CDD4D0", "note": "The 1 dp rule between slots, above the shelf, and top/bottom on a statement band.", "tonalRamp": ["oklch(21% 0.01 165)", "oklch(32% 0.01 165)", "oklch(43% 0.011 165)", "oklch(54% 0.011 165)", "oklch(65% 0.011 165)", "oklch(76% 0.01 165)", "oklch(86% 0.009 165)", "oklch(95% 0.006 165)"] },
+      "ochre": { "role": "secondary", "displayName": "Punch Ochre", "canonical": "#C2761B", "note": "THE ONE ACCENT. The 5 dp selected spine, the focused field underline, the slot ripple. Live and selected, nothing else.", "tonalRamp": ["oklch(25% 0.06 65)", "oklch(35% 0.09 65)", "oklch(45% 0.12 65)", "oklch(55% 0.14 65)", "oklch(64% 0.13 65)", "oklch(75% 0.10 65)", "oklch(86% 0.06 65)", "oklch(95% 0.03 65)"] },
+      "ochre-wash": { "role": "secondary", "displayName": "Ochre Wash", "canonical": "#F7E9D4", "note": "Fill behind a selected slot. Ink stays fully legible on it.", "tonalRamp": ["oklch(25% 0.04 70)", "oklch(36% 0.05 70)", "oklch(47% 0.055 70)", "oklch(58% 0.05 70)", "oklch(69% 0.045 70)", "oklch(80% 0.035 70)", "oklch(89% 0.028 70)", "oklch(96% 0.02 70)"] },
+      "refusal": { "role": "tertiary", "displayName": "Refusal Red", "canonical": "#B3261E", "note": "Refusals, blocked-slot reasons, and destructive controls only. 5.9:1 on stock.", "tonalRamp": ["oklch(22% 0.09 27)", "oklch(32% 0.13 27)", "oklch(42% 0.17 27)", "oklch(51% 0.19 27)", "oklch(62% 0.17 27)", "oklch(74% 0.12 27)", "oklch(86% 0.07 27)", "oklch(95% 0.03 27)"] },
+      "refusal-wash": { "role": "tertiary", "displayName": "Refusal Wash", "canonical": "#FBE9E7", "note": "Band ground behind a refusal statement.", "tonalRamp": ["oklch(24% 0.04 27)", "oklch(35% 0.05 27)", "oklch(46% 0.055 27)", "oklch(57% 0.05 27)", "oklch(68% 0.045 27)", "oklch(80% 0.035 27)", "oklch(90% 0.025 27)", "oklch(96% 0.015 27)"] },
+      "confirmed": { "role": "tertiary", "displayName": "Confirmed Green", "canonical": "#1B6B45", "note": "Settled, spent, successful: the punched serial, positive change, a matched closeout. 5.8:1 on stock.", "tonalRamp": ["oklch(22% 0.05 155)", "oklch(32% 0.07 155)", "oklch(42% 0.09 155)", "oklch(48% 0.10 155)", "oklch(60% 0.10 155)", "oklch(72% 0.08 155)", "oklch(85% 0.05 155)", "oklch(95% 0.02 155)"] },
+      "confirmed-wash": { "role": "tertiary", "displayName": "Confirmed Wash", "canonical": "#E6F2EB", "note": "Band ground behind a confirmed statement, and the spent-slot fill on PunchMark.", "tonalRamp": ["oklch(23% 0.03 155)", "oklch(34% 0.035 155)", "oklch(45% 0.04 155)", "oklch(56% 0.04 155)", "oklch(67% 0.035 155)", "oklch(79% 0.03 155)", "oklch(89% 0.022 155)", "oklch(96% 0.014 155)"] },
+      "warning": { "role": "tertiary", "displayName": "Signal Amber", "canonical": "#B4780A", "note": "RULE AND TAG ONLY, NEVER TEXT. 3.4:1 on stock, 3.3:1 on its own wash. Hairline of a confirmable warning; the stale staleness pip.", "tonalRamp": ["oklch(24% 0.05 80)", "oklch(34% 0.08 80)", "oklch(44% 0.10 80)", "oklch(55% 0.12 80)", "oklch(66% 0.12 80)", "oklch(77% 0.10 80)", "oklch(87% 0.06 80)", "oklch(96% 0.03 80)"] },
+      "warning-wash": { "role": "tertiary", "displayName": "Warning Wash", "canonical": "#FBF0D8", "note": "Band ground behind a confirmable warning. Its copy and its tone tag are set in ink.", "tonalRamp": ["oklch(25% 0.04 85)", "oklch(36% 0.05 85)", "oklch(47% 0.055 85)", "oklch(58% 0.05 85)", "oklch(69% 0.045 85)", "oklch(80% 0.04 85)", "oklch(90% 0.03 85)", "oklch(97% 0.02 85)"] },
+      "on-rack": { "role": "neutral", "displayName": "On Rack", "canonical": "#F1F3F1", "note": "Text and control labels on the teal chrome.", "tonalRamp": ["oklch(20% 0.005 150)", "oklch(31% 0.005 150)", "oklch(42% 0.005 150)", "oklch(53% 0.005 150)", "oklch(64% 0.005 150)", "oklch(75% 0.005 150)", "oklch(86% 0.005 150)", "oklch(96% 0.005 150)"] },
+      "on-rack-muted": { "role": "neutral", "displayName": "On Rack Muted", "canonical": "#A8C2BD", "note": "Subtitle, Back label and register text on the teal strip.", "tonalRamp": ["oklch(22% 0.02 180)", "oklch(33% 0.025 180)", "oklch(44% 0.03 180)", "oklch(55% 0.032 180)", "oklch(66% 0.032 180)", "oklch(78% 0.028 180)", "oklch(88% 0.02 180)", "oklch(96% 0.01 180)"] }
+    },
+    "typographyMeta": {
+      "figure": { "displayName": "Figure", "purpose": "The fare panel — the number a collector copies onto a paper Official Receipt. Largest type in the app on every screen that has one; nothing else uses this size. Roboto Condensed digits are monospaced, so figures align on a fixed decimal column." },
+      "title": { "displayName": "Title", "purpose": "A screen's subject: masthead stall number, stall number in the lease list, the punched serial, and the text inside a Field." },
+      "body": { "displayName": "Body", "purpose": "Every message, explanation, slot line and blocked-control reason." },
+      "label": { "displayName": "Label", "purpose": "Tracked uppercase (1.1 letter-spacing). Section captions, every control label, statement tone tags, the masthead register." },
+      "mono": { "displayName": "Mono", "purpose": "Raw diagnostic detail under a statement, and the mono field voice for serials, PINs and credentials — character-by-character transcription, not prose." }
+    },
+    "shadows": [],
+    "shadowPolicy": "There are no shadows in this build: no elevation, shadowColor or boxShadow anywhere in src/ui or any screen. Depth is a 1 dp hairline, a recessed tonal inset (stock-sunk), or one filled chrome field (rack). Material 3 tonal elevation is used in its flattest form — a tone step, not a lift.",
+    "motion": [
+      { "name": "punch-settle", "value": "180ms, opacity 0 to 1 with the notch scaling 2.2x to 1x, native driver", "purpose": "PunchMark only. The single irreversible moment when a receipt commits. Cut to an instant state change under Reduce Motion; if the accessibility setting cannot be read, the build treats it as on." },
+      { "name": "press-filled", "value": "opacity 0.86", "purpose": "Pressed state on a filled Punch. No translation." },
+      { "name": "press-outlined", "value": "background stock-sunk (#E4E8E5)", "purpose": "Pressed state on an outlined Action and on a slot." },
+      { "name": "press-back", "value": "opacity 0.7", "purpose": "Pressed state on the masthead Back control." },
+      { "name": "ripple", "value": "android_ripple, foreground: true — rack-lift inside a filled primary, rack on an outlined action, ochre on a slot, borderless on-rack-muted on Back", "purpose": "Android-native touch feedback, themed from the rack. A fluent Android user reads the absence of a ripple as a dead control." }
+    ],
+    "breakpoints": [
+      { "name": "verified-phone", "value": "360dp x 806dp", "note": "Huawei JDY-LX2 over adb — the only device class inspected. Portrait is locked in app.json." },
+      { "name": "tablet", "value": "uninspected", "note": "The shipping device class. No tablet or emulator was available; nothing in this system is verified at that width." }
+    ],
+    "touchTargets": [
+      { "name": "min", "value": "48dp", "purpose": "Material minimum. Every target in the app." },
+      { "name": "shelf", "value": "56dp", "purpose": "The primary Punch — the one control hit one-handed, at arm's length, without looking away from a queue." }
+    ],
+    "typeEnforcedRules": [
+      { "name": "No disabled prop", "body": "Punch, Action and Slot have no `disabled` prop. They take `blocked: string | null`, where a non-null value both disables the control and states what is missing. `missing(...)` joins reasons so two missing things are both named. A dead control without a stated reason is not expressible at a call site." },
+      { "name": "No numeric money path", "body": "Figure and Amount take a RENDERED STRING, never a number. Wire decimals pass through fromWire(), which routes them back through format() from @ceedo/shared. A null value renders a stated absence, never the specific false claim ₱0.00." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Punch (primary action)",
+      "kind": "button",
+      "refersTo": "punch-primary",
+      "description": "The one committing control on a screen, pinned on the bottom shelf at 56dp. Filled rack teal, tracked caps.",
+      "html": "<button class=\"ds-punch\">PROCEED TO PAYMENT</button>",
+      "css": ".ds-punch { display: flex; align-items: center; justify-content: center; min-height: 56px; padding: 0 16px; background: #0E4A44; color: #F1F3F1; border: none; border-radius: 4px; font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; } .ds-punch:hover { background: #14625A; } .ds-punch:focus-visible { outline: 3px solid #C2761B; outline-offset: 2px; } .ds-punch:active { opacity: 0.86; }"
+    },
+    {
+      "name": "Punch, blocked",
+      "kind": "button",
+      "refersTo": "punch-blocked",
+      "description": "There is no disabled prop. A non-null `blocked` reason renders an un-inked stub and prints the reason above the label, inside the shelf, as a polite live region.",
+      "html": "<div class=\"ds-punch-blocked-wrap\"><p class=\"ds-punch-reason\">Choose the periods being paid, or enter the amount the tenant handed over. This lease has no charges on this tablet yet — sync first.</p><button class=\"ds-punch-stub\" disabled>PROCEED TO PAYMENT</button></div>",
+      "css": ".ds-punch-blocked-wrap { display: flex; flex-direction: column; gap: 6px; } .ds-punch-reason { margin: 0; font-family: Roboto, sans-serif; font-size: 17px; line-height: 23.8px; color: #16181A; } .ds-punch-stub { display: flex; align-items: center; justify-content: center; min-height: 56px; padding: 0 16px; background: #E4E8E5; color: #616B66; border: 1px solid #CDD4D0; border-radius: 4px; font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; }"
+    },
+    {
+      "name": "Action (secondary)",
+      "kind": "button",
+      "refersTo": "action-quiet",
+      "description": "Outlined 1.5dp rack border at 48dp. Sync now, Try again, Back-to-somewhere. Danger tone (Sign out, Remove) swaps border and label to refusal red. Never an icon.",
+      "html": "<div class=\"ds-action-row\"><button class=\"ds-action\">SYNC NOW</button><button class=\"ds-action ds-action-danger\">SIGN OUT</button></div>",
+      "css": ".ds-action-row { display: flex; flex-direction: column; gap: 10px; } .ds-action { display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 16px; background: #F1F3F1; color: #0E4A44; border: 1.5px solid #0E4A44; border-radius: 4px; font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; } .ds-action:hover, .ds-action:active { background: #E4E8E5; } .ds-action:focus-visible { outline: 3px solid #C2761B; outline-offset: 2px; } .ds-action-danger { color: #B3261E; border-color: #B3261E; }"
+    },
+    {
+      "name": "Slot (the rack row)",
+      "kind": "custom",
+      "refersTo": "slot",
+      "description": "The rack. Rows bounded by 1dp hairlines with a 5dp left gutter. Tapping rank n selects 1..n: selected rows fill ochre wash and light one continuous ochre spine; unselected rows drop to suppressed ink. Selection suppresses, it does not only highlight.",
+      "html": "<div class=\"ds-rack\"><div class=\"ds-slot ds-slot-on\"><span class=\"ds-spine\"></span><div class=\"ds-slot-body\"><div class=\"ds-slot-left\"><span class=\"ds-slot-text\">2026-06-01</span><span class=\"ds-slot-label\">DUE 2026-06-05</span></div><span class=\"ds-slot-amount\">₱1,250.00</span></div></div><div class=\"ds-slot ds-slot-on\"><span class=\"ds-spine\"></span><div class=\"ds-slot-body\"><div class=\"ds-slot-left\"><span class=\"ds-slot-text\">2026-07-01</span><span class=\"ds-slot-label\">DUE 2026-07-05</span></div><span class=\"ds-slot-amount\">₱600.00</span></div></div><div class=\"ds-slot ds-slot-dim\"><span class=\"ds-spine\"></span><div class=\"ds-slot-body\"><div class=\"ds-slot-left\"><span class=\"ds-slot-text\">2026-08-01</span><span class=\"ds-slot-label\">DUE 2026-08-05</span></div><span class=\"ds-slot-amount\">₱600.00</span></div></div></div>",
+      "css": ".ds-rack { background: #F1F3F1; border-top: 1px solid #CDD4D0; } .ds-slot { display: flex; min-height: 48px; margin-left: -5px; border-bottom: 1px solid #CDD4D0; cursor: pointer; } .ds-slot-on { background: #F7E9D4; } .ds-slot:hover { background: #E4E8E5; } .ds-slot-on:hover { background: #F7E9D4; } .ds-spine { width: 5px; background: transparent; } .ds-slot-on .ds-spine { background: #C2761B; } .ds-slot-body { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; } .ds-slot-left { display: flex; flex-direction: column; gap: 2px; } .ds-slot-text { font-family: Roboto, sans-serif; font-size: 17px; color: #16181A; } .ds-slot-label { font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; color: #4A5450; } .ds-slot-amount { font-family: Roboto, sans-serif; font-size: 17px; font-weight: 700; color: #16181A; font-variant-numeric: tabular-nums; } .ds-slot-dim .ds-slot-text, .ds-slot-dim .ds-slot-label, .ds-slot-dim .ds-slot-amount { color: #616B66; }"
+    },
+    {
+      "name": "Figure (the fare panel)",
+      "kind": "custom",
+      "refersTo": "punch-primary",
+      "description": "The number a collector hand-writes onto a paper Official Receipt. Largest type in the app, pinned on the shelf above the committing control. Takes a rendered string from format(); a null value states an absence rather than printing ₱0.00.",
+      "html": "<div class=\"ds-figure\"><span class=\"ds-figure-label\">RECEIPT TOTAL</span><span class=\"ds-figure-value\">₱1,850.00</span></div>",
+      "css": ".ds-figure { display: flex; flex-direction: column; gap: 2px; background: #F1F3F1; padding: 10px 16px; } .ds-figure-label { font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; color: #4A5450; } .ds-figure-value { font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif; font-size: 40px; line-height: 44px; font-weight: 700; color: #16181A; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Field (text input)",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "A sunk stock inset closed by a 3dp underline, no box — a boxed input on a screen with no other boxes reads as a card, and there are no cards here. Focus turns the underline ochre. Three voices: text, figure (40sp condensed), mono.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">OR ENTER WHAT THE TENANT IS HANDING OVER</span><input class=\"ds-field-input ds-field-figure\" placeholder=\"0.00\" inputmode=\"decimal\" /></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 6px; } .ds-field-label { font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; color: #4A5450; } .ds-field-input { min-height: 48px; padding: 10px; background: #E4E8E5; color: #16181A; font-family: Roboto, sans-serif; font-size: 26px; border: none; border-bottom: 3px solid #CDD4D0; border-radius: 3px 3px 0 0; } .ds-field-input::placeholder { color: #616B66; } .ds-field-input:focus { outline: none; border-bottom-color: #C2761B; } .ds-field-figure { font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif; font-size: 40px; font-weight: 700; }"
+    },
+    {
+      "name": "Statement (notice band)",
+      "kind": "card",
+      "refersTo": "statement-warning",
+      "description": "A BAND, not a box: wash with hairlines top and bottom only. An outlined rectangle is a control's shape, and a notice shaped like a button at 5am in a market is a mis-tap. The tracked-caps tone tag means tone is not carried by colour alone. Warning copy and the warning tag are both set in ink — amber is 3.3:1 on its own wash.",
+      "html": "<div class=\"ds-statement ds-statement-warning\"><span class=\"ds-statement-tag\">CHECK</span><p class=\"ds-statement-body\">Last full sync 2026-09-19. Another tablet may have collected since. 2 entries still queued to send.</p><button class=\"ds-statement-action\">SYNC NOW</button></div>",
+      "css": ".ds-statement { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px 16px; } .ds-statement-warning { background: #FBF0D8; border-top: 1px solid #B4780A; border-bottom: 1px solid #B4780A; } .ds-statement-tag { font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; color: #16181A; } .ds-statement-body { margin: 0; font-family: Roboto, sans-serif; font-size: 17px; line-height: 24.65px; color: #16181A; } .ds-statement-action { min-height: 48px; padding: 0 16px; background: transparent; color: #0E4A44; border: 1.5px solid #0E4A44; border-radius: 4px; font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; } .ds-statement-action:hover { background: #E4E8E5; } .ds-statement-action:focus-visible { outline: 3px solid #C2761B; outline-offset: 2px; }"
+    },
+    {
+      "name": "RackHead (top app bar) with Register",
+      "kind": "nav",
+      "refersTo": "rack-head",
+      "description": "The one fixed reference: same position, same scale, every screen. The native expo-router header is off because it cannot carry the honest sync-age register in a fixed position. Back is a word, never a chevron. The register is in the bar rather than the body because a staleness disclosure that scrolls away is read once and never again.",
+      "html": "<header class=\"ds-rackhead\"><button class=\"ds-rackhead-back\">BACK</button><div class=\"ds-rackhead-row\"><div class=\"ds-rackhead-text\"><span class=\"ds-rackhead-title\">Maria Santos</span><span class=\"ds-rackhead-sub\">Business date 2026-09-21</span></div><div class=\"ds-register\"><span class=\"ds-pip\"></span><span class=\"ds-register-text\">Synced today</span></div></div></header>",
+      "css": ".ds-rackhead { background: #0E4A44; padding: 6px 16px 10px; } .ds-rackhead-back { display: flex; align-items: center; min-height: 48px; padding: 0 16px 0 6px; margin-left: -6px; background: none; border: none; font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; color: #A8C2BD; } .ds-rackhead-back:hover { opacity: 0.7; } .ds-rackhead-back:focus-visible { outline: 3px solid #C2761B; outline-offset: 2px; } .ds-rackhead-row { display: flex; align-items: flex-end; gap: 10px; } .ds-rackhead-text { flex: 1; min-width: 0; } .ds-rackhead-title { display: block; font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif; font-size: 26px; font-weight: 700; color: #F1F3F1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ds-rackhead-sub { display: block; font-family: Roboto, sans-serif; font-size: 17px; color: #A8C2BD; } .ds-register { display: flex; align-items: flex-start; gap: 6px; max-width: 46%; } .ds-pip { width: 10px; height: 10px; border-radius: 5px; margin-top: 5px; background: #1B6B45; flex: none; } .ds-register-text { font-family: Roboto, sans-serif; font-size: 13px; line-height: 17.55px; color: #A8C2BD; text-align: right; }"
+    },
+    {
+      "name": "PunchMark (signature)",
+      "kind": "custom",
+      "refersTo": "slot-spent",
+      "description": "The signature interaction and the only motion in the app. A validated serial settles into the spent state with a hole bitten through the ticket, in exactly the geometry of a rack slot — same gutter, same hairlines — because a spent slot and a selected slot are two states of one object. The hole is drawn, never a glyph. ~180ms, cut to an instant state change under Reduce Motion.",
+      "html": "<div class=\"ds-punchmark\"><div class=\"ds-punchmark-gutter\"><span class=\"ds-notch\"></span></div><div class=\"ds-punchmark-body\"><span class=\"ds-punchmark-serial\">OR-2026-004417</span><span class=\"ds-punchmark-spent\">SPENT</span></div></div>",
+      "css": "@keyframes ds-punch-settle { from { opacity: 0; } to { opacity: 1; } } @keyframes ds-punch-bite { from { transform: scale(2.2); } to { transform: scale(1); } } .ds-punchmark { display: flex; min-height: 48px; margin-left: -5px; background: #E6F2EB; border-top: 1px solid #CDD4D0; border-bottom: 1px solid #CDD4D0; animation: ds-punch-settle 180ms linear both; } .ds-punchmark-gutter { width: 29px; display: flex; align-items: center; justify-content: center; } .ds-notch { width: 15px; height: 15px; border-radius: 8px; background: #F1F3F1; border: 2px solid #1B6B45; box-sizing: border-box; animation: ds-punch-bite 180ms linear both; } .ds-punchmark-body { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 16px 10px 0; } .ds-punchmark-serial { font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif; font-size: 26px; font-weight: 700; letter-spacing: 1.1px; color: #1B6B45; } .ds-punchmark-spent { font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; color: #1B6B45; } @media (prefers-reduced-motion: reduce) { .ds-punchmark, .ds-notch { animation: none; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Conductor's Rack",
+    "overview": "The bus and jeepney conductor's ticket rack: pre-numbered accountable paper held in ranked slots, one live slot, a serial punched to spend it, and the whole rack reconciled against cash at the end of the route. It is a layout law, not a picture. There is no wood grain, no drawn brass, no skeuomorphic perforation anywhere in the build, and none may be added. What the metaphor buys is structure: things that are owed are slots stacked oldest-at-top; a selection is a continuous ochre edge running down the gutter; the figure that leaves the screen for a paper Official Receipt is the largest type in the app, pinned where it cannot scroll away.\n\nThe world refuses the category default deliberately. Material 3's tonal card on a tinted surface is absent from this build: a rack has no cards, so this system has no cards. Depth is carried by hairline rules, a recessed stock inset and one filled chrome strip — never by a shadow, never by a rounded elevated container. Every value in src/ui/tokens.ts was chosen for a tablet held one-handed, in daylight, in a Philippine public market, by someone with a queue waiting and a receipt booklet in the other hand. Contrast and figure size are not taste here.\n\nTwo of this system's rules are enforced by the TypeScript types in src/ui/index.tsx rather than by discipline, and that is the single most important property to preserve when extending it. Punch, Action and Slot have no disabled prop. They take blocked: string | null, where a non-null value both disables the control and states what is missing; missing(...) joins reasons so two missing things are both named. A dead control with no stated reason is not expressible at a call site. Figure and Amount take a rendered string, never a number. Wire decimals pass through fromWire(), which routes them back through format() from @ceedo/shared, so no numeric path exists through a money component; null renders a stated absence, never ₱0.00, because ₱0.00 is a specific claim about money.",
+    "keyCharacteristics": [
+      "Ranked slots and hairlines instead of cards; no container has a shadow anywhere in the build.",
+      "One accent (ochre) spent entirely on live/selected; three reserved signals that never decorate.",
+      "Four type sizes, in sp, and no fifth.",
+      "Every control carries a permanently visible text label; no icon-only affordance exists.",
+      "The primary action is a pinned bottom shelf, not a FAB.",
+      "Light scheme only, by explicit product decision (daylight operation)."
+    ],
+    "rules": [
+      { "name": "The Amber Is Never Text Rule", "body": "Amber is a rule and a tag, never a sentence and never a tone tag. Warning copy is set in ink on the amber wash; the \"Check\" tag on a warning statement is also set in ink. This was violated once during the build and caught by review.", "section": "colors" },
+      { "name": "The Spent Signal Rule", "body": "Refusal red carries refusals and destructive controls only. Never a heading, never a rule, never a decoration, never the peso sign. Confirmed green carries settlement only. An accent that also rules a heading is an accent nobody reads.", "section": "colors" },
+      { "name": "The One Accent Rule", "body": "Ochre means live-or-selected and nothing else. Nothing decorative is ochre, and no other colour may mean selected.", "section": "colors" },
+      { "name": "The Four Sizes Rule", "body": "Four sizes exist — 40 / 26 / 17 / 13 sp — and a fifth is a defect. The incumbent screens used ten ad-hoc sizes between 13 and 34, and the relationship between them was invisible because there wasn't one.", "section": "typography" },
+      { "name": "The Largest Figure Rule", "body": "On any screen where money leaves the device for paper, that figure is the largest thing on the screen. Nothing competes with it at figure scale.", "section": "typography" },
+      { "name": "The sp Rule", "body": "All type is sp and scales with the system font-size setting; the fare panel sets allowFontScaling explicitly. Never a fixed px.", "section": "typography" },
+      { "name": "The Fixed Reference Rule", "body": "The masthead strip and the value slot hold the same position and scale on every screen. A collector should never hunt for either.", "section": "layout" },
+      { "name": "The No Second Screen Rule", "body": "Per-charge detail expands in place. Never a second screen mid-transaction.", "section": "layout" },
+      { "name": "The Flat Rule", "body": "No shadow, at any elevation, for any reason. A surface is distinguished by hairline, tone step, or nothing.", "section": "elevation" },
+      { "name": "The One Motion Rule", "body": "The punch is the only animation. Anything else that wants to move is asking for a state change instead.", "section": "elevation" },
+      { "name": "The Spine Reservation Rule", "body": "The thick left edge belongs to the rack spine alone. A coloured left edge on an alert — the category's stock costume — spends the one language that makes a selected run readable.", "section": "shapes" },
+      { "name": "The Band, Not A Box Rule", "body": "Notices are bands. Only pressable things get an outline.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do give every dead control a `blocked` reason string, and join multiple reasons with `missing(...)` so both are named.",
+      "Do pass money to Figure and Amount as a string from format() or fromWire(), and render a stated absence rather than ₱0.00 when there is no figure.",
+      "Do set warning copy and the warning tone tag in ink on the amber wash.",
+      "Do keep the primary action on the pinned shelf, at 56 dp, with the fare panel directly above it.",
+      "Do put a permanently visible text label on every control, including Back.",
+      "Do theme android_ripple from the rack on every pressable.",
+      "Do use the four sizes in sp and let them scale with the system font setting.",
+      "Do state sync age in the masthead register on any screen showing a device-local figure."
+    ],
+    "donts": [
+      "Don't add a `disabled` prop to Punch, Action or Slot. The absence of one is the rule.",
+      "Don't set a sentence, a heading or a tone tag in amber.",
+      "Don't spend refusal red or confirmed green on a heading, a rule, a decoration or the peso sign.",
+      "Don't put a thick coloured left edge on anything that is not a rack slot.",
+      "Don't shape a notice as an outlined rectangle; outlines belong to pressable things.",
+      "Don't add a shadow or an elevated card. There are none in this build.",
+      "Don't add a FAB — the shelf carries disabled-reason text that a FAB cannot.",
+      "Don't add a dark scheme; one light theme is a confirmed product decision for daylight operation.",
+      "Don't add a fifth type size, a second accent, or a second animation.",
+      "Don't add wood grain, drawn brass, or skeuomorphic perforation. The rack is a layout law.",
+      "Don't use an icon in place of a word, and don't draw the punch notch as a glyph."
+    ],
+    "knownGaps": [
+      "The spent slot does not ship: no screen renders a settled billing period, so only two of the thesis's three slot states exist.",
+      "Rank does not ship: nothing carries a slot's position, so \"oldest first\" is a caption rather than a visible property.",
+      "The amount column is missing on `leases` — a missing row in the fidelity matrix, not a nice-to-have. The fixed decimal column is written here as a cross-screen law but currently exists on one screen.",
+      "The tablet device class is uninspected. All verification is a Huawei JDY-LX2 phone at 360x806 dp.",
+      "app.json is correct in source but unverified in the running binary: userInterfaceStyle: light and softwareKeyboardLayoutMode: resize both need a Gradle rebuild that was not run.",
+      "Keyboard-up state and font scale 1.3 were never captured, including against the one-line masthead title and the fixed 48/56 dp targets.",
+      "The splash (#208AEF) and Android adaptive icon background (#E6F4FE) are unreplaced Expo scaffold values, not rack colours. They are deliberately excluded from the palette.",
+      "android.predictiveBackGestureEnabled is false: System Back and the hardware button work on the headerless stack, but the predictive-back animation is not opted into."
+    ],
+    "provenance": "This build ships no rasters — no generated images, no photographs, no illustrations. There is nothing to carry provenance. The only bitmaps in the tree are the unreplaced Expo scaffold icon and splash assets."
+  }
+}

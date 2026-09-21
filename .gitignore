@@ -9,3 +9,9 @@ supabase/.branches/
 supabase/.temp/
 supabase/functions/.env
 .superpowers/
+
+# Impeccable working state. `design.json` and `surfaces/` are durable and committed;
+# `review/` holds regenerated device captures (3MB+ per run) and `questions/` holds
+# transient decision-page payloads.
+**/.impeccable/review/
+**/.impeccable/questions/

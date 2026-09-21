@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
-import { Button, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import {
   format,
   multiply,
@@ -11,6 +11,27 @@ import {
   type RateRow,
 } from "@ceedo/shared";
 import type { DraftLine } from "@ceedo/sync-engine";
+import {
+  Action,
+  Body,
+  Field,
+  Figure,
+  Label,
+  Note,
+  Punch,
+  RackHead,
+  Rift,
+  Rule,
+  Screen,
+  Slot,
+  Statement,
+  color,
+  face,
+  size,
+  space,
+  touch,
+} from "../ui";
+import { syncFailure } from "../ui/failures";
 import { deviceDriver } from "../db/driver";
 import { setDraft } from "../collect/draft";
 import { businessDate, syncNow } from "../sync/device-sync";
@@ -60,6 +81,7 @@ export default function Ambulant() {
   const [pick, setPick] = useState<FeeChoice | null>(null);
   const [qty, setQty] = useState("1");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // THROWS. Every caller must say so when it fails -- `useFocusEffect` below and the "Sync
@@ -105,7 +127,8 @@ export default function Ambulant() {
   useFocusEffect(
     useCallback(() => {
       load().catch((caught: unknown) => {
-        setError(`Could not load the fee list: ${String(caught)}`);
+        setError("Could not load the fee list from this tablet.");
+        setErrorDetail(String(caught));
       });
     }, [load]),
   );
@@ -165,148 +188,210 @@ export default function Ambulant() {
     }
   };
 
+  const resync = async () => {
+    // `syncNow()` THROWS -- no signal, or no credential -- and this button is the remedy
+    // resolveRate's own message directs the collector to, so it fails in exactly the
+    // situation it exists for. Unhandled, the rate error simply stayed on screen and the
+    // collector could not tell whether the sync had happened. The busy flag is the other
+    // half: without it a double-tap sent two syncs. Same wording as shift.tsx; never
+    // fatal, parent §3.
+    setBusy(true);
+    try {
+      await syncNow();
+      await load();
+      setError(null);
+    } catch (caught) {
+      const said = syncFailure(caught);
+      setError(said.said);
+      setErrorDetail(said.detail);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <ScrollView style={styles.screen}>
-      <Text style={styles.heading}>On-the-spot fee</Text>
+    <Screen
+      head={
+        <RackHead
+          title="On-the-spot fee"
+          subtitle={lockedFeeName ?? "No lease, no receivable"}
+          onBack={() => router.back()}
+        />
+      }
+      shelf={
+        <>
+          {/* Pinned for the same reason as the lease screen's: this is the figure that
+              gets hand-written onto the paper, and it must not be the thing that scrolls
+              away as lines are added. */}
+          <Figure label="Receipt total" value={format(gross)} />
+          <Punch
+            label="Proceed to payment"
+            blocked={lines.length === 0 ? "Add at least one line to the receipt." : null}
+          onPress={() => {
+            setDraft({
+              kind: "lines",
+              // Enforced by the choice guard below, not assumed: a tap on a different fee
+              // type is refused before `pick` -- and so a line -- can hold it, so every
+              // line here already shares one fee type by construction. That is what makes
+              // lines[0] a safe stand-in for "the receipt's fee type", which is what
+              // parent §10's Abstract of Collections totals by.
+              feeTypeId: lines[0]!.feeTypeId,
+              label: "On-the-spot fee",
+              lines,
+              grossAmount: gross,
+            });
+            router.push("/receipt");
+          }}
+          />
+        </>
+      }
+    >
+      <Label>Fee</Label>
+      <View style={{ height: 8 }} />
 
-      {choices.map((choice) => {
-        // Field comparison, not `pick === choice` (review, minor): `choices` is a fresh
-        // array after every `load()` -- including the "Sync now" retry below -- so a
-        // reference check would drop the highlight on a still-valid pick and, now that a
-        // mismatched tap is refused rather than a no-op, could read as that refusal to a
-        // collector who never actually lost their selection.
-        const isPicked =
-          pick !== null &&
-          pick.fee_type_id === choice.fee_type_id &&
-          pick.rate_class === choice.rate_class;
-        const isLockedOut = lockedFeeTypeId !== null && choice.fee_type_id !== lockedFeeTypeId;
-        return (
-          <Pressable
-            key={`${choice.fee_type_id}|${choice.rate_class ?? ""}`}
-            style={[styles.choice, isPicked && styles.choiceOn, isLockedOut && styles.choiceLocked]}
-            onPress={() => {
-              if (isLockedOut) {
-                // Named, not a silent no-op -- the stranding pattern this phase keeps
-                // finding. Says which fee the receipt is already for and what to do.
-                setError(
-                  `This receipt is already for ${lockedFeeName}. ${choice.fee_name} needs its own receipt -- add it after this one is recorded.`,
-                );
-                return;
-              }
-              setError(null);
-              setPick(choice);
-            }}
-          >
-            <Text style={styles.choiceText}>
-              {choice.fee_name}
-              {choice.rate_class ? ` · ${choice.rate_class}` : ""}
-            </Text>
-          </Pressable>
-        );
-      })}
+      {choices.length === 0 ? (
+        <Note>No on-the-spot fees on this tablet yet.</Note>
+      ) : (
+        <>
+          <Rule />
+          {choices.map((choice) => {
+            // Field comparison, not `pick === choice` (review, minor): `choices` is a
+            // fresh array after every `load()` -- including the "Sync now" retry below --
+            // so a reference check would drop the highlight on a still-valid pick and,
+            // now that a mismatched tap is refused rather than a no-op, could read as
+            // that refusal to a collector who never actually lost their selection.
+            const isPicked =
+              pick !== null &&
+              pick.fee_type_id === choice.fee_type_id &&
+              pick.rate_class === choice.rate_class;
+            const isLockedOut =
+              lockedFeeTypeId !== null && choice.fee_type_id !== lockedFeeTypeId;
+            return (
+              <View key={`${choice.fee_type_id}|${choice.rate_class ?? ""}`}>
+                <Slot
+                  selected={isPicked}
+                  suppressed={isLockedOut}
+                  left={`${choice.fee_name}${choice.rate_class ? ` · ${choice.rate_class}` : ""}`}
+                  onPress={() => {
+                    if (isLockedOut) {
+                      // Named, not a silent no-op -- the stranding pattern this phase keeps
+                      // finding. Says which fee the receipt is already for and what to do.
+                      setError(
+                        `This receipt is already for ${lockedFeeName}. ${choice.fee_name} needs its own receipt -- add it after this one is recorded.`,
+                      );
+                      return;
+                    }
+                    setError(null);
+                    setPick(choice);
+                  }}
+                />
+                <Rule />
+              </View>
+            );
+          })}
+        </>
+      )}
 
-      <Text style={styles.label}>Quantity</Text>
-      <TextInput
-        style={styles.input}
+      <Rift h={24} />
+
+      <Field
+        label="Quantity"
+        voice="figure"
         keyboardType="number-pad"
         value={qty}
         onChangeText={setQty}
       />
-      <Button title="Add to receipt" disabled={pick === null} onPress={addLine} />
+      <Rift h={12} />
+      <Action
+        label="Add to receipt"
+        blocked={pick === null ? "Choose a fee above first." : null}
+        onPress={addLine}
+      />
+
       {error ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.error}>{error}</Text>
-          <Button
-            title={busy ? "Syncing…" : "Sync now"}
-            disabled={busy}
-            onPress={async () => {
-              // `syncNow()` THROWS -- no signal, or no credential -- and this button is
-              // the remedy resolveRate's own message directs the collector to, so it fails
-              // in exactly the situation it exists for. Unhandled, the rate error simply
-              // stayed on screen and the collector could not tell whether the sync had
-              // happened. The busy flag is the other half: without it a double-tap sent
-              // two syncs. Same wording as shift.tsx; never fatal, parent §3.
-              setBusy(true);
-              try {
-                await syncNow();
-                await load();
-                setError(null);
-              } catch (caught) {
-                setError(`Could not sync: ${String(caught)}. You can keep working offline.`);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          />
-        </View>
+        <>
+          <Rift h={16} />
+          <Statement
+            tone="refusal"
+            detail={errorDetail}
+            action={<Action label="Sync now" busy={busy} busyLabel="Syncing" onPress={() => void resync()} />}
+          >
+            {error}
+          </Statement>
+        </>
       ) : null}
 
-      {lines.map((line, index) => (
-        <View key={index} style={styles.line}>
-          <Text style={styles.lineText}>
-            {line.quantity} × {format(line.unitRate)}
-            {line.rateClass ? ` · ${line.rateClass}` : ""}
-          </Text>
-          <Text style={styles.lineAmount}>{format(line.amount)}</Text>
-          {/*
-            A mistyped quantity used to be unescapable. Combined with the one-fee-type lock
-            above, the FIRST line fixed both the fee type and its own wrong amount for the
-            lifetime of the screen -- the only way out was navigating away and starting the
-            receipt over. Removing the last line empties `lines`, which releases the lock
-            naturally, because the lock is derived from `lines[0]` rather than stored.
-          */}
-          <Pressable
-            style={styles.remove}
-            onPress={() => {
-              setLines(lines.filter((_, i) => i !== index));
-              setError(null);
-            }}
-          >
-            <Text style={styles.removeText}>Remove</Text>
-          </Pressable>
-        </View>
-      ))}
+      {lines.length > 0 ? (
+        <>
+          <Rift />
+          <Label>On this receipt</Label>
+          <View style={{ height: 8 }} />
+          <Rule />
+          {lines.map((line, index) => (
+            <View key={index}>
+              <Slot
+                left={
+                  <View style={{ gap: 2 }}>
+                    <Body>{`${line.quantity} × ${format(line.unitRate)}`}</Body>
+                    {line.rateClass ? (
+                      <Body tone={color.muted}>{line.rateClass}</Body>
+                    ) : null}
+                  </View>
+                }
+                right={
+                  <View style={{ alignItems: "flex-end", gap: 4 }}>
+                    <Text style={lineAmount}>{format(line.amount)}</Text>
+                    {/*
+                      A mistyped quantity used to be unescapable. Combined with the
+                      one-fee-type lock above, the FIRST line fixed both the fee type and
+                      its own wrong amount for the lifetime of the screen -- the only way
+                      out was navigating away and starting the receipt over. Removing the
+                      last line empties `lines`, which releases the lock naturally, because
+                      the lock is derived from `lines[0]` rather than stored.
+                    */}
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove line ${index + 1}`}
+                      hitSlop={8}
+                      style={removeHit}
+                      onPress={() => {
+                        setLines(lines.filter((_, i) => i !== index));
+                        setError(null);
+                      }}
+                    >
+                      <Text style={removeText}>Remove</Text>
+                    </Pressable>
+                  </View>
+                }
+              />
+              <Rule />
+            </View>
+          ))}
+        </>
+      ) : null}
 
-      <Text style={styles.total}>Receipt total {format(gross)}</Text>
-
-      <Button
-        title="Proceed to payment"
-        disabled={lines.length === 0}
-        onPress={() => {
-          setDraft({
-            kind: "lines",
-            // Enforced by the choice guard above, not assumed: a tap on a different fee
-            // type is refused before `pick` -- and so a line -- can hold it, so every line
-            // here already shares one fee type by construction. That is what makes
-            // lines[0] a safe stand-in for "the receipt's fee type", which is what parent
-            // §10's Abstract of Collections totals by.
-            feeTypeId: lines[0]!.feeTypeId,
-            label: "On-the-spot fee",
-            lines,
-            grossAmount: gross,
-          });
-          router.push("/receipt");
-        }}
-      />
-    </ScrollView>
+    </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, padding: 16 },
-  heading: { fontSize: 22, fontWeight: "700", marginBottom: 12 },
-  choice: { padding: 12, borderWidth: 1, borderColor: "#ddd", borderRadius: 6, marginBottom: 6 },
-  choiceOn: { backgroundColor: "#e3f2fd", borderColor: "#1976d2" },
-  choiceLocked: { opacity: 0.4 },
-  choiceText: { fontSize: 16 },
-  label: { marginTop: 12, fontSize: 14, color: "#666" },
-  input: { borderWidth: 1, borderColor: "#999", borderRadius: 6, padding: 12, fontSize: 22 },
-  errorBox: { backgroundColor: "#ffebee", padding: 10, borderRadius: 6, marginTop: 10, gap: 8 },
-  error: { color: "#b71c1c", fontSize: 14 },
-  line: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 10, gap: 12 },
-  lineText: { fontSize: 15, flexShrink: 1 },
-  lineAmount: { fontSize: 15, fontWeight: "600" },
-  remove: { paddingVertical: 8, paddingHorizontal: 12 },
-  removeText: { fontSize: 15, color: "#b71c1c", fontWeight: "600" },
-  total: { marginTop: 16, fontSize: 24, fontWeight: "700", marginBottom: 12 },
-});
+const lineAmount = {
+  fontFamily: face.text,
+  fontSize: size.body,
+  fontWeight: "700" as const,
+  color: color.ink,
+};
+
+const removeHit = {
+  minHeight: touch.min - 16,
+  justifyContent: "center" as const,
+  paddingVertical: space.tight,
+};
+
+const removeText = {
+  fontFamily: face.condensed,
+  fontSize: size.label,
+  fontWeight: "700" as const,
+  letterSpacing: 1.1,
+  textTransform: "uppercase" as const,
+  color: color.refusal,
+};
