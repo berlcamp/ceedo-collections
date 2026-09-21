@@ -153,4 +153,32 @@ describe("unpaidPeriodGroups", () => {
     const groups = unpaidPeriodGroups(input({ charges: [mine, theirs] }), "L1");
     expect(groups.flatMap((g) => g.chargeIds)).toEqual(["m"]);
   });
+
+  it("orders chargeIds by the charge_type enum's declared position, not by string sort", () => {
+    // Postgres declares the enum as ('rental', 'surcharge', 'opening_balance')
+    // (migration 20260918000011_ledger_charges.sql), and a Postgres enum sorts by
+    // DECLARATION POSITION, not alphabetically -- so the real ordering is
+    // rental < surcharge < opening_balance, where a naive string sort would put
+    // opening_balance FIRST. `{rental, surcharge}` (the only pairing today's other
+    // fixtures exercise) happens to agree under either ordering, which is exactly how
+    // a plain `localeCompare` on chargeType passed every other test while silently
+    // disagreeing with the SQL for any group containing an opening_balance.
+    //
+    // The database itself rarely produces a group combining a rental and an opening
+    // balance -- an opening balance's period_end is cutover - 1, which rarely matches
+    // an accrued period's (due_date, period_start, period_end) key. That is a habit of
+    // today's data, not a guarantee. The CONTRACT under test is unpaidPeriodGroups()'s
+    // documented ordering rule ("chargeIds is ordered by charge_type to match
+    // array_agg(b.id order by b.charge_type)"), so this fixture is built directly
+    // regardless of whether the current accrual/opening-balance jobs would ever
+    // actually produce it. Do not delete this as "unreachable" without first showing
+    // the contract itself no longer promises enum order.
+    const rental = charge({ id: "r1" });
+    const opening = charge({ id: "ob1", chargeType: "opening_balance" });
+
+    const groups = unpaidPeriodGroups(input({ charges: [opening, rental] }), "L1");
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.chargeIds).toEqual(["r1", "ob1"]);
+  });
 });

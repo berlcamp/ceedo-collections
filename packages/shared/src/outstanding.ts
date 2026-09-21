@@ -70,12 +70,65 @@ export function chargeBalance(charge: LedgerCharge, input: LedgerInput): Centavo
 }
 
 /**
+ * Charge-type ordinal, mirroring how Postgres orders the `charge_type` enum
+ * (migration 20260918000011_ledger_charges.sql:47-48):
+ *
+ *   create type ceedo_collections.charge_type as enum
+ *     ('rental', 'surcharge', 'opening_balance');
+ *
+ * A Postgres enum sorts by DECLARATION POSITION, not alphabetically -- verified directly
+ * against a live database rather than assumed:
+ *
+ *   select string_agg(t::text, ',' order by t)
+ *     from unnest(array['surcharge','opening_balance','rental']::ceedo_collections.charge_type[]) t
+ *   -> rental,surcharge,opening_balance
+ *
+ * The SQL this file mirrors, `array_agg(b.id order by b.charge_type)`
+ * (unpaid_period_groups(), same migration file as charge_balances), relies on exactly that
+ * declaration order. `{rental, surcharge}` -- the only pairing today's fixtures exercise
+ * -- sorts as `rental, surcharge` under BOTH the real enum order and a plain alphabetical
+ * string sort, since `rental` < `surcharge` either way. That coincidence is exactly how a
+ * prior `localeCompare`-based sort passed every test while silently disagreeing with the
+ * SQL for any group that also contains an `opening_balance`: alphabetically
+ * `opening_balance` sorts FIRST (before `rental`), but the enum -- and the SQL -- puts it
+ * LAST.
+ *
+ * THIS MAP MUST STAY IN STEP WITH MIGRATION 0011's DECLARATION. If a future migration
+ * adds a charge_type or reorders these three, update this map in the same commit --
+ * otherwise `chargeIds` silently stops matching the SQL for any group containing the
+ * changed type, and nothing but a hand-built fixture (see outstanding.test.ts) would ever
+ * catch it, because the database rarely produces a group mixing all three types.
+ */
+const CHARGE_TYPE_ORDER: Record<string, number> = {
+  rental: 0,
+  surcharge: 1,
+  opening_balance: 2,
+};
+
+/**
+ * An unrecognized charge_type sorts LAST, not first.
+ *
+ * `LedgerCharge.chargeType` is kept as a plain string (see that field's own comment)
+ * because the device is a cache and can receive a charge_type a future migration added
+ * before this file's CHARGE_TYPE_ORDER is updated to know about it. Sorting an unknown
+ * type to position 0 would let it silently claim the front of `chargeIds` -- exactly
+ * where a caller unpacking a rental+surcharge group might assume `chargeIds[0]` is always
+ * the rental. Sorting it last cannot be mistaken for that guarantee, so it is the safer
+ * failure: a caller that trips over an unrecognized type at the end of the array is
+ * looking at something it does not understand, not something it misidentifies as familiar.
+ */
+function chargeTypeRank(chargeType: string): number {
+  return CHARGE_TYPE_ORDER[chargeType] ?? Number.MAX_SAFE_INTEGER;
+}
+
+/**
  * The FIFO-ordered groups of what a lease still owes.
  *
  * Grouped by (due_date, period_start, period_end) and ordered by (due_date, period_start),
- * which is the SQL's ordering verbatim. `chargeIds` is ordered by charge_type to match
- * `array_agg(b.id order by b.charge_type)` -- so a rental sorts before its surcharge, and
- * the parity test can compare the arrays element by element.
+ * which is the SQL's ordering verbatim. `chargeIds` is ordered by CHARGE_TYPE_ORDER (the
+ * enum's declared position, not alphabetically) to match `array_agg(b.id order by
+ * b.charge_type)` -- so a rental sorts before its surcharge, and the parity test can
+ * compare the arrays element by element.
  *
  * `is_settled` in SQL is `outstanding <= 0`, not `= 0`. An over-allocation must not
  * resurrect a period, so the comparison here is `<= 0` too.
@@ -114,7 +167,7 @@ export function unpaidPeriodGroups(input: LedgerInput, leaseId: string): PeriodG
       dueDate: bucket.dueDate,
       periodStart: bucket.periodStart,
       chargeIds: [...bucket.entries]
-        .sort((a, b) => a.chargeType.localeCompare(b.chargeType))
+        .sort((a, b) => chargeTypeRank(a.chargeType) - chargeTypeRank(b.chargeType))
         .map((e) => e.id),
       outstanding: fromCentavos(bucket.outstanding),
     }));
