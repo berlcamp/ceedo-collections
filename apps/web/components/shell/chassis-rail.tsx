@@ -1,12 +1,14 @@
 "use client";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { Landmark, Menu, X } from "lucide-react";
+import { Landmark, Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { NAV_ICONS } from "@/components/shell/nav-icons";
 import { cn } from "@/components/ui/cn";
+import { Tooltip } from "@/components/ui/tooltip";
+import { RAIL_COOKIE, RAIL_COOKIE_MAX_AGE } from "@/components/shell/rail-cookie";
 
 export interface NavGroup {
   heading: string;
@@ -31,13 +33,37 @@ export function ChassisRail({
   groups,
   staffName,
   staffRole,
+  defaultCollapsed = false,
 }: {
   groups: NavGroup[];
   staffName: string;
   staffRole: string;
+  /** From the rail cookie, read server-side. */
+  defaultCollapsed?: boolean;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+
+  const toggle = useCallback(() => {
+    setCollapsed((was) => {
+      const next = !was;
+      document.cookie = `${RAIL_COOKIE}=${next ? "1" : "0"}; path=/; max-age=${RAIL_COOKIE_MAX_AGE}; samesite=lax`;
+      return next;
+    });
+  }, []);
+
+  // Ctrl+B / Cmd+B, the shortcut the office's other system (ccb-sms) uses for the same rail.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key.toLowerCase() === "b" && (event.metaKey || event.ctrlKey) && !event.altKey) {
+        event.preventDefault();
+        toggle();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [toggle]);
 
   const initials = staffName
     .split(/\s+/)
@@ -46,55 +72,95 @@ export function ChassisRail({
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
 
-  const nav = (
+  const toggleButton = (
+    <Tooltip
+      label={collapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)"}
+      side="right"
+    >
+      <button
+        type="button"
+        onClick={toggle}
+        aria-label={collapsed ? "Expand the sidebar" : "Collapse the sidebar"}
+        aria-expanded={!collapsed}
+        className="on-chassis rounded-md p-1.5 text-chassis-dim/60 transition-colors duration-150 hover:bg-chassis-700 hover:text-chassis-ink"
+      >
+        {collapsed ? (
+          <PanelLeftOpen size={16} strokeWidth={1.75} />
+        ) : (
+          <PanelLeftClose size={16} strokeWidth={1.75} />
+        )}
+      </button>
+    </Tooltip>
+  );
+
+  /**
+   * `compact` is the collapsed desktop rail: icons only, each label moved into a tooltip
+   * and kept for screen readers. The phone sheet always renders the full rail.
+   */
+  const renderNav = (compact: boolean, withToggle: boolean) => (
     <nav className="flex h-full min-h-0 flex-col" aria-label="Sections">
-      <div className="flex h-14 shrink-0 items-center px-4">
-        <Link href="/" className="on-chassis flex items-center gap-3 rounded-md">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-chassis-accent text-chassis-900">
-            <Landmark size={18} strokeWidth={1.75} />
-          </span>
-          <span className="flex flex-col">
-            <span className="text-sm font-bold tracking-tight text-chassis-dim">CEEDO</span>
-            <span className="text-2xs font-medium uppercase tracking-[0.12em] text-chassis-dim/50">
-              Collections
+      {compact ? (
+        <div className="flex h-14 shrink-0 items-center justify-center">{toggleButton}</div>
+      ) : (
+        <div className="flex h-14 shrink-0 items-center gap-2 px-4">
+          <Link href="/" className="on-chassis flex min-w-0 items-center gap-3 rounded-md">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-chassis-accent text-chassis-900">
+              <Landmark size={18} strokeWidth={1.75} />
             </span>
-          </span>
-        </Link>
-      </div>
+            <span className="flex flex-col">
+              <span className="text-sm font-bold tracking-tight text-chassis-dim">CEEDO</span>
+              <span className="text-2xs font-medium uppercase tracking-[0.12em] text-chassis-dim/50">
+                Collections
+              </span>
+            </span>
+          </Link>
+          {withToggle ? <div className="ml-auto">{toggleButton}</div> : null}
+        </div>
+      )}
       <div className="h-px shrink-0 bg-chassis-600" />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-1 pt-2 pb-4">
         {groups.map((group, index) => (
-          <div key={group.heading} className={cn("p-2", index > 0 && "pt-4")}>
-            <p className="mb-1 px-2 text-2xs font-semibold uppercase tracking-[0.12em] text-chassis-dim/40">
-              {group.heading}
-            </p>
+          <div key={group.heading} className={cn("p-2", index > 0 && (compact ? "pt-2" : "pt-4"))}>
+            {compact ? (
+              // Headings do not fit a 3.5rem rail; a rule keeps the groups apart.
+              index > 0 ? (
+                <div className="mx-1 mb-2 h-px bg-chassis-600" />
+              ) : null
+            ) : (
+              <p className="mb-1 px-2 text-2xs font-semibold uppercase tracking-[0.12em] text-chassis-dim/40">
+                {group.heading}
+              </p>
+            )}
             <ul className="flex flex-col">
               {group.items.map((item) => {
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 const Icon = NAV_ICONS[item.icon];
                 return (
                   <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      // Closes the phone sheet on the way out. Done here rather than in an
-                      // effect on the pathname: the tap is the event, and a route that
-                      // resolves to the screen already open should still dismiss it.
-                      onClick={() => setOpen(false)}
-                      aria-current={active ? "page" : undefined}
-                      className={cn(
-                        "on-chassis flex h-8 items-center gap-2 overflow-hidden rounded-md p-2 text-sm",
-                        "transition-colors duration-150",
-                        // Hover and current share a ground; weight is what separates them,
-                        // so the current screen is identifiable with colour removed.
-                        active
-                          ? "bg-chassis-700 font-medium text-chassis-ink"
-                          : "text-chassis-dim hover:bg-chassis-700 hover:text-chassis-ink",
-                      )}
-                    >
-                      {Icon ? <Icon size={16} strokeWidth={1.75} className="shrink-0" /> : null}
-                      <span className="truncate">{item.label}</span>
-                    </Link>
+                    <Tooltip label={item.label} side="right" disabled={!compact}>
+                      <Link
+                        href={item.href}
+                        // Closes the phone sheet on the way out. Done here rather than in an
+                        // effect on the pathname: the tap is the event, and a route that
+                        // resolves to the screen already open should still dismiss it.
+                        onClick={() => setOpen(false)}
+                        aria-current={active ? "page" : undefined}
+                        className={cn(
+                          "on-chassis flex h-8 items-center gap-2 overflow-hidden rounded-md p-2 text-sm",
+                          compact && "justify-center",
+                          "transition-colors duration-150",
+                          // Hover and current share a ground; weight is what separates them,
+                          // so the current screen is identifiable with colour removed.
+                          active
+                            ? "bg-chassis-700 font-medium text-chassis-ink"
+                            : "text-chassis-dim hover:bg-chassis-700 hover:text-chassis-ink",
+                        )}
+                      >
+                        {Icon ? <Icon size={16} strokeWidth={1.75} className="shrink-0" /> : null}
+                        <span className={compact ? "sr-only" : "truncate"}>{item.label}</span>
+                      </Link>
+                    </Tooltip>
                   </li>
                 );
               })}
@@ -103,13 +169,15 @@ export function ChassisRail({
         ))}
       </div>
 
-      <div className="shrink-0 p-3">
+      <div className={cn("shrink-0", compact ? "px-2 py-3" : "p-3")}>
         <div className="mx-1 mb-3 h-px bg-chassis-600" />
-        <div className="flex items-center gap-2 px-1">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-chassis-accent text-2xs font-bold text-chassis-900">
-            {initials}
-          </span>
-          <span className="flex min-w-0 flex-col">
+        <div className={cn("flex items-center gap-2", compact ? "justify-center" : "px-1")}>
+          <Tooltip label={`${staffName} · ${staffRole}`} side="right" disabled={!compact}>
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-chassis-accent text-2xs font-bold text-chassis-900">
+              {initials}
+            </span>
+          </Tooltip>
+          <span className={cn("flex min-w-0 flex-col", compact && "sr-only")}>
             <span className="truncate text-xs font-semibold text-chassis-dim">{staffName}</span>
             <span className="truncate text-2xs uppercase tracking-[0.12em] text-chassis-dim/50">
               {staffRole}
@@ -124,8 +192,13 @@ export function ChassisRail({
     <>
       {/* Desktop: the rail is part of the frame and never moves between routes. No right
           border — the value step between the navy and the field is the separation. */}
-      <div className="on-chassis hidden w-64 shrink-0 bg-chassis-900 lg:block">
-        <div className="sticky top-0 h-dvh">{nav}</div>
+      <div
+        className={cn(
+          "on-chassis hidden shrink-0 bg-chassis-900 transition-[width] duration-200 ease-out motion-reduce:transition-none lg:block",
+          collapsed ? "w-14" : "w-64",
+        )}
+      >
+        <div className="sticky top-0 h-dvh">{renderNav(collapsed, true)}</div>
       </div>
 
       {/* Phone and tablet: the same chassis, pulled out when asked for. */}
@@ -152,7 +225,7 @@ export function ChassisRail({
               >
                 <X size={16} strokeWidth={1.75} />
               </DialogPrimitive.Close>
-              {nav}
+              {renderNav(false, false)}
             </DialogPrimitive.Content>
           </DialogPrimitive.Portal>
         </DialogPrimitive.Root>

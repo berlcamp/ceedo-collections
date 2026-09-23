@@ -1,11 +1,14 @@
 import { TooltipProvider } from "@radix-ui/react-tooltip";
+import { cookies } from "next/headers";
 import { ChassisRail, type NavGroup } from "@/components/shell/chassis-rail";
+import { RAIL_COOKIE } from "@/components/shell/rail-cookie";
 import { RESOURCES } from "@/lib/admin/resource";
 import { requireStaff } from "@/lib/supabase/session";
 import "@/lib/admin/registry";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const staff = await requireStaff();
+  const railCollapsed = (await cookies()).get(RAIL_COOKIE)?.value === "1";
 
   // Only the screens this role can actually see anything on. Listing every resource to
   // every role offered a supervisor a "Staff invitations" link that RLS guarantees will
@@ -54,14 +57,27 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         { href: "/ledger/shifts", label: "Shifts", icon: "shifts" },
       ],
     },
+    {
+      heading: "Print",
+      items: [{ href: "/cards", label: "Tenant cards", icon: "cards" }],
+    },
   ];
 
   return (
     <TooltipProvider delayDuration={250}>
       <div className="flex min-h-dvh flex-col lg:flex-row">
-        <ChassisRail groups={groups} staffName={staff.fullName} staffRole={staff.role} />
-        <main className="min-w-0 flex-1 bg-tape px-4 py-6 sm:px-6 lg:px-8 lg:py-7">
-          <div className="mx-auto max-w-[96rem]">{children}</div>
+        {/* Printing is only ever the tenant cards (/cards): the rail and the field's padding
+            would otherwise land on the first sheet and push every card off its millimetres. */}
+        <div className="contents print:hidden">
+          <ChassisRail
+            groups={groups}
+            staffName={staff.fullName}
+            staffRole={staff.role}
+            defaultCollapsed={railCollapsed}
+          />
+        </div>
+        <main className="min-w-0 flex-1 bg-tape px-4 py-6 sm:px-6 lg:px-8 lg:py-7 print:bg-white print:p-0">
+          <div className="mx-auto max-w-[96rem] print:max-w-none">{children}</div>
         </main>
       </div>
     </TooltipProvider>

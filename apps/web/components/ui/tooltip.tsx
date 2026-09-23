@@ -6,12 +6,25 @@ import type { ReactNode } from "react";
 export const TooltipProvider = TooltipPrimitive.Provider;
 
 /** A pencilled marginal note — used only where a figure needs its provenance stated. */
-export function Tooltip({ label, children }: { label: ReactNode; children: ReactNode }) {
+export function Tooltip({
+  label,
+  children,
+  side,
+  disabled,
+}: {
+  label: ReactNode;
+  children: ReactNode;
+  side?: "top" | "right" | "bottom" | "left";
+  /** Renders the child alone, e.g. a rail label that is already visible needs no tooltip. */
+  disabled?: boolean;
+}) {
+  if (disabled) return <>{children}</>;
   return (
     <TooltipPrimitive.Root>
       <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
       <TooltipPrimitive.Portal>
         <TooltipPrimitive.Content
+          side={side}
           sideOffset={5}
           collisionPadding={10}
           className="z-50 max-w-[18rem] rounded-md bg-chassis-900 px-2 py-1.5 text-xs leading-snug text-chassis-ink shadow-[0_8px_22px_-8px_rgba(12,18,26,0.5)] data-[state=delayed-open]:animate-[fade-in_120ms_ease-out]"
