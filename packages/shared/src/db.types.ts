@@ -1013,6 +1013,86 @@ export type Database = {
           },
         ]
       }
+      remittances: {
+        Row: {
+          amount: number
+          bank: string
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          collector_id: string
+          deposit_slip_no: string
+          deposited_at: string
+          id: string
+          recorded_at: string
+          recorded_by: string
+          row_version: number
+          verified_at: string | null
+          verified_by: string | null
+        }
+        Insert: {
+          amount: number
+          bank: string
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          collector_id: string
+          deposit_slip_no: string
+          deposited_at: string
+          id?: string
+          recorded_at?: string
+          recorded_by: string
+          row_version?: number
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Update: {
+          amount?: number
+          bank?: string
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          collector_id?: string
+          deposit_slip_no?: string
+          deposited_at?: string
+          id?: string
+          recorded_at?: string
+          recorded_by?: string
+          row_version?: number
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "remittances_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "remittances_collector_id_fkey"
+            columns: ["collector_id"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "remittances_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "remittances_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sections: {
         Row: {
           active: boolean
@@ -1092,6 +1172,7 @@ export type Database = {
           device_id: string
           id: string
           opened_at: string
+          remittance_id: string | null
           row_version: number
           status: string
           system_count: number | null
@@ -1106,6 +1187,7 @@ export type Database = {
           device_id: string
           id: string
           opened_at: string
+          remittance_id?: string | null
           row_version?: number
           status: string
           system_count?: number | null
@@ -1120,6 +1202,7 @@ export type Database = {
           device_id?: string
           id?: string
           opened_at?: string
+          remittance_id?: string | null
           row_version?: number
           status?: string
           system_count?: number | null
@@ -1139,6 +1222,13 @@ export type Database = {
             columns: ["device_id"]
             isOneToOne: false
             referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shifts_remittance_id_fkey"
+            columns: ["remittance_id"]
+            isOneToOne: false
+            referencedRelation: "remittances"
             referencedColumns: ["id"]
           },
         ]
@@ -1557,6 +1647,10 @@ export type Database = {
         Args: { p_collection_id: string; p_reason: string }
         Returns: string
       }
+      cancel_remittance: {
+        Args: { p_reason: string; p_remittance_id: string }
+        Returns: undefined
+      }
       close_shift: {
         Args: {
           p_declared_total: number
@@ -1617,6 +1711,17 @@ export type Database = {
         }
         Returns: string
       }
+      record_remittance: {
+        Args: {
+          p_amount: number
+          p_bank: string
+          p_collector_id: string
+          p_deposit_slip_no: string
+          p_deposited_at: string
+          p_shift_ids: string[]
+        }
+        Returns: string
+      }
       record_spoiled_form: {
         Args: { p_collector: string; p_device_id: string; p_payload: Json }
         Returns: Json
@@ -1667,6 +1772,10 @@ export type Database = {
           period_end: string
           period_start: string
         }[]
+      }
+      verify_remittance: {
+        Args: { p_remittance_id: string }
+        Returns: undefined
       }
     }
     Enums: {
