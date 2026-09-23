@@ -2,6 +2,7 @@ export * from "./booklets";
 export * from "./charges";
 export * from "./enrollment-payload";
 export * from "./fifo";
+export * from "./lease-card";
 export * from "./money";
 export * from "./outstanding";
 export * from "./rates";

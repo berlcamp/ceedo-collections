@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import { ScrollView, View } from "react-native";
-import { Body, Field, Note, RackHead, Register, Rule, Screen, Slot, Title, color } from "../ui";
+import { Action, Body, Field, Note, RackHead, Register, Rule, Screen, Slot, Title, color } from "../ui";
 import { freshness, type Freshness } from "../ui/staleness";
 import { businessDate } from "../sync/device-sync";
 import { deviceDriver } from "../db/driver";
@@ -82,6 +82,10 @@ export default function Leases() {
         />
       }
     >
+      <Action label="Scan a tenant card instead" tone="quiet" onPress={() => router.push("/scan")} />
+
+      <View style={{ height: 16 }} />
+
       <Field
         label="Stall number or tenant name"
         placeholder="Search"

@@ -228,6 +228,8 @@ export default function Shift() {
           <Label>The round</Label>
           <View style={{ height: 8 }} />
           <Rule />
+          <Slot onPress={() => router.push("/scan")} left="Scan a tenant card" />
+          <Rule />
           <Slot onPress={() => router.push("/leases")} left="Collect from a stall" />
           <Rule />
           <Slot onPress={() => router.push("/ambulant")} left="On-the-spot fee" />

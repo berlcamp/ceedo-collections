@@ -11,6 +11,7 @@ import {
   Layers,
   Mail,
   MapPin,
+  QrCode,
   Receipt,
   ScrollText,
   Store,
@@ -50,4 +51,5 @@ export const NAV_ICONS: Record<string, LucideIcon> = {
   "opening-balances": Landmark,
   exceptions: AlertTriangle,
   shifts: Clock,
+  cards: QrCode,
 };

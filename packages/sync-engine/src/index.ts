@@ -26,6 +26,7 @@ export {
   type SignInBlock,
 } from "./signin";
 export { leaseLedger, leaseLedgerDetail, ledgerStaleness } from "./ledger";
+export { resolveCard, type CardResolution } from "./card";
 export {
   orEntryContext,
   commitReceipt,
