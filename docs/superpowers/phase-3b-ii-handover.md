@@ -5,7 +5,7 @@
 **Spec:** `docs/superpowers/specs/2026-09-21-phase-3b-ii-collection-round-design.md`
 **Plan:** `docs/superpowers/plans/2026-09-21-phase-3b-ii-collection-round.md`
 **Predecessor:** `docs/superpowers/phase-3b-i-handover.md`
-**Device smoke:** `docs/superpowers/measurements/phase-3b-ii-device-smoke.md` — **rows blank, not yet run**
+**Device smoke:** `docs/superpowers/measurements/phase-3b-ii-device-smoke.md` — **run 2026-09-23, 34/34 rows passed**
 
 Verified from a clean `supabase db reset`: 76 files, 819 tests, all passing, 75s.
 `pnpm typecheck --force` clean across all seven packages (0 cached).
@@ -14,18 +14,17 @@ Verified from a clean `supabase db reset`: 76 files, 819 tests, all passing, 75s
 
 ## The one thing to read first
 
-**Task 12, the device session, has not run.** It is the plan's exit criterion — a real shift
-on the physical tablet with real receipts, one of them taken in airplane mode, closing out
-with the totals agreeing. Everything below was verified by tests, by reading, and by review.
-None of it has been in a collector's hands.
+**Task 12, the device session, ran on 2026-09-23 and passed.** It is the plan's exit
+criterion. The session was a real shift on the physical tablet (JDY-LX2, Android 16) with real receipts, two of
+them taken in airplane mode, and it closed out with the totals agreeing (variance 0.00). All 34 checklist rows
+matched and no app bugs were found. Row 34 (the screen settles, with no re-query loop) is now observed on hardware.
 
-Phase 3b-i's handover records four bugs the device found that no amount of Node testing
-would have caught, and two of them were not wrong code at all — every unit test passed and
-the system was unusable end to end. Expect the same here. The checklist is written and
-waiting.
+One setup problem, not an app bug: the first sync returned 503 because the local Edge Functions
+container had exited and `db reset` did not restart it. `docker start
+supabase_edge_runtime_ceedo-collections` fixed it.
 
-**Before that session: re-enrol the tablet.** The database was reset many times during this
-phase, and a reset destroys the device row, its credential and its assignments.
+**After any `db reset`, re-enrol the tablet.** A reset destroys the device row, its credential
+and its assignments. Re-run `scripts/dev-seed-round.sql` and `scripts/dev-wire-tablet.sql`, in that order.
 
 ---
 
@@ -147,11 +146,6 @@ trusted:
 ---
 
 ## Known gaps, carried forward
-
-### Task 12 has not run
-
-See the top of this document. The checklist is at
-`docs/superpowers/measurements/phase-3b-ii-device-smoke.md` with every row blank.
 
 ### Three residual findings from the whole-branch review
 
