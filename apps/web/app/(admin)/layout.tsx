@@ -55,11 +55,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         { href: "/ledger/opening-balances", label: "Opening balances", icon: "opening-balances" },
         { href: "/ledger/exceptions", label: "Exceptions", icon: "exceptions" },
         { href: "/ledger/shifts", label: "Shifts", icon: "shifts" },
+        { href: "/ledger/remittances", label: "Remittances", icon: "remittances" },
       ],
     },
     {
       heading: "Print",
-      items: [{ href: "/cards", label: "Tenant cards", icon: "cards" }],
+      items: [
+        { href: "/reports", label: "Reports", icon: "reports" },
+        { href: "/cards", label: "Tenant cards", icon: "cards" },
+      ],
     },
   ];
 

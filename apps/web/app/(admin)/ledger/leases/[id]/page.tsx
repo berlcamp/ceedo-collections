@@ -1,7 +1,7 @@
 import { isAdmin } from "@ceedo/shared";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, QrCode } from "lucide-react";
+import { ChevronLeft, FileSpreadsheet, QrCode } from "lucide-react";
 import { buttonClass } from "@/components/ui/button";
 import { Money } from "@/components/ledger/money";
 import { SubsidiaryLedgerTable } from "@/components/ledger/subsidiary-ledger-table";
@@ -40,10 +40,19 @@ export default async function SubsidiaryLedgerPage({
         title={`Stall ${balance.stallNo} — ${balance.tenantName}`}
         actions={
           // A lost or ruined card is a reprint, not a re-issue (§9.2): the QR is the lease id.
-          <Link href={`/cards?lease=${leaseId}`} className={buttonClass("secondary", "sm")}>
-            <QrCode size={14} strokeWidth={2} />
-            Print card
-          </Link>
+          <>
+            <Link
+              href={`/reports/subsidiary-ledger?lease=${leaseId}`}
+              className={buttonClass("secondary", "sm")}
+            >
+              <FileSpreadsheet size={14} strokeWidth={2} />
+              Print / Excel
+            </Link>
+            <Link href={`/cards?lease=${leaseId}`} className={buttonClass("secondary", "sm")}>
+              <QrCode size={14} strokeWidth={2} />
+              Print card
+            </Link>
+          </>
         }
         note={
           <>

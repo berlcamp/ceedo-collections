@@ -1,3 +1,6 @@
+import Link from "next/link";
+import { FileSpreadsheet } from "lucide-react";
+import { buttonClass } from "@/components/ui/button";
 import { DelinquencyTable } from "@/components/ledger/delinquency-table";
 import { ScreenHeader } from "@/components/shell/screen-header";
 import { getDelinquency } from "@/lib/ledger/queries";
@@ -14,6 +17,12 @@ export default async function DelinquencyPage() {
     <div>
       <ScreenHeader
         title="Delinquency list"
+        actions={
+          <Link href="/reports/delinquency" className={buttonClass("secondary", "md")}>
+            <FileSpreadsheet size={14} strokeWidth={2} />
+            Print / Excel
+          </Link>
+        }
         note="Leases more than 30 days overdue. Drives demand letters."
       />
       <DelinquencyTable rows={rows} />

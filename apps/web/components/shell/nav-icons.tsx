@@ -5,9 +5,11 @@ import {
   CircleDollarSign,
   Clock,
   FileClock,
+  FileSpreadsheet,
   FileSignature,
   Hourglass,
   Landmark,
+  Banknote,
   Layers,
   Mail,
   MapPin,
@@ -52,4 +54,6 @@ export const NAV_ICONS: Record<string, LucideIcon> = {
   exceptions: AlertTriangle,
   shifts: Clock,
   cards: QrCode,
+  reports: FileSpreadsheet,
+  remittances: Banknote,
 };

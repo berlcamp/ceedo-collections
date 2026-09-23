@@ -1,3 +1,6 @@
+import Link from "next/link";
+import { FileSpreadsheet } from "lucide-react";
+import { buttonClass } from "@/components/ui/button";
 import { AgingTable } from "@/components/ledger/aging-table";
 import { ScreenHeader } from "@/components/shell/screen-header";
 import { getAging } from "@/lib/ledger/queries";
@@ -15,6 +18,12 @@ export default async function AgingPage() {
     <div>
       <ScreenHeader
         title="Aging of receivables"
+        actions={
+          <Link href="/reports/aging" className={buttonClass("secondary", "md")}>
+            <FileSpreadsheet size={14} strokeWidth={2} />
+            Print / Excel
+          </Link>
+        }
         note="Outstanding charges by lease, bucketed by how long each charge has been overdue."
       />
       <AgingTable rows={rows} />
