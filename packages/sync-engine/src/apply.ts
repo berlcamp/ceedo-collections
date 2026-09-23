@@ -47,7 +47,8 @@ export async function applyPull(
     for (const table of PULLED_TABLES) {
       const rows = response[table];
       if (!Array.isArray(rows) || rows.length === 0) continue;
-      await insertRows(tx, table, rows as Record<string, unknown>[]);
+      const known = await localColumns(tx, table);
+      await insertRows(tx, table, rows as Record<string, unknown>[], known);
     }
 
     await tx.execute(
@@ -57,19 +58,36 @@ export async function applyPull(
   });
 }
 
+/**
+ * The columns this device's copy of `table` actually has.
+ *
+ * The server can be ahead of an installed app: a migration adds a column, and every
+ * tablet still on the previous build pulls rows carrying it. Inserting a column the local
+ * table lacks is an SQLite error, and inside applyPull's transaction that rolls the WHOLE
+ * pull back -- every tablet in the field would stop syncing until it was updated. So an
+ * unknown column is dropped here instead, and arrives once the app's own migration adds it.
+ */
+async function localColumns(tx: SqliteDriver, table: string): Promise<Set<string>> {
+  const rows = await tx.select<{ name: string }>("select name from pragma_table_info(?)", [
+    table,
+  ]);
+  return new Set(rows.map((r) => r.name));
+}
+
 async function insertRows(
   tx: SqliteDriver,
   table: string,
   rows: Record<string, unknown>[],
+  known: Set<string>,
 ): Promise<void> {
-  // Column names come from the first row of each chunk, so a server that adds a column
-  // lands it without a schema change here -- and a server that omits one does not write
-  // nulls over data the device already holds.
+  // Column names come from the first row of each chunk, filtered to the ones this device
+  // has (see localColumns) -- and a server that omits one does not write nulls over data
+  // the device already holds.
   for (let i = 0; i < rows.length; i += CHUNK) {
     const chunk = rows.slice(i, i + CHUNK);
     const first = chunk[0];
     if (!first) continue;
-    const columns = Object.keys(first);
+    const columns = Object.keys(first).filter((c) => known.has(c));
     if (columns.length === 0) continue;
 
     const placeholders = `(${columns.map(() => "?").join(", ")})`;

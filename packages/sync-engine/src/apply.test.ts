@@ -17,7 +17,9 @@ const SCHEMA = `
   );
   insert into sync_state (id, cursor, epoch) values (1, 0, 0);
   create table charges (
-    id text primary key, lease_id text, amount text, row_version integer
+    id text primary key, lease_id text,
+    -- The CHECK is only a way for a test to make a row fail inside the transaction.
+    amount text check (amount <> 'poison'), row_version integer
   );
   create table outbox (
     id text primary key, type text, payload text, collector_id text,
@@ -47,6 +49,23 @@ describe("applyPull", () => {
     expect(await readSyncState(driver)).toMatchObject({ cursor: 42, epoch: 0 });
   });
 
+  it("drops a column the server has and this device does not, instead of failing the pull", async () => {
+    // A migration added `facility_type` server-side; a tablet on the previous build pulls
+    // rows carrying it. Failing here would roll back the whole pull, on every such tablet.
+    await applyPull(
+      driver,
+      pull(43, [
+        { id: "c1", lease_id: "l1", amount: "100.00", row_version: 7, facility_type: "market" },
+      ]),
+    );
+
+    expect(db.prepare("select id, amount from charges").get()).toEqual({
+      id: "c1",
+      amount: "100.00",
+    });
+    expect(await readSyncState(driver)).toMatchObject({ cursor: 43 });
+  });
+
   it("upserts by primary key rather than failing on a re-delivered row", async () => {
     await applyPull(driver, pull(1, [{ id: "c1", lease_id: "l1", amount: "100.00", row_version: 1 }]));
     await applyPull(driver, pull(2, [{ id: "c1", lease_id: "l1", amount: "250.00", row_version: 2 }]));
@@ -68,15 +87,14 @@ describe("applyPull", () => {
    * falsifiable form: against a two-transaction implementation the cursor reads 99.
    */
   it("leaves the cursor untouched when the apply fails partway", async () => {
-    // POISON FIRST, AND THE ORDER IS load-bearing. insertRows derives its column list from
-    // the FIRST row of each chunk, so a bad row in second position contributes no columns,
-    // binds nothing, and the insert SUCCEEDS -- the test would pass while proving nothing.
-    // First position puts `nonexistent_column` in the statement and SQLite rejects it.
-    const poison = { id: "c2", nonexistent_column: "boom" };
+    // Not an unknown column: those are now dropped by design (see the test above), so a
+    // column the table lacks can no longer make an apply fail. A CHECK violation does, and
+    // it fails the statement wherever the bad row sits in the chunk.
     const good = { id: "c1", lease_id: "l1", amount: "100.00", row_version: 1 };
+    const poison = { id: "c2", lease_id: "l1", amount: "poison", row_version: 2 };
 
-    await expect(applyPull(driver, pull(99, [poison, good]))).rejects.toThrow(
-      /no column named nonexistent_column/i,
+    await expect(applyPull(driver, pull(99, [good, poison]))).rejects.toThrow(
+      /CHECK constraint failed/i,
     );
 
     expect(db.prepare("select count(*) as n from charges").get()).toEqual({ n: 0 });
