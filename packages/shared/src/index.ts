@@ -5,6 +5,7 @@ export * from "./fifo";
 export * from "./lease-card";
 export * from "./money";
 export * from "./outstanding";
+export * from "./period-months";
 export * from "./rates";
 export * from "./reason-codes";
 export * from "./roles";

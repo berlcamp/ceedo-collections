@@ -4,6 +4,8 @@ import { View } from "react-native";
 import {
   format,
   fromCentavos,
+  groupByMonth,
+  monthLabel,
   parsePesoInput,
   selectByAmount,
   sum,
@@ -85,6 +87,9 @@ export default function Lease() {
   const [busy, setBusy] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncDetail, setSyncDetail] = useState<string | null>(null);
+  // Months the collector has opened or closed. Null until they touch one: by default only
+  // the oldest month is open, because that is where every FIFO selection starts.
+  const [openMonths, setOpenMonths] = useState<Set<string> | null>(null);
 
   const load = useCallback(async () => {
     const rows = await driver.select<Header>(
@@ -111,6 +116,15 @@ export default function Lease() {
   );
 
   const selected = groups.filter((g) => ranks.includes(g.groupRank));
+  const blocks = groupByMonth(groups);
+  const isOpen = (month: string) =>
+    openMonths ? openMonths.has(month) : month === blocks[0]?.month;
+  const toggleMonth = (month: string) => {
+    const next = new Set(openMonths ?? (blocks[0] ? [blocks[0].month] : []));
+    if (next.has(month)) next.delete(month);
+    else next.add(month);
+    setOpenMonths(next);
+  };
   const gross = sum(selected.map((g) => g.outstanding));
   const balance = sum(groups.map((g) => g.outstanding));
 
@@ -173,6 +187,30 @@ export default function Lease() {
       "Choose the periods being paid, or enter the amount the tenant handed over.",
     feeTypeId === null && "This lease has no charges on this tablet yet — sync first.",
   );
+
+  const periodRow = (group: (typeof groups)[number]) => {
+    const on = ranks.includes(group.groupRank);
+    return (
+      <View key={group.groupRank}>
+        <Slot
+          onPress={() => tapRow(group.groupRank)}
+          selected={on}
+          suppressed={ranks.length > 0 && !on}
+          // Two lines by construction rather than by wrapping: one line held
+          // "2026-06-01 · due 2026-06-05" beside an amount and broke mid-phrase on a
+          // narrow screen, which put "due" on one line and its date on the next.
+          left={
+            <View style={{ gap: 2 }}>
+              <Body>{group.periodStart}</Body>
+              <Label>{`Due ${group.dueDate}`}</Label>
+            </View>
+          }
+          right={format(group.outstanding)}
+        />
+        <Rule />
+      </View>
+    );
+  };
 
   return (
     <Screen
@@ -298,27 +336,39 @@ export default function Lease() {
       ) : (
         <>
           <Rule />
-          {groups.map((group) => {
-            const on = ranks.includes(group.groupRank);
+          {blocks.map((block) => {
+            // A month holding one period (any monthly lease) is just that period's row: a
+            // header over a single row would only add a tap.
+            if (block.groups.length === 1) return periodRow(block.groups[0]!);
+
+            const inBlock = block.groups.filter((g) => ranks.includes(g.groupRank)).length;
+            const open = isOpen(block.month);
             return (
-              <View key={group.groupRank}>
+              <View key={block.month}>
+                {/*
+                  Parent §9.3: grouped by month, collapsible. Collapsing hides rows, never
+                  the selection: the header carries the spine and a count whenever the
+                  selection reaches into this month, so an amount typed below that lands
+                  mid-month is still visible from here.
+                */}
                 <Slot
-                  onPress={() => tapRow(group.groupRank)}
-                  selected={on}
-                  suppressed={ranks.length > 0 && !on}
-                  // Two lines by construction rather than by wrapping: one line held
-                  // "2026-06-01 · due 2026-06-05" beside an amount and broke mid-phrase
-                  // on a narrow screen, which put "due" on one line and its date on the
-                  // next.
+                  onPress={() => toggleMonth(block.month)}
+                  selected={inBlock > 0}
+                  suppressed={ranks.length > 0 && inBlock === 0}
                   left={
                     <View style={{ gap: 2 }}>
-                      <Body>{group.periodStart}</Body>
-                      <Label>{`Due ${group.dueDate}`}</Label>
+                      <Body>{monthLabel(block.month)}</Body>
+                      <Label>
+                        {`${block.groups.length} periods`}
+                        {inBlock > 0 ? ` · ${inBlock} selected` : ""}
+                        {open ? " · Hide" : " · Show"}
+                      </Label>
                     </View>
                   }
-                  right={format(group.outstanding)}
+                  right={format(block.outstanding)}
                 />
                 <Rule />
+                {open ? block.groups.map((group) => periodRow(group)) : null}
               </View>
             );
           })}
