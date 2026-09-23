@@ -1,6 +1,11 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { drizzle } from "drizzle-orm/expo-sqlite";
+import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";
+import migrations from "../../drizzle/migrations";
+import { openDeviceDb } from "../db/client";
 import { color } from "../ui/tokens";
 
 /**
@@ -20,6 +25,21 @@ import { color } from "../ui/tokens";
  * The status bar is light because it sits on the rack board.
  */
 export default function RootLayout() {
+  // THE DEVICE SCHEMA IS MIGRATED HERE, BEFORE ANY SCREEN RENDERS. It used to happen only on
+  // the enrol screen, so an already-enrolled tablet never received a new local migration --
+  // and the next pull would then either fail or, since applyPull skips unknown columns,
+  // quietly drop the new column's values. Nothing below may touch the database first.
+  const { success, error } = useMigrations(drizzle(openDeviceDb()), migrations);
+
+  if (error) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", padding: 24, backgroundColor: color.stock }}>
+        <Text style={{ color: color.ink }}>{`The tablet's database could not be updated: ${error.message}`}</Text>
+      </View>
+    );
+  }
+  if (!success) return <View style={{ flex: 1, backgroundColor: color.stock }} />;
+
   return (
     <SafeAreaProvider>
       {/*

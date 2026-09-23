@@ -31,6 +31,8 @@ export interface LinesDraft {
   label: string;
   lines: DraftLine[];
   grossAmount: Centavos;
+  /** Plate number, owner or vendor name, when the collector took one. */
+  payerRef: string | null;
 }
 
 export type Draft = LeaseDraft | LinesDraft;

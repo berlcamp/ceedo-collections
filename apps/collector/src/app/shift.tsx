@@ -3,10 +3,12 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { View } from "react-native";
 import { randomUUID } from "expo-crypto";
 import {
+  deviceSite,
   deviceTotals,
   openShift,
   purgeAcked,
   pushable,
+  type DeviceSite,
   type OutboxRow,
 } from "@ceedo/sync-engine";
 import {
@@ -65,6 +67,7 @@ export default function Shift() {
   const [detail, setDetail] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [fresh, setFresh] = useState<Freshness | null>(null);
+  const [site, setSite] = useState<DeviceSite | null>(null);
 
   const load = useCallback(async () => {
     if (!collector) return;
@@ -80,6 +83,7 @@ export default function Shift() {
     setTotals(mine ? await deviceTotals(driver, mine.id) : { count: 0, total: "0.00" });
     setQueued(await pushable(driver));
     setFresh(await freshness(driver, businessDate()));
+    setSite(await deviceSite(driver));
   }, [collector, driver]);
 
   useFocusEffect(
@@ -228,12 +232,26 @@ export default function Shift() {
           <Label>The round</Label>
           <View style={{ height: 8 }} />
           <Rule />
-          <Slot onPress={() => router.push("/scan")} left="Scan a tenant card" />
-          <Rule />
-          <Slot onPress={() => router.push("/leases")} left="Collect from a stall" />
-          <Rule />
-          <Slot onPress={() => router.push("/ambulant")} left="On-the-spot fee" />
-          <Rule />
+          {/*
+            A terminal, parking lot or slaughterhouse has no stalls and no tenants (parent
+            §5.1): its round IS the fee screen. Only a market shows the lease paths. An
+            unknown site (no sync yet) shows the market's, which is what it did before.
+          */}
+          {site && site.type !== "market" ? (
+            <>
+              <Slot onPress={() => router.push("/ambulant")} left="Collect a fee" />
+              <Rule />
+            </>
+          ) : (
+            <>
+              <Slot onPress={() => router.push("/scan")} left="Scan a tenant card" />
+              <Rule />
+              <Slot onPress={() => router.push("/leases")} left="Collect from a stall" />
+              <Rule />
+              <Slot onPress={() => router.push("/ambulant")} left="On-the-spot fee" />
+              <Rule />
+            </>
+          )}
           <Slot onPress={() => router.push("/spoil")} left="Spoil a form" />
           <Rule />
         </>

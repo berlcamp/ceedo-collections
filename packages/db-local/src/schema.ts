@@ -247,6 +247,8 @@ export const feeTypes = sqliteTable("fee_types", {
   name: text("name"),
   accrues: integer("accrues", { mode: "boolean" }),
   surchargeBps: integer("surcharge_bps"),
+  // Where the fee is collected (migration 0045). Null: offered at every facility.
+  facilityType: text("facility_type"),
   active: integer("active", { mode: "boolean" }),
   createdAt: text("created_at"),
   rowVersion: integer("row_version"),

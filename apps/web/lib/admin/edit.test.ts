@@ -65,3 +65,32 @@ describe("the registry's locks", () => {
     );
   });
 });
+
+describe("fee types' Collected at", () => {
+  const schema = RESOURCES["fee-types"]!.schema;
+  const cashOnly = { code: "TERMINAL", name: "Terminal fee", accrues: false, surcharge_bps: 0, active: true };
+
+  it("stores a facility type as chosen", () => {
+    expect(schema.parse({ ...cashOnly, facility_type: "terminal" })).toMatchObject({
+      facility_type: "terminal",
+    });
+  });
+
+  it("is required for an on-the-spot fee, which would otherwise reach every tablet", () => {
+    const result = schema.safeParse({ ...cashOnly, facility_type: null });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path).toEqual(["facility_type"]);
+  });
+
+  it("may be left blank for a fee that creates a receivable", () => {
+    expect(
+      schema.safeParse({ ...cashOnly, code: "MKT_DAILY", accrues: true, surcharge_bps: 300, facility_type: null })
+        .success,
+    ).toBe(true);
+  });
+
+  it("refuses a kind of facility that does not exist, and the old Anywhere value", () => {
+    expect(schema.safeParse({ ...cashOnly, facility_type: "airport" }).success).toBe(false);
+    expect(schema.safeParse({ ...cashOnly, facility_type: "any" }).success).toBe(false);
+  });
+});

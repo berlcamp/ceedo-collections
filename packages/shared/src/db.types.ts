@@ -849,6 +849,9 @@ export type Database = {
           active: boolean
           code: string
           created_at: string
+          facility_type:
+            | Database["ceedo_collections"]["Enums"]["facility_type"]
+            | null
           id: string
           name: string
           row_version: number
@@ -859,6 +862,9 @@ export type Database = {
           active?: boolean
           code: string
           created_at?: string
+          facility_type?:
+            | Database["ceedo_collections"]["Enums"]["facility_type"]
+            | null
           id?: string
           name: string
           row_version?: number
@@ -869,6 +875,9 @@ export type Database = {
           active?: boolean
           code?: string
           created_at?: string
+          facility_type?:
+            | Database["ceedo_collections"]["Enums"]["facility_type"]
+            | null
           id?: string
           name?: string
           row_version?: number

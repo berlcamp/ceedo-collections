@@ -239,22 +239,50 @@ const configs: ResourceConfig[] = [
       name,
       accrues: z.boolean(),
       surcharge_bps: z.number().int().min(0).max(10000),
+      facility_type: z.enum(["market", "terminal", "parking", "slaughterhouse"]).nullable(),
       active: z.boolean(),
+    })
+    // An on-the-spot fee with no site would be offered on EVERY tablet (null means
+    // "anywhere" on the device), which is how a test fixture's slaughter fee once appeared
+    // at the bus terminal. Only an accruing fee may leave it blank: it is billed through a
+    // lease, never picked on the fee screen.
+    .superRefine((value, ctx) => {
+      if (!value.accrues && value.facility_type === null) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["facility_type"],
+          message: "Choose where this fee is collected. Tablets offer it only there.",
+        });
+      }
     }),
     fields: [
       { name: "code", label: "Code", type: "text", help: "e.g. MKT_DAILY, SLAUGHTER" },
       { name: "name", label: "Name", type: "text" },
       { name: "accrues", label: "Creates a receivable", type: "boolean", help: "Market rentals do. Parking, terminal and slaughter fees do not." },
       { name: "surcharge_bps", label: "Surcharge (basis points)", type: "number", help: "3% is 300. Integer only." },
+      {
+        name: "facility_type",
+        label: "Collected at",
+        type: "select",
+        optional: true,
+        help: "Tablets offer this fee only at this kind of facility. Required unless the fee creates a receivable.",
+        options: [
+          { value: "market", label: "Market" },
+          { value: "terminal", label: "Terminal" },
+          { value: "parking", label: "Parking" },
+          { value: "slaughterhouse", label: "Slaughterhouse" },
+        ],
+      },
       { name: "active", label: "Active", type: "boolean" },
     ],
     columns: [
       { key: "code", label: "Code" },
       { key: "name", label: "Name" },
+      { key: "facility_type", label: "Collected at" },
       { key: "accrues", label: "Accrues" },
       { key: "surcharge_bps", label: "Surcharge (bps)" },
     ],
-    select: "id, code, name, accrues, surcharge_bps, active",
+    select: "id, code, name, facility_type, accrues, surcharge_bps, active",
     orderBy: "code",
     optionLabel: "name",
     readRoles: BACK_OFFICE,

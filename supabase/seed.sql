@@ -19,14 +19,14 @@ select s.id, s.name || '-' || lpad(n::text, 2, '0')
 from ceedo_collections.sections s, generate_series(1, 20) n
 where s.facility_id = (select id from ceedo_collections.facilities where code = 'CPM');
 
-insert into ceedo_collections.fee_types (code, name, accrues, surcharge_bps) values
-  ('MKT_DAILY',  'Market stall rental (daily)',   true,  300),
-  ('MKT_WEEKLY', 'Market stall rental (weekly)',  true,  300),
-  ('MKT_MONTHLY','Market stall rental (monthly)', true,  300),
-  ('AMBULANT',   'Ambulant vendor fee',           false, 0),
-  ('PARKING',    'Parking fee',                   false, 0),
-  ('TERMINAL',   'Terminal fee',                  false, 0),
-  ('SLAUGHTER',  'Slaughter fee',                 false, 0);
+insert into ceedo_collections.fee_types (code, name, accrues, surcharge_bps, facility_type) values
+  ('MKT_DAILY',  'Market stall rental (daily)',   true,  300, 'market'),
+  ('MKT_WEEKLY', 'Market stall rental (weekly)',  true,  300, 'market'),
+  ('MKT_MONTHLY','Market stall rental (monthly)', true,  300, 'market'),
+  ('AMBULANT',   'Ambulant vendor fee',           false, 0,   'market'),
+  ('PARKING',    'Parking fee',                   false, 0,   'parking'),
+  ('TERMINAL',   'Terminal fee',                  false, 0,   'terminal'),
+  ('SLAUGHTER',  'Slaughter fee',                 false, 0,   'slaughterhouse');
 
 -- The first branch casts the date and enum literals explicitly: through a UNION, Postgres
 -- resolves an untyped literal to `text` (no per-column target context survives the union),

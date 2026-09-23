@@ -176,7 +176,13 @@ export default function Receipt() {
       head={
         <RackHead
           title={pending.kind === "lease" ? pending.stallNo : "On-the-spot fee"}
-          subtitle={pending.kind === "lease" ? pending.tenantName : pending.label}
+          subtitle={
+            pending.kind === "lease"
+              ? pending.tenantName
+              : pending.payerRef
+                ? `${pending.label} · ${pending.payerRef}`
+                : pending.label
+          }
           onBack={() => router.back()}
         />
       }
@@ -217,7 +223,7 @@ export default function Receipt() {
                   ranks: pending.kind === "lease" ? pending.ranks : [],
                   allocations: pending.kind === "lease" ? pending.allocations : [],
                   lines: pending.kind === "lines" ? pending.lines : [],
-                  payerRef: null,
+                  payerRef: pending.kind === "lines" ? pending.payerRef : null,
                   notes: null,
                 },
                 pending.kind === "lines" ? pending.lines.map(() => randomUUID()) : [],

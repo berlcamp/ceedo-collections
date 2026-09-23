@@ -10,7 +10,14 @@ import {
   sum,
   type RateRow,
 } from "@ceedo/shared";
-import type { DraftLine } from "@ceedo/sync-engine";
+import {
+  deviceSite,
+  feeChoices,
+  payerPrompt,
+  type DeviceSite,
+  type DraftLine,
+  type FeeChoice,
+} from "@ceedo/sync-engine";
 import {
   Action,
   Body,
@@ -35,12 +42,6 @@ import { syncFailure } from "../ui/failures";
 import { deviceDriver } from "../db/driver";
 import { setDraft } from "../collect/draft";
 import { businessDate, syncNow } from "../sync/device-sync";
-
-interface FeeChoice {
-  fee_type_id: string;
-  fee_name: string;
-  rate_class: string | null;
-}
 
 /**
  * On-the-spot fees: quantity x rate, no lease and no receivable. Parent §2's ambulant /
@@ -83,22 +84,18 @@ export default function Ambulant() {
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [site, setSite] = useState<DeviceSite | null>(null);
+  const [payerRef, setPayerRef] = useState("");
 
   // THROWS. Every caller must say so when it fails -- `useFocusEffect` below and the "Sync
   // now" retry both used to let the rejection vanish, and a collector cannot tell a failed
   // load from a failed sync from a screen that simply has no fee types on it.
   const load = useCallback(async () => {
-    // Non-accruing fee types only: an accruing one raises charges and belongs on a lease.
-    // fee_types.accrues / .active are integer-mode booleans in SQLite, hence `= 0` / `= 1`.
-    setChoices(
-      await driver.select<FeeChoice>(
-        `select distinct f.id as fee_type_id, f.name as fee_name, r.rate_class
-           from fee_types f
-           join rates r on r.fee_type_id = f.id
-          where f.accrues = 0 and f.active = 1
-          order by f.name, r.rate_class`,
-      ),
-    );
+    // Only this site's fees (Phase 5): the terminal tablet must not offer the
+    // slaughterhouse's hog rate. See feeChoices for what an unknown site falls back to.
+    const here = await deviceSite(driver);
+    setSite(here);
+    setChoices(await feeChoices(driver, here?.type ?? null));
     setRates(
       (
         await driver.select<{
@@ -209,12 +206,16 @@ export default function Ambulant() {
     }
   };
 
+  // At a market this screen is the side door (ambulant vendors); at a terminal, parking
+  // lot or slaughterhouse it is the whole round.
+  const title = site && site.type !== "market" ? "Collect a fee" : "On-the-spot fee";
+
   return (
     <Screen
       head={
         <RackHead
-          title="On-the-spot fee"
-          subtitle={lockedFeeName ?? "No lease, no receivable"}
+          title={title}
+          subtitle={lockedFeeName ?? site?.name ?? "No lease, no receivable"}
           onBack={() => router.back()}
         />
       }
@@ -236,9 +237,10 @@ export default function Ambulant() {
               // lines[0] a safe stand-in for "the receipt's fee type", which is what
               // parent §10's Abstract of Collections totals by.
               feeTypeId: lines[0]!.feeTypeId,
-              label: "On-the-spot fee",
+              label: title,
               lines,
               grossAmount: gross,
+              payerRef: payerRef.trim() === "" ? null : payerRef.trim(),
             });
             router.push("/receipt");
           }}
@@ -320,6 +322,16 @@ export default function Ambulant() {
           </Statement>
         </>
       ) : null}
+
+      <Rift h={24} />
+      {/* Optional (see payerPrompt): recorded as collections.payer_ref when given. */}
+      <Field
+        label={`${payerPrompt(site?.type ?? null)} (optional)`}
+        value={payerRef}
+        onChangeText={setPayerRef}
+        autoCapitalize={site?.type === "terminal" || site?.type === "parking" ? "characters" : "words"}
+        autoCorrect={false}
+      />
 
       {lines.length > 0 ? (
         <>
