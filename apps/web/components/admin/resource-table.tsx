@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { Pencil } from "lucide-react";
+import { buttonClass } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table/data-table";
 import type { DataColumn } from "@/components/data-table/types";
 import {
@@ -25,7 +27,11 @@ function formatCell(value: unknown): string {
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "object") {
     const nested = value as Record<string, unknown>;
-    return String(nested.name ?? nested.code ?? nested.full_name ?? "—");
+    // A join's label column varies by table; `stalls(stall_no)` has none of the usual names,
+    // so fall back to whatever single column the join selected.
+    return String(
+      nested.name ?? nested.code ?? nested.full_name ?? Object.values(nested)[0] ?? "—",
+    );
   }
   return String(value);
 }
@@ -70,6 +76,12 @@ export function ResourceTable({
    */
   canCreate?: boolean;
 }) {
+  // One shared edit dialog, opened by a row click or the row's Edit button, rather than a
+  // dialog mounted per row.
+  const [editing, setEditing] = useState<EditRow | null>(null);
+  const byId = useMemo(() => new Map((editRows ?? []).map((row) => [row.id, row])), [editRows]);
+  const editable = spec && editRows ? (row: Row) => byId.get(String(row.id)) ?? null : null;
+
   const dataColumns = useMemo<DataColumn<Row>[]>(() => {
     const built: DataColumn<Row>[] = columns.map((column) => ({
       key: column.key,
@@ -89,7 +101,6 @@ export function ResourceTable({
     }));
 
     if (spec && editRows) {
-      const byId = new Map(editRows.map((row) => [row.id, row]));
       built.push({
         key: "__edit",
         label: "",
@@ -97,24 +108,58 @@ export function ResourceTable({
         width: "5rem",
         render: (row) => {
           const target = byId.get(String(row.id));
-          return target ? <ResourceFormDialog spec={spec} target={target} /> : null;
+          return target ? (
+            <button
+              type="button"
+              className={buttonClass("ghost", "sm")}
+              aria-label={`Edit ${target.label}`}
+              onClick={() => setEditing(target)}
+            >
+              <Pencil size={12} strokeWidth={1.75} />
+              Edit
+            </button>
+          ) : null;
         },
       });
     }
 
     return built;
-  }, [columns, rows, spec, editRows]);
+  }, [columns, rows, spec, editRows, byId]);
 
   return (
-    <DataTable
-      columns={dataColumns}
-      rows={rows}
-      rowKey={(row) => String(row.id ?? JSON.stringify(row))}
-      urlKey={urlKey}
-      unit={unit}
-      empty={empty}
-      {...(spec && canCreate ? { emptyAction: <ResourceFormDialog spec={spec} /> } : {})}
-      searchPlaceholder={`Filter ${unit}…`}
-    />
+    <>
+      <DataTable
+        columns={dataColumns}
+        rows={rows}
+        rowKey={(row) => String(row.id ?? JSON.stringify(row))}
+        urlKey={urlKey}
+        unit={unit}
+        empty={empty}
+        {...(spec && canCreate ? { emptyAction: <ResourceFormDialog spec={spec} /> } : {})}
+        searchPlaceholder={`Filter ${unit}…`}
+        {...(editable
+          ? {
+              onRowClick: (row: Row) => {
+                const target = editable(row);
+                if (target) setEditing(target);
+              },
+              rowLabel: (row: Row) => `Edit ${editable(row)?.label ?? ""}`,
+            }
+          : {})}
+      />
+      {spec && editing ? (
+        <ResourceFormDialog
+          // Keyed by row: the form's fields hold their own state, so a different row must
+          // mount a fresh form rather than inherit the last one's edits.
+          key={editing.id}
+          spec={spec}
+          target={editing}
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditing(null);
+          }}
+        />
+      ) : null}
+    </>
   );
 }

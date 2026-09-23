@@ -66,6 +66,8 @@ const configs: ResourceConfig[] = [
     table: "sections",
     title: "Sections",
     singular: "section",
+    // Moving a section moves its stalls, leases and ledger to another market's tablets.
+    lockedOnEdit: ["facility_id"],
     empty:
       "No sections yet. A section divides a market into its trades — Fish, Meat, Vegetable, Dry goods — and sets the billing period its stalls inherit. A market facility has to exist before a section can belong to one.",
     schema: z.object({
@@ -167,6 +169,8 @@ const configs: ResourceConfig[] = [
     table: "leases",
     title: "Leases",
     singular: "lease",
+    // Charges already accrued belong to this stall and tenant. To change either, end this lease and create a new one.
+    lockedOnEdit: ["stall_id", "tenant_id"],
     empty:
       "No leases yet. A lease binds a tenant to a stall at a rate for a billing period. It is what the nightly accrual bills, what shows up in the ledger, and what a collector looks up on the tablet — nothing is collected without one.",
     schema: z.object({
@@ -261,6 +265,8 @@ const configs: ResourceConfig[] = [
     table: "rates",
     title: "Rates",
     singular: "rate",
+    // Receipts already priced from this rate must keep meaning what they said. To change a rate, set Effective to and add a new one.
+    lockedOnEdit: ["fee_type_id", "rate_class", "effective_from", "amount", "basis"],
     empty:
       "No rates yet. A rate is what a fee type costs from a given date onward. Rates are added and dated rather than edited, so what was charged last year stays provable this year.",
     schema: z.object({
@@ -333,6 +339,8 @@ const configs: ResourceConfig[] = [
     table: "booklets",
     title: "OR booklets",
     singular: "booklet",
+    // Serials already written as receipts or spoiled must stay inside the booklet they came from.
+    lockedOnEdit: ["form_type_id", "serial_prefix", "start_no", "end_no"],
     empty:
       "No OR booklets yet. A booklet is a physical range of serial numbers issued to the office. A tablet refuses any serial that falls outside a booklet assigned to it, so the paper and the system stay in step.",
     schema: z.object({

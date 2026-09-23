@@ -5,10 +5,19 @@ import { ResourceTable } from "@/components/admin/resource-table";
 import { DeviceCredentialPanel } from "@/components/devices/device-credential-panel";
 import { ScreenHeader } from "@/components/shell/screen-header";
 import { SetPinPanel } from "@/components/staff/set-pin-panel";
+import { selectWithFields } from "@/lib/admin/edit";
 import { RESOURCES, type SelectOption } from "@/lib/admin/resource";
 import { getServerClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/supabase/session";
 import "@/lib/admin/registry";
+
+function rowLabel(value: unknown): string {
+  if (value && typeof value === "object") {
+    const first = Object.values(value as Record<string, unknown>)[0];
+    return String(first ?? "");
+  }
+  return String(value ?? "");
+}
 
 export default async function ResourcePage({
   params,
@@ -24,7 +33,8 @@ export default async function ResourcePage({
 
   const { data: rows, error } = await supabase
     .from(config.table)
-    .select(config.select)
+    // Widened with the raw form columns so an edit form opens with its values filled in.
+    .select(selectWithFields(config.select, config.fields.map((field) => field.name)))
     .order(config.orderBy);
 
   // Load choices for any select field that draws them from another table. Each
@@ -51,17 +61,18 @@ export default async function ResourcePage({
     });
   }
 
-  // A `writeMode: "edit"` resource updates an existing row instead of inserting one, so
-  // the form needs the rows to choose between and their current values. The choosing now
-  // happens in the table rather than in a dropdown inside the form, but the data the
-  // form is handed is unchanged.
+  // Every row of a writable resource can be opened for editing from the table, so the
+  // form needs each row's current values. Only built for a role that may write.
+  const canWrite = config.writeRoles.includes(staff.role);
   const editRows =
-    config.writeMode === "edit"
+    canWrite
       ? (rows ?? []).map((row) => {
           const record = row as unknown as Record<string, unknown>;
           return {
             id: String(record.id),
-            label: String(record[config.optionLabel] ?? record.id),
+            // The row's first column, as the table shows it: a lease reads as its stall,
+            // not as its start date (its optionLabel).
+            label: rowLabel(record[config.columns[0]?.key ?? config.optionLabel] ?? record.id),
             values: Object.fromEntries(
               config.fields.map((field) => [
                 field.name,
@@ -72,12 +83,12 @@ export default async function ResourcePage({
         })
       : undefined;
 
-  const canWrite = config.writeRoles.includes(staff.role);
   const spec: ResourceFormSpec = {
     resourceKey: config.key,
     singular: config.singular,
     fields: config.fields,
     dynamicOptions,
+    lockedOnEdit: [...(config.lockedOnEdit ?? [])],
   };
 
   return (

@@ -17,6 +17,8 @@ export interface ResourceFormSpec {
   singular: string;
   fields: FieldConfig[];
   dynamicOptions: Record<string, SelectOption[]>;
+  /** Shown read-only on an edit; see `ResourceConfig.lockedOnEdit`. */
+  lockedOnEdit?: string[];
 }
 
 /** One existing row, for a resource the engine updates rather than creates. */
@@ -29,6 +31,8 @@ export interface EditRow {
 export function ResourceFormDialog({
   spec,
   target,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: {
   spec: ResourceFormSpec;
   /**
@@ -38,9 +42,19 @@ export function ResourceFormDialog({
    * server action.
    */
   target?: EditRow;
+  /**
+   * Controlled from outside, with no trigger of its own. The table opens one shared edit
+   * dialog from a row click rather than mounting a dialog per row.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const controlled = controlledOpen !== undefined;
+  const open = controlled ? controlledOpen : ownOpen;
+  const setOpen = (next: boolean) =>
+    controlled ? controlledOnOpenChange?.(next) : setOwnOpen(next);
   const [result, setResult] = useState<SaveResult | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -71,26 +85,24 @@ export function ResourceFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTrigger
-        className={
-          editing
-            ? buttonClass("ghost", "sm")
-            : buttonClass("primary", "md")
-        }
-        aria-label={editing ? `Edit ${target.label}` : undefined}
-      >
-        {editing ? (
-          <>
-            <Pencil size={12} strokeWidth={1.75} />
-            Edit
-          </>
-        ) : (
-          <>
-            <Plus size={14} strokeWidth={2} />
-            New {spec.singular}
-          </>
-        )}
-      </DialogTrigger>
+      {controlled ? null : (
+        <DialogTrigger
+          className={editing ? buttonClass("ghost", "sm") : buttonClass("primary", "md")}
+          aria-label={editing ? `Edit ${target.label}` : undefined}
+        >
+          {editing ? (
+            <>
+              <Pencil size={12} strokeWidth={1.75} />
+              Edit
+            </>
+          ) : (
+            <>
+              <Plus size={14} strokeWidth={2} />
+              New {spec.singular}
+            </>
+          )}
+        </DialogTrigger>
+      )}
 
       <DialogContent
         title={title}
@@ -113,6 +125,7 @@ export function ResourceFormDialog({
               value={target ? target.values[field.name] : undefined}
               error={fieldErrors[field.name]}
               options={field.optionsFrom ? spec.dynamicOptions[field.optionsFrom] : undefined}
+              locked={editing && (spec.lockedOnEdit ?? []).includes(field.name)}
             />
           ))}
 

@@ -3,7 +3,15 @@
 import { format, sum, type Centavos } from "@ceedo/shared";
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown, Search, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { Button, buttonClass } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/field";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -40,6 +48,8 @@ export function DataTable<Row>({
   proofLine,
   unit = "rows",
   emptyAction,
+  onRowClick,
+  rowLabel,
 }: DataTableProps<Row>) {
   // Read the view's state out of the URL once, during the initial render rather than in
   // an effect: `useSearchParams` gives the same answer on the server and on the client, so
@@ -418,7 +428,27 @@ export function DataTable<Row>({
                       "border-b border-rule-soft transition-colors duration-100 last:border-b-0",
                       "hover:bg-tape-hover",
                       muted && "text-ink-3",
+                      onRowClick &&
+                        "cursor-pointer focus-visible:bg-tape-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
                     )}
+                    {...(onRowClick
+                      ? {
+                          tabIndex: 0,
+                          "aria-label": rowLabel?.(row),
+                          onClick: (event: ReactMouseEvent) => {
+                            // A button or link inside the row does its own thing.
+                            if ((event.target as HTMLElement).closest("button, a, input")) return;
+                            onRowClick(row);
+                          },
+                          onKeyDown: (event: ReactKeyboardEvent) => {
+                            if (event.target !== event.currentTarget) return;
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              onRowClick(row);
+                            }
+                          },
+                        }
+                      : {})}
                   >
                     {rowMark ? (
                       <td className="w-1 p-0">

@@ -18,19 +18,62 @@ export function ResourceField({
   value,
   error,
   options,
+  locked,
 }: {
   config: FieldConfig;
   value?: string | number | boolean | null;
   error?: string;
   options?: SelectOption[];
+  /** Shown but not editable. The value still posts, so the form's schema is satisfied;
+   *  `saveResource` drops it from the update. */
+  locked?: boolean;
 }) {
   const id = `field-${config.name}`;
-  const [selectValue, setSelectValue] = useState(value === null || value === undefined ? "" : String(value));
+  const [selectValue, setSelectValue] = useState(
+    value === null || value === undefined ? "" : String(value),
+  );
   const [checked, setChecked] = useState(Boolean(value));
+
+  if (locked) {
+    const raw = value === null || value === undefined ? "" : String(value);
+    const shown =
+      config.type === "boolean"
+        ? value
+          ? "Yes"
+          : "No"
+        : ((options ?? config.options)?.find((option) => option.value === raw)?.label ?? raw);
+    return (
+      <FieldShell
+        id={id}
+        label={config.label}
+        help="Fixed once created: records already depend on it."
+        error={error}
+      >
+        <input
+          type="hidden"
+          name={config.name}
+          value={config.type === "boolean" ? (value ? "on" : "") : raw}
+        />
+        <p
+          id={id}
+          className="flex h-9 items-center rounded-lg border border-rule bg-tape-sunk px-2.5 text-sm text-ink-2"
+          title="Fixed once created"
+        >
+          {shown === "" ? "—" : shown}
+        </p>
+      </FieldShell>
+    );
+  }
 
   if (config.type === "select") {
     return (
-      <FieldShell id={id} label={config.label} optional={config.optional} help={config.help} error={error}>
+      <FieldShell
+        id={id}
+        label={config.label}
+        optional={config.optional}
+        help={config.help}
+        error={error}
+      >
         <Select
           id={id}
           name={config.name}
@@ -57,7 +100,13 @@ export function ResourceField({
   }
 
   return (
-    <FieldShell id={id} label={config.label} optional={config.optional} help={config.help} error={error}>
+    <FieldShell
+      id={id}
+      label={config.label}
+      optional={config.optional}
+      help={config.help}
+      error={error}
+    >
       <TextInput
         id={id}
         name={config.name}

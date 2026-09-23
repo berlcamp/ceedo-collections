@@ -59,8 +59,8 @@ export interface ResourceConfig<S extends ZodObject<ZodRawShape> = ZodObject<Zod
   readRoles: readonly Role[];
   writeRoles: readonly Role[];
   /**
-   * "create" (the default) renders a blank form that inserts. "edit" renders a picker of
-   * existing rows and updates the chosen one, and never inserts.
+   * "create" (the default) inserts from a blank form AND updates an existing row picked in
+   * the table. "edit" only updates, and never inserts.
    *
    * app_users is the reason this exists: its `id` references auth.users, so a row can only
    * come into being through migration 0009's claim trigger on a real Google sign-in. An
@@ -69,6 +69,13 @@ export interface ResourceConfig<S extends ZodObject<ZodRawShape> = ZodObject<Zod
    * had no update path at all for any resource.
    */
   writeMode?: "create" | "edit";
+  /**
+   * Fields shown but not changeable on an edit, because changing them once money exists
+   * would rewrite history rather than correct a record: a lease's stall, a booklet's serial
+   * range, a rate's amount. The remedy is always a new row (end the lease, add a rate), and
+   * each field's `help` says so. Enforced in `saveResource`, not just by the form.
+   */
+  lockedOnEdit?: readonly string[];
 }
 
 export const RESOURCES: Record<string, ResourceConfig> = {};

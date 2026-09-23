@@ -58,4 +58,8 @@ export interface DataTableProps<Row> {
    * that fixes it, where there is one.
    */
   emptyAction?: ReactNode;
+  /** Makes each row open something, e.g. its edit form. Clickable and keyboard-reachable. */
+  onRowClick?: (row: Row) => void;
+  /** The accessible name of a clickable row, e.g. "Edit Dry Goods-01". */
+  rowLabel?: (row: Row) => string;
 }

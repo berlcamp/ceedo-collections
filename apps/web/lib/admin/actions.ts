@@ -6,6 +6,7 @@ import { getServerClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/supabase/session";
 import { RESOURCES, type ResourceConfig } from "./resource";
 import { toSaveResult, type SaveResult } from "./save-result";
+import { updatePayload } from "./edit";
 
 function coerce(config: ResourceConfig, formData: FormData): Record<string, unknown> {
   const raw: Record<string, unknown> = {};
@@ -40,14 +41,13 @@ export async function saveResource(
     return { ok: false, fieldErrors: {}, formError: "You do not have permission to change this." };
   }
 
-  // The id is honoured only where the resource says it updates. A create-mode resource
-  // ignores one entirely, so this action cannot be turned into a general row editor for a
-  // resource whose config never offered one — the form is not the enforcement, this is.
-  const editing = config.writeMode === "edit";
-  if (editing && !id) {
+  // Every writable resource updates when given an id; an edit-only resource (app_users,
+  // which only a Google sign-in can create) must be given one. Locked fields are dropped
+  // from an update here rather than trusted to the form's read-only controls.
+  if (config.writeMode === "edit" && !id) {
     return { ok: false, fieldErrors: {}, formError: `Choose a ${config.singular} to edit.` };
   }
-  const targetId = editing ? id : undefined;
+  const targetId = id || undefined;
 
   const parsed = config.schema.safeParse(coerce(config, formData));
   if (!parsed.success) return toSaveResult(parsed, null);
@@ -56,7 +56,7 @@ export async function saveResource(
   const query = targetId
     ? supabase
         .from(config.table)
-        .update(parsed.data as never)
+        .update(updatePayload(config, parsed.data) as never)
         .eq("id", targetId)
         .select("id")
         .single()
