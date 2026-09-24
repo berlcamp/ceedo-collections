@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import {
   format,
   multiply,
@@ -24,19 +24,18 @@ import {
   Field,
   Figure,
   Label,
+  LinkButton,
+  List,
   Note,
   Punch,
   RackHead,
   Rift,
-  Rule,
   Screen,
   Slot,
   Statement,
   color,
   face,
   size,
-  space,
-  touch,
 } from "../ui";
 import { syncFailure } from "../ui/failures";
 import { deviceDriver } from "../db/driver";
@@ -224,9 +223,10 @@ export default function Ambulant() {
           {/* Pinned for the same reason as the lease screen's: this is the figure that
               gets hand-written onto the paper, and it must not be the thing that scrolls
               away as lines are added. */}
-          <Figure label="Receipt total" value={format(gross)} />
+          <Figure label="Receipt total" value={format(gross)} inline />
           <Punch
             label="Proceed to payment"
+            icon="arrow-right-circle-outline"
             blocked={lines.length === 0 ? "Add at least one line to the receipt." : null}
           onPress={() => {
             setDraft({
@@ -252,10 +252,9 @@ export default function Ambulant() {
       <View style={{ height: 8 }} />
 
       {choices.length === 0 ? (
-        <Note>No on-the-spot fees on this tablet yet.</Note>
+        <Note icon="tag-off-outline">No on-the-spot fees on this tablet yet.</Note>
       ) : (
-        <>
-          <Rule />
+        <List>
           {choices.map((choice) => {
             // Field comparison, not `pick === choice` (review, minor): `choices` is a
             // fresh array after every `load()` -- including the "Sync now" retry below --
@@ -269,8 +268,9 @@ export default function Ambulant() {
             const isLockedOut =
               lockedFeeTypeId !== null && choice.fee_type_id !== lockedFeeTypeId;
             return (
-              <View key={`${choice.fee_type_id}|${choice.rate_class ?? ""}`}>
                 <Slot
+                  key={`${choice.fee_type_id}|${choice.rate_class ?? ""}`}
+                  selectable
                   selected={isPicked}
                   suppressed={isLockedOut}
                   left={`${choice.fee_name}${choice.rate_class ? ` · ${choice.rate_class}` : ""}`}
@@ -287,11 +287,9 @@ export default function Ambulant() {
                     setPick(choice);
                   }}
                 />
-                <Rule />
-              </View>
             );
           })}
-        </>
+        </List>
       )}
 
       <Rift h={24} />
@@ -299,6 +297,7 @@ export default function Ambulant() {
       <Field
         label="Quantity"
         voice="figure"
+        icon="counter"
         keyboardType="number-pad"
         value={qty}
         onChangeText={setQty}
@@ -306,6 +305,7 @@ export default function Ambulant() {
       <Rift h={12} />
       <Action
         label="Add to receipt"
+        icon="plus"
         blocked={pick === null ? "Choose a fee above first." : null}
         onPress={addLine}
       />
@@ -316,7 +316,7 @@ export default function Ambulant() {
           <Statement
             tone="refusal"
             detail={errorDetail}
-            action={<Action label="Sync now" busy={busy} busyLabel="Syncing" onPress={() => void resync()} />}
+            action={<Action label="Sync now" icon="sync" busy={busy} busyLabel="Syncing" onPress={() => void resync()} />}
           >
             {error}
           </Statement>
@@ -327,6 +327,7 @@ export default function Ambulant() {
       {/* Optional (see payerPrompt): recorded as collections.payer_ref when given. */}
       <Field
         label={`${payerPrompt(site?.type ?? null)} (optional)`}
+        icon="account-outline"
         value={payerRef}
         onChangeText={setPayerRef}
         autoCapitalize={site?.type === "terminal" || site?.type === "parking" ? "characters" : "words"}
@@ -338,10 +339,11 @@ export default function Ambulant() {
           <Rift />
           <Label>On this receipt</Label>
           <View style={{ height: 8 }} />
-          <Rule />
+          <List>
           {lines.map((line, index) => (
-            <View key={index}>
               <Slot
+                key={index}
+                icon="receipt-text-outline"
                 left={
                   <View style={{ gap: 2 }}>
                     <Body>{`${line.quantity} × ${format(line.unitRate)}`}</Body>
@@ -361,24 +363,21 @@ export default function Ambulant() {
                       last line empties `lines`, which releases the lock naturally, because
                       the lock is derived from `lines[0]` rather than stored.
                     */}
-                    <Pressable
-                      accessibilityRole="button"
+                    <LinkButton
+                      label="Remove"
+                      icon="trash-can-outline"
+                      tone="danger"
                       accessibilityLabel={`Remove line ${index + 1}`}
-                      hitSlop={8}
-                      style={removeHit}
                       onPress={() => {
                         setLines(lines.filter((_, i) => i !== index));
                         setError(null);
                       }}
-                    >
-                      <Text style={removeText}>Remove</Text>
-                    </Pressable>
+                    />
                   </View>
                 }
               />
-              <Rule />
-            </View>
           ))}
+          </List>
         </>
       ) : null}
 
@@ -387,23 +386,7 @@ export default function Ambulant() {
 }
 
 const lineAmount = {
-  fontFamily: face.text,
+  fontFamily: face.bold,
   fontSize: size.body,
-  fontWeight: "700" as const,
   color: color.ink,
-};
-
-const removeHit = {
-  minHeight: touch.min - 16,
-  justifyContent: "center" as const,
-  paddingVertical: space.tight,
-};
-
-const removeText = {
-  fontFamily: face.condensed,
-  fontSize: size.label,
-  fontWeight: "700" as const,
-  letterSpacing: 1.1,
-  textTransform: "uppercase" as const,
-  color: color.refusal,
 };

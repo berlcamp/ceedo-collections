@@ -1,5 +1,8 @@
 import {
+  Children,
   createContext,
+  Fragment,
+  isValidElement,
   useContext,
   useEffect,
   useRef,
@@ -10,7 +13,6 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   Animated,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,157 +21,198 @@ import {
   View,
   type TextInputProps,
 } from "react-native";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { color, face, size, space, spine, touch, tracking } from "./tokens";
+import {
+  color,
+  face,
+  icon as iconSize,
+  radius,
+  size,
+  space,
+  touch,
+  tracking,
+  type IconName,
+} from "./tokens";
 
 /**
- * The rack's vocabulary. Every screen in this app is built from these and nothing else.
+ * The collector's component library. Every screen in this app is built from these.
  *
- * Read `.impeccable/surfaces/src-app.md` before changing anything here: the five
- * behavioural rules it records are why several of these components have the shapes they
- * have, and two of them are enforced by the types below rather than by remembering.
+ * FIVE BEHAVIOURAL RULES survive any restyle, because each one was written after a real
+ * failure in a market (see the collector UI constraints and `PRODUCT.md`):
+ *   1. No message may name a cause the screen has not checked.
+ *   2. A disabled control must say what is missing — enforced below: `Punch`, `Action` and
+ *      `Slot` have no `disabled` prop, only `blocked: string | null`.
+ *   3. Money is only rendered through `format()`; `Figure` and `Amount` take strings.
+ *   4. A sequence-skip warning is confirmable, never a block.
+ *   5. Nothing may throw inside a render or an `onChange`.
+ *
+ * Every control carries a visible text label. Icons sit beside words, never instead of
+ * them — the one exception is the app bar's back arrow, which is the platform's own idiom
+ * and is labelled for TalkBack.
  */
 
-/**
- * Android's own touch feedback, themed from the rack rather than left at the platform
- * default. Every pressable in this app fed back with opacity or a background swap, which
- * is the iOS idiom -- a fluent Android user reads the absence of a ripple as a dead
- * control. `Pressable` ignores this prop on other platforms, so it needs no guard.
- */
+/** Android's ripple, themed. `Pressable` ignores this prop on other platforms. */
 const ripple = (tone: string, borderless = false) => ({
   color: tone,
   borderless,
   foreground: true,
 });
 
-/* ------------------------------------------------------------------ type ---- */
+/* ------------------------------------------------------------------- icon ---- */
 
 /**
- * The ink a slot imposes on the text inside it.
+ * One icon family (Material Community Icons, outline weight), sized from tokens.
  *
- * A slot can dim its own contents -- suppressed when a run is selected elsewhere, or
- * blocked. That was applied only to `left`/`right` passed as plain strings, so any slot
- * given real nodes (the sign-in collector list, the ambulant line items) rendered at full
- * ink while claiming to be suppressed. Context carries it to every `Body` and `Label`
- * underneath instead, so the state is a property of the slot rather than of how the
- * caller happened to pass its content.
+ * Decorative by default: an icon here always sits beside a word that says the same thing,
+ * so TalkBack reads the word and skips the glyph.
  */
-const SlotInk = createContext<string | null>(null);
-
-/** Tracked caps. The label voice, on stock or on the rack board. */
-export function Label({
-  children,
-  on = "stock",
-  tone,
+export function Icon({
+  name,
+  size: px = iconSize.md,
+  tone = color.ink,
 }: {
-  children: ReactNode;
-  on?: "stock" | "rack";
+  name: IconName;
+  size?: number;
   tone?: string;
 }) {
-  const slotInk = useContext(SlotInk);
   return (
-    <Text
-      style={[
-        t.label,
-        { color: tone ?? slotInk ?? (on === "rack" ? color.onRackMuted : color.muted) },
-      ]}
-    >
-      {children}
-    </Text>
+    <MaterialCommunityIcons
+      name={name}
+      size={px}
+      color={tone}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    />
   );
 }
 
-/** Body copy. Every message, every explanation. */
-export function Body({
+/** An icon on a tinted rounded square: list rows, tiles, the app bar's mark. */
+export function IconTile({
+  name,
+  tone = color.primary,
+  wash = color.primaryWash,
+  px = 40,
+}: {
+  name: IconName;
+  tone?: string;
+  wash?: string;
+  px?: number;
+}) {
+  return (
+    <View
+      style={[
+        { width: px, height: px, borderRadius: px * 0.3, backgroundColor: wash },
+        styles.center,
+      ]}
+    >
+      <Icon name={name} tone={tone} size={px >= 48 ? iconSize.lg : iconSize.md} />
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ type ---- */
+
+/**
+ * The ink a row imposes on the text inside it: a suppressed or blocked row dims every
+ * `Body` and `Label` underneath, whether the caller passed strings or real nodes.
+ */
+const SlotInk = createContext<string | null>(null);
+
+/** Small caps section label. */
+export function Label({
   children,
   tone,
-  on = "stock",
 }: {
   children: ReactNode;
   tone?: string;
-  on?: "stock" | "rack";
 }) {
   const slotInk = useContext(SlotInk);
-  return (
-    <Text
-      style={[
-        t.body,
-        { color: tone ?? slotInk ?? (on === "rack" ? color.onRack : color.ink) },
-      ]}
-    >
-      {children}
-    </Text>
-  );
+  return <Text style={[t.label, { color: tone ?? slotInk ?? color.muted }]}>{children}</Text>;
+}
+
+/** Body copy. Every message, every explanation. */
+export function Body({ children, tone }: { children: ReactNode; tone?: string }) {
+  const slotInk = useContext(SlotInk);
+  return <Text style={[t.body, { color: tone ?? slotInk ?? color.ink }]}>{children}</Text>;
 }
 
 /** A screen's subject: a stall number, a tenant, a heading. */
 export function Title({
   children,
-  on = "stock",
   numberOfLines,
+  tone,
 }: {
   children: ReactNode;
-  on?: "stock" | "rack";
   numberOfLines?: number;
+  tone?: string;
 }) {
+  const slotInk = useContext(SlotInk);
   return (
-    <Text
-      numberOfLines={numberOfLines}
-      style={[t.title, { color: on === "rack" ? color.onRack : color.ink }]}
-    >
+    <Text numberOfLines={numberOfLines} style={[t.title, { color: tone ?? slotInk ?? color.ink }]}>
       {children}
     </Text>
   );
 }
 
 /** A quiet aside — an empty state, a "loading your booklets" line. */
-export function Note({ children }: { children: ReactNode }) {
-  return <Text style={t.note}>{children}</Text>;
+export function Note({ children, icon }: { children: ReactNode; icon?: IconName }) {
+  if (!icon) return <Text style={t.note}>{children}</Text>;
+  return (
+    <View style={styles.empty}>
+      <IconTile name={icon} tone={color.muted} wash={color.sunk} px={56} />
+      <Text style={[t.note, { textAlign: "center" }]}>{children}</Text>
+    </View>
+  );
 }
 
 /* ---------------------------------------------------------------- chassis ---- */
 
 /**
- * The rack board strip. The one fixed reference: same position, same scale, every screen.
+ * The top app bar: white, fixed, same position and scale on every screen.
  *
- * `register` is the right-hand slot, where the honest sync age goes on the screens that
- * owe one. It is deliberately part of the masthead rather than a banner in the body,
- * because a staleness disclosure that scrolls away is a disclosure the collector reads
- * once and never again.
+ * `register` is the right-hand slot where the honest sync age goes on the screens that owe
+ * one. It lives in the bar rather than in the body because a staleness disclosure that
+ * scrolls away is a disclosure the collector reads once and never again.
  */
 export function RackHead({
   title,
   subtitle,
   register,
   onBack,
+  icon,
 }: {
   title: string;
   subtitle?: string | null;
   register?: ReactNode;
   onBack?: () => void;
+  /** A brand mark for top-level screens that have no Back. */
+  icon?: IconName;
 }) {
   const insets = useSafeAreaInsets();
   return (
     <View style={[c.head, { paddingTop: insets.top + space.tight }]}>
-      {onBack ? (
-        <Pressable
-          onPress={onBack}
-          android_ripple={ripple(color.onRackMuted, true)}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-          style={({ pressed }) => [c.back, pressed && c.backPressed]}
-        >
-          {/* A word, not a chevron. Every control in this app names its own action. */}
-          <Text style={c.backText}>Back</Text>
-        </Pressable>
-      ) : null}
       <View style={c.headRow}>
+        {onBack ? (
+          <Pressable
+            onPress={onBack}
+            android_ripple={ripple(color.sunk, true)}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            hitSlop={4}
+            style={({ pressed }) => [c.back, pressed && { backgroundColor: color.sunk }]}
+          >
+            <Icon name="arrow-left" tone={color.ink} size={iconSize.lg - 2} />
+          </Pressable>
+        ) : icon ? (
+          <IconTile name={icon} tone={color.onPrimary} wash={color.primary} px={40} />
+        ) : null}
         <View style={c.headText}>
-          <Title on="rack" numberOfLines={1}>
+          <Text style={c.headTitle} numberOfLines={1} accessibilityRole="header">
             {title}
-          </Title>
+          </Text>
           {subtitle ? (
-            <Text style={[t.body, { color: color.onRackMuted }]} numberOfLines={1}>
+            <Text style={c.headSub} numberOfLines={1}>
               {subtitle}
             </Text>
           ) : null}
@@ -181,12 +224,9 @@ export function RackHead({
 }
 
 /**
- * The screen chassis: rack board at the top, stock body that scrolls, action shelf pinned
- * to the bottom edge inside one-handed thumb reach.
- *
- * The shelf is pinned rather than placed at the end of the scroll because a collector
- * holding a receipt booklet in the other hand cannot scroll to find the button that ends
- * the transaction.
+ * The screen chassis: app bar at the top, a ground that scrolls, and the action shelf
+ * pinned to the bottom edge inside one-handed thumb reach — a collector holding a receipt
+ * booklet in the other hand cannot scroll to find the button that ends the transaction.
  */
 export function Screen({
   head,
@@ -201,11 +241,7 @@ export function Screen({
 }) {
   const insets = useSafeAreaInsets();
   const body = scroll ? (
-    <ScrollView
-      style={c.flex}
-      contentContainerStyle={c.body}
-      keyboardShouldPersistTaps="handled"
-    >
+    <ScrollView style={c.flex} contentContainerStyle={c.body} keyboardShouldPersistTaps="handled">
       {children}
     </ScrollView>
   ) : (
@@ -223,20 +259,61 @@ export function Screen({
   );
 }
 
-/** A group of related things. Sections are separated by void and weight, never by a box. */
+/** A group of related things. */
 export function Group({ children, gap = space.snug }: { children: ReactNode; gap?: number }) {
   return <View style={{ gap }}>{children}</View>;
 }
 
-/** Vertical void between groups. */
+/** Vertical space between groups. */
 export function Rift({ h = space.rift }: { h?: number }) {
   return <View style={{ height: h }} />;
+}
+
+/** A white rounded surface. */
+export function Card({ children, pad = true }: { children: ReactNode; pad?: boolean }) {
+  return <View style={[c.card, pad && c.cardPad]}>{children}</View>;
+}
+
+/**
+ * A card of rows with dividers drawn between them — so a list can never end on a stray
+ * rule or start without one. Null children are skipped.
+ */
+export function List({ children }: { children: ReactNode }) {
+  const rows = flatten(children);
+  return (
+    <View style={c.card}>
+      {rows.map((row, index) => (
+        <Fragment key={index}>
+          {index > 0 ? <Rule /> : null}
+          {row}
+        </Fragment>
+      ))}
+    </View>
+  );
+}
+
+function flatten(children: ReactNode): ReactNode[] {
+  const out: ReactNode[] = [];
+  Children.forEach(children, (child) => {
+    if (child === null || child === undefined || child === false) return;
+    if (isValidElement(child) && child.type === Fragment) {
+      out.push(...flatten((child.props as { children?: ReactNode }).children));
+      return;
+    }
+    out.push(child);
+  });
+  return out;
+}
+
+/** The navy summary card at the top of the shift screen. */
+export function Hero({ children }: { children: ReactNode }) {
+  return <View style={c.hero}>{children}</View>;
 }
 
 /* ----------------------------------------------------------------- figures ---- */
 
 /**
- * The fare panel: the figure the collector copies onto the paper Official Receipt.
+ * The figure the collector copies onto the paper Official Receipt.
  *
  * `value` is ALWAYS the output of `format()` — this component takes a rendered string and
  * never a number, so there is no path through it that could interpolate or round money
@@ -248,19 +325,31 @@ export function Figure({
   value,
   tone = "ink",
   absent = "No figure on this tablet.",
+  inline = false,
+  on = "card",
 }: {
   label: string;
   value: string | null;
   tone?: "ink" | "confirmed" | "refusal";
   absent?: string;
+  /** Label left, figure right: the shelf's checkout-total layout. */
+  inline?: boolean;
+  on?: "card" | "hero";
 }) {
   const ink =
-    tone === "confirmed" ? color.confirmed : tone === "refusal" ? color.refusal : color.ink;
+    on === "hero"
+      ? color.onHero
+      : tone === "confirmed"
+        ? color.confirmed
+        : tone === "refusal"
+          ? color.refusal
+          : color.ink;
+  const labelInk = on === "hero" ? color.onHeroMuted : color.muted;
   return (
-    <View style={f.panel}>
-      <Label>{label}</Label>
+    <View style={inline ? f.inline : f.panel}>
+      <Text style={[t.label, { color: labelInk }, inline && { flexShrink: 1 }]}>{label}</Text>
       {value === null ? (
-        <Body tone={color.muted}>{absent}</Body>
+        <Text style={[t.body, { color: labelInk }]}>{absent}</Text>
       ) : (
         <Text style={[f.figure, { color: ink }]} allowFontScaling>
           {value}
@@ -281,8 +370,7 @@ export function Amount({
   tone?: "ink" | "confirmed" | "muted";
 }) {
   if (value === null) return null;
-  const ink =
-    tone === "confirmed" ? color.confirmed : tone === "muted" ? color.muted : color.ink;
+  const ink = tone === "confirmed" ? color.confirmed : tone === "muted" ? color.muted : color.ink;
   return (
     <View style={f.amountRow}>
       <Label>{label}</Label>
@@ -291,18 +379,17 @@ export function Amount({
   );
 }
 
-/* -------------------------------------------------------------------- rack ---- */
+/* ------------------------------------------------------------------- rows ---- */
 
 /**
- * A slot in the rack.
+ * A row in a `List`.
  *
- * `selected` fills the slot and lights the spine down its left edge; a run of selected
- * slots reads as one continuous ochre edge, which is what makes FIFO a physical property
- * of the screen rather than a rule enforced invisibly in code.
+ * `selectable` rows carry a check circle, and `selected` fills the row with the action
+ * tint — so a FIFO run of periods reads as one continuous block of ticked rows from the
+ * oldest down. `suppressed` drops an unselected row back once a run exists (4.8:1, never a
+ * wash: a row a collector cannot read is not a quieter row, it is a missing one).
  *
- * `suppressed` drops an unselected slot back once a run exists — suppression, not just
- * highlight. It drops ink to 5.0:1, never to a wash: a slot a collector cannot read is
- * not a quieter slot, it is a missing one.
+ * `nav` rows end in a chevron: tapping them goes somewhere.
  *
  * `blocked` is a reason string, never a boolean. See `Punch` for why.
  */
@@ -311,6 +398,9 @@ export function Slot({
   selected = false,
   suppressed = false,
   blocked = null,
+  selectable = false,
+  nav = false,
+  icon,
   left,
   right,
   under,
@@ -319,6 +409,9 @@ export function Slot({
   selected?: boolean;
   suppressed?: boolean;
   blocked?: string | null;
+  selectable?: boolean;
+  nav?: boolean;
+  icon?: IconName;
   left: ReactNode;
   right?: ReactNode;
   under?: ReactNode;
@@ -330,22 +423,32 @@ export function Slot({
       <Pressable
         onPress={onPress}
         disabled={!onPress}
-        android_ripple={onPress ? ripple(color.ochre) : undefined}
-        accessibilityRole={onPress ? "button" : undefined}
-        accessibilityState={{ selected, disabled: blocked !== null }}
+        android_ripple={onPress ? ripple(color.primaryWash) : undefined}
+        accessibilityRole={onPress ? (selectable ? "checkbox" : "button") : undefined}
+        accessibilityState={
+          selectable
+            ? { checked: selected, disabled: blocked !== null }
+            : { selected, disabled: blocked !== null }
+        }
         style={({ pressed }) => [
           r.slot,
           selected && r.slotOn,
-          pressed && onPress ? r.slotPressed : null,
+          pressed && onPress && !selected ? r.slotPressed : null,
         ]}
       >
-        {/*
-          The spine lives in the gutter, not in the text column. The slot is pulled left by
-          exactly its own width so that everything inside it lands on the same x as the
-          body copy and the hairlines above and below -- otherwise every row in the app
-          sits fifteen pixels right of the rule that is supposed to bound it.
-        */}
-        <View style={[r.spine, selected && r.spineOn]} />
+        {selectable ? (
+          <Icon
+            name={selected ? "check-circle" : "checkbox-blank-circle-outline"}
+            tone={selected ? color.primary : color.ruleStrong}
+            size={iconSize.lg - 2}
+          />
+        ) : icon ? (
+          <IconTile
+            name={icon}
+            tone={dim ? color.suppressed : color.primary}
+            wash={dim ? color.sunk : color.primaryWash}
+          />
+        ) : null}
         <View style={r.slotBody}>
           <View style={r.slotRow}>
             <View style={r.slotLeft}>
@@ -365,21 +468,76 @@ export function Slot({
               </View>
             ) : null}
           </View>
-          {under ? <View style={r.slotUnder}>{under}</View> : null}
+          {under ? <View>{under}</View> : null}
           {blocked ? (
-            <Text style={[t.body, r.slotBlocked]} accessibilityLiveRegion="polite">
+            <Text style={[t.small, { color: color.refusal }]} accessibilityLiveRegion="polite">
               {blocked}
             </Text>
           ) : null}
         </View>
+        {nav ? <Icon name="chevron-right" tone={color.suppressed} /> : null}
       </Pressable>
     </SlotInk.Provider>
   );
 }
 
-/** A hairline between slots. */
+/** A hairline between rows. */
 export function Rule() {
   return <View style={r.rule} />;
+}
+
+/**
+ * A launcher tile: the shift screen's round, laid out as a grid of icon cards the way a
+ * banking or wallet app lays out its actions. Always an icon AND a word.
+ */
+export function Tile({
+  icon,
+  label,
+  hint,
+  onPress,
+}: {
+  icon: IconName;
+  label: string;
+  hint?: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      android_ripple={ripple(color.primaryWash)}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={hint}
+      style={({ pressed }) => [c.tile, pressed && { backgroundColor: color.sunk }]}
+    >
+      <IconTile name={icon} px={48} />
+      <View style={{ gap: space.hair }}>
+        <Text style={c.tileLabel}>{label}</Text>
+        {hint ? <Text style={c.tileHint}>{hint}</Text> : null}
+      </View>
+    </Pressable>
+  );
+}
+
+/** Tiles two to a row. */
+export function TileGrid({ children }: { children: ReactNode }) {
+  const tiles = flatten(children);
+  const rows: ReactNode[][] = [];
+  for (let i = 0; i < tiles.length; i += 2) rows.push(tiles.slice(i, i + 2));
+  return (
+    <View style={{ gap: space.snug }}>
+      {rows.map((row, index) => (
+        <View key={index} style={c.tileRow}>
+          {row.map((tile, j) => (
+            <View key={j} style={c.flex}>
+              {tile}
+            </View>
+          ))}
+          {row.length === 1 ? <View style={c.flex} /> : null}
+        </View>
+      ))}
+    </View>
+  );
 }
 
 /* ---------------------------------------------------------------- controls ---- */
@@ -402,12 +560,10 @@ export function missing(...parts: (string | false | null | undefined)[]): string
  * THERE IS NO `disabled` PROP, AND THAT IS THE POINT. `blocked` is a reason string: a
  * non-null value both disables the control and states what is missing, so a dead button
  * with no explanation is not something a caller can express. A collector was once
- * stranded in a market by exactly that shape, and the rule it produced — a disabled
- * control must say what is missing — is enforced here by the type rather than by
- * everyone remembering it at every call site.
+ * stranded in a market by exactly that shape.
  *
- * The reason sits ABOVE the label, inside the shelf, not floating somewhere in the body:
- * the explanation belongs where the eye already is when it finds the control dead.
+ * The reason sits ABOVE the button, inside the shelf: the explanation belongs where the eye
+ * already is when it finds the control dead.
  */
 export function Punch({
   label,
@@ -416,6 +572,7 @@ export function Punch({
   busy = false,
   busyLabel,
   tone = "primary",
+  icon,
 }: {
   label: string;
   onPress: () => void;
@@ -423,50 +580,58 @@ export function Punch({
   busy?: boolean;
   busyLabel?: string;
   tone?: "primary" | "quiet" | "danger";
+  icon?: IconName;
 }) {
   const dead = blocked !== null || busy;
+  const fg = blocked
+    ? color.suppressed
+    : tone === "quiet"
+      ? color.primary
+      : color.onPrimary;
   return (
     <View style={k.wrap}>
       {blocked ? (
-        <Text style={k.reason} accessibilityLiveRegion="polite">
-          {blocked}
-        </Text>
+        <View style={k.reasonRow}>
+          <Icon name="information-outline" tone={color.muted} size={iconSize.sm} />
+          <Text style={k.reason} accessibilityLiveRegion="polite">
+            {blocked}
+          </Text>
+        </View>
       ) : null}
       <Pressable
         onPress={onPress}
         disabled={dead}
-        android_ripple={dead ? undefined : ripple(color.rackLift)}
+        android_ripple={dead ? undefined : ripple("rgba(255,255,255,0.24)")}
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityHint={blocked ?? undefined}
         accessibilityState={{ disabled: dead, busy }}
         style={({ pressed }) => [
           k.base,
-          tone === "primary" && (blocked ? k.stub : k.filled),
-          tone === "quiet" && k.quiet,
-          tone === "danger" && (blocked ? k.stub : k.danger),
-          pressed && !dead ? k.pressed : null,
+          blocked
+            ? k.stub
+            : tone === "quiet"
+              ? k.quiet
+              : tone === "danger"
+                ? k.danger
+                : k.filled,
+          pressed && !dead && tone === "primary" ? k.filledPressed : null,
         ]}
       >
-        {busy ? <ActivityIndicator color={blocked ? color.muted : color.onRack} /> : null}
-        <Text
-          style={[
-            k.label,
-            tone === "quiet" && { color: color.rack },
-            blocked ? k.labelStub : null,
-          ]}
-        >
-          {busy && busyLabel ? busyLabel : label}
-        </Text>
+        {busy ? (
+          <ActivityIndicator color={fg} />
+        ) : icon ? (
+          <Icon name={icon} tone={fg} />
+        ) : null}
+        <Text style={[k.label, { color: fg }]}>{busy && busyLabel ? busyLabel : label}</Text>
       </Pressable>
     </View>
   );
 }
 
 /**
- * A secondary action: sync, retry, sign out, go back. Same `blocked` contract as `Punch`.
- * Never an icon — every control in this app carries a permanently visible text label,
- * because an icon a collector has to interpret is a control they cannot be told about.
+ * A secondary action: sync, retry, sign out. Same `blocked` contract as `Punch`.
+ * Outlined, with an icon beside — never instead of — its label.
  */
 export function Action({
   label,
@@ -475,6 +640,7 @@ export function Action({
   busy = false,
   busyLabel,
   tone = "quiet",
+  icon,
 }: {
   label: string;
   onPress: () => void;
@@ -482,14 +648,16 @@ export function Action({
   busy?: boolean;
   busyLabel?: string;
   tone?: "quiet" | "danger";
+  icon?: IconName;
 }) {
   const dead = blocked !== null || busy;
+  const fg = dead ? color.suppressed : tone === "danger" ? color.refusal : color.primary;
   return (
     <View style={k.wrap}>
       <Pressable
         onPress={onPress}
         disabled={dead}
-        android_ripple={dead ? undefined : ripple(color.rack)}
+        android_ripple={dead ? undefined : ripple(color.primaryWash)}
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityHint={blocked ?? undefined}
@@ -502,20 +670,14 @@ export function Action({
         ]}
       >
         {busy ? (
-          <ActivityIndicator size="small" color={tone === "danger" ? color.refusal : color.rack} />
+          <ActivityIndicator size="small" color={fg} />
+        ) : icon ? (
+          <Icon name={icon} tone={fg} size={iconSize.md - 2} />
         ) : null}
-        <Text
-          style={[
-            a.label,
-            tone === "danger" && { color: color.refusal },
-            dead && { color: color.suppressed },
-          ]}
-        >
-          {busy && busyLabel ? busyLabel : label}
-        </Text>
+        <Text style={[a.label, { color: fg }]}>{busy && busyLabel ? busyLabel : label}</Text>
       </Pressable>
       {blocked ? (
-        <Text style={a.reason} accessibilityLiveRegion="polite">
+        <Text style={k.reason} accessibilityLiveRegion="polite">
           {blocked}
         </Text>
       ) : null}
@@ -523,14 +685,42 @@ export function Action({
   );
 }
 
+/** A small inline text button with an icon — "Remove" on a receipt line. */
+export function LinkButton({
+  label,
+  onPress,
+  icon,
+  tone = "primary",
+  accessibilityLabel,
+}: {
+  label: string;
+  onPress: () => void;
+  icon?: IconName;
+  tone?: "primary" | "danger";
+  accessibilityLabel?: string;
+}) {
+  const fg = tone === "danger" ? color.refusal : color.primary;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      hitSlop={10}
+      android_ripple={ripple(color.sunk)}
+      style={({ pressed }) => [a.link, pressed && { backgroundColor: color.sunk }]}
+    >
+      {icon ? <Icon name={icon} tone={fg} size={iconSize.sm} /> : null}
+      <Text style={[t.small, { color: fg, fontFamily: face.bold }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 /**
  * A stated condition: a refusal, a confirmable warning, a confirmation, a plain notice.
  *
  * `action` is the way out. A refusal with no remedy on it is a dead end, and the one thing
- * this app may never do is strand somebody in a market.
- *
- * Warning copy is set in ink on the amber wash, never in amber: amber is 3.4:1 on stock
- * and cannot carry a sentence in daylight.
+ * this app may never do is strand somebody in a market. The tone is carried by an icon AND
+ * a word, never by colour alone.
  */
 export function Statement({
   tone,
@@ -543,84 +733,67 @@ export function Statement({
   action?: ReactNode;
   /**
    * Raw diagnostic text for whoever has to fix it -- a thrown message, a server code.
-   * Set smaller and quieter than the sentence above it: a collector cannot act on a
-   * stack trace, and the office cannot diagnose without one.
+   * Smaller and quieter than the sentence above it.
    */
   detail?: string | null;
 }) {
-  /**
-   * `tagInk` is separate from `rule` for one reason: amber is 3.3:1 on its own wash at
-   * label size, which is under the floor for small text in the daylight this app is
-   * built for. `tokens.ts` says amber is a rule and a tag and never body text; a tone tag
-   * IS text, and the word that classifies the whole message is the last one that may be
-   * the least readable thing on it. Amber keeps the hairline and the tag goes to ink.
-   */
   const skin =
     tone === "refusal"
-      ? { wash: color.refusalWash, rule: color.refusal, ink: color.refusal, tagInk: color.refusal, tag: "Problem" }
+      ? { wash: color.refusalWash, rule: color.refusalRule, ink: color.refusal, tag: "Problem", icon: "alert-circle-outline" as const }
       : tone === "warning"
-        ? { wash: color.warningWash, rule: color.warning, ink: color.ink, tagInk: color.ink, tag: "Check" }
+        ? { wash: color.warningWash, rule: color.warningRule, ink: color.warning, tag: "Check", icon: "alert-outline" as const }
         : tone === "confirmed"
-          ? { wash: color.confirmedWash, rule: color.confirmed, ink: color.confirmed, tagInk: color.confirmed, tag: "Done" }
-          : { wash: color.stockSunk, rule: color.rule, ink: color.ink, tagInk: color.muted, tag: null };
+          ? { wash: color.confirmedWash, rule: color.confirmedRule, ink: color.confirmed, tag: "Done", icon: "check-circle-outline" as const }
+          : { wash: color.card, rule: color.rule, ink: color.muted, tag: null, icon: "information-outline" as const };
 
   return (
     <View
       accessibilityLiveRegion="polite"
       style={[s.box, { backgroundColor: skin.wash, borderColor: skin.rule }]}
     >
-      {/*
-        A TRACKED-CAPS TAG AND A HAIRLINE, NOT A 4PX COLOURED LEFT EDGE.
-
-        The thick left edge is the category's stock alert costume, and here it cost more
-        than taste: it spent the rack's spine language on things that are not slots, which
-        devalued the one ochre edge that makes a FIFO run readable. The tag also means the
-        tone is not carried by colour alone.
-      */}
-      {skin.tag ? <Text style={[s.tag, { color: skin.tagInk }]}>{skin.tag}</Text> : null}
-      {typeof children === "string" ? (
-        <Text style={[t.body, { color: skin.ink }]}>{children}</Text>
-      ) : (
-        children
-      )}
-      {detail ? <Text style={s.detail}>{detail}</Text> : null}
-      {action ? <View style={s.action}>{action}</View> : null}
+      <Icon name={skin.icon} tone={skin.ink} />
+      <View style={s.text}>
+        {skin.tag ? <Text style={[s.tag, { color: skin.ink }]}>{skin.tag}</Text> : null}
+        {typeof children === "string" ? <Text style={[t.body, { color: color.ink }]}>{children}</Text> : children}
+        {detail ? <Text style={s.detail}>{detail}</Text> : null}
+        {action ? <View style={s.action}>{action}</View> : null}
+      </View>
     </View>
   );
 }
 
-/**
- * A text field. A stock inset closed by a thick underline rather than a box, because a
- * boxed input on a screen with no other boxes reads as a card, and there are no cards here.
- */
+/** An outlined text field with its label above and an optional leading icon. */
 export function Field({
   label,
   voice = "text",
+  icon,
   ...rest
-}: TextInputProps & { label: string; voice?: "text" | "figure" | "mono" }) {
+}: TextInputProps & { label: string; voice?: "text" | "figure" | "mono"; icon?: IconName }) {
   const [focused, setFocused] = useState(false);
   return (
     <View style={i.wrap}>
-      <Label>{label}</Label>
-      <TextInput
-        accessibilityLabel={label}
-        placeholderTextColor={color.suppressed}
-        {...rest}
-        onFocus={(e) => {
-          setFocused(true);
-          rest.onFocus?.(e);
-        }}
-        onBlur={(e) => {
-          setFocused(false);
-          rest.onBlur?.(e);
-        }}
-        style={[
-          i.input,
-          voice === "figure" && i.inputFigure,
-          voice === "mono" && i.inputMono,
-          focused && i.inputOn,
-        ]}
-      />
+      <Text style={i.label}>{label}</Text>
+      <View style={[i.box, focused && i.boxOn, rest.editable === false && i.boxOff]}>
+        {icon ? <Icon name={icon} tone={focused ? color.primary : color.muted} /> : null}
+        <TextInput
+          accessibilityLabel={label}
+          placeholderTextColor={color.suppressed}
+          {...rest}
+          onFocus={(e) => {
+            setFocused(true);
+            rest.onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            setFocused(false);
+            rest.onBlur?.(e);
+          }}
+          style={[
+            i.input,
+            voice === "figure" && i.inputFigure,
+            voice === "mono" && i.inputMono,
+          ]}
+        />
+      </View>
     </View>
   );
 }
@@ -628,14 +801,10 @@ export function Field({
 /* ------------------------------------------------------------------ punch ---- */
 
 /**
- * The signature interaction, and the only motion in the app.
+ * The one celebratory moment: a validated serial settles in with a check. It marks the one
+ * genuinely irreversible step in the flow — the receipt about to be committed.
  *
- * A validated serial settles into the spent state with a punch notch — the conductor's
- * punch biting the ticket. It marks the one genuinely irreversible moment in the flow,
- * which is the moment the receipt is about to be committed as a single transaction.
- *
- * Cut to an instant state change when the system's Remove animations setting is on: the
- * mark still appears, it just does not travel.
+ * Cut to an instant state change when the system's Remove animations setting is on.
  */
 export function PunchMark({ serial }: { serial: string }) {
   const settle = useRef(new Animated.Value(0)).current;
@@ -664,61 +833,34 @@ export function PunchMark({ serial }: { serial: string }) {
       return;
     }
     settle.setValue(0);
-    Animated.timing(settle, {
-      toValue: 1,
-      duration: 180,
-      useNativeDriver: true,
-    }).start();
+    Animated.timing(settle, { toValue: 1, duration: 200, useNativeDriver: true }).start();
   }, [reduced, serial, settle]);
 
   if (reduced === null) return null;
 
   return (
-    <View>
-      <Rule />
-      {/*
-        THE SLOT IS WHAT GETS PUNCHED.
-
-        This was a separate green banner with a dot beside it, which is a badge announcing
-        a punch rather than a punch. It is now a rack slot in the same geometry as every
-        other slot -- the same gutter, the same hairlines -- that settles into spent green
-        with a hole bitten through it. The serial is the ticket; the hole is what spends it.
-
-        The hole is drawn, never a glyph, and it sits in the spine gutter where a selected
-        run's ochre edge would be, because a spent slot and a selected slot are two states
-        of one object.
-      */}
-      <Animated.View style={[p.slot, { opacity: settle }]}>
-        <View style={p.gutter}>
-          <Animated.View
-            style={[
-              p.notch,
-              {
-                transform: [
-                  {
-                    scale: settle.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [2.2, 1],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          />
-        </View>
-        <View style={p.body}>
-          <Text style={p.serial}>{serial}</Text>
-          <Text style={p.spent}>Spent</Text>
-        </View>
+    <Animated.View style={[p.card, { opacity: settle }]} accessibilityLiveRegion="polite">
+      <Animated.View
+        style={{
+          transform: [
+            { scale: settle.interpolate({ inputRange: [0, 1], outputRange: [1.8, 1] }) },
+          ],
+        }}
+      >
+        <IconTile name="check-decagram" tone={color.onPrimary} wash={color.confirmed} px={48} />
       </Animated.View>
-      <Rule />
-    </View>
+      <View style={c.flex}>
+        <Text style={p.tag}>In your booklet</Text>
+        <Text style={p.serial}>{serial}</Text>
+      </View>
+    </Animated.View>
   );
 }
 
 /**
- * The honest sync age, in the masthead. Three states, and each says only what the device
- * actually checked — never "not synced" when what it means is "synced, but a while ago".
+ * The honest sync age, as a chip in the app bar. Three states, and each says only what the
+ * device actually checked — never "not synced" when what it means is "synced, but a while
+ * ago".
  */
 export function Register({
   state,
@@ -728,11 +870,15 @@ export function Register({
   detail?: string | null;
 }) {
   const skin =
-    state === "fresh" ? color.confirmed : state === "stale" ? color.warning : color.refusal;
+    state === "fresh"
+      ? { ink: color.confirmed, wash: color.confirmedWash, icon: "cloud-check-outline" as const }
+      : state === "stale"
+        ? { ink: color.warning, wash: color.warningWash, icon: "cloud-alert-outline" as const }
+        : { ink: color.refusal, wash: color.refusalWash, icon: "cloud-off-outline" as const };
   return (
-    <View style={g.register}>
-      <View style={[g.pip, { backgroundColor: skin }]} />
-      <Text style={g.registerText} numberOfLines={2}>
+    <View style={[g.register, { backgroundColor: skin.wash }]}>
+      <Icon name={skin.icon} tone={skin.ink} size={iconSize.sm} />
+      <Text style={[g.registerText, { color: skin.ink }]} numberOfLines={2}>
         {detail}
       </Text>
     </View>
@@ -741,16 +887,21 @@ export function Register({
 
 /* ----------------------------------------------------------------- styles ---- */
 
+const styles = StyleSheet.create({
+  center: { alignItems: "center", justifyContent: "center" },
+  empty: { alignItems: "center", gap: space.snug, paddingVertical: space.gap },
+});
+
 const t = StyleSheet.create({
   label: {
-    fontFamily: face.condensed,
+    fontFamily: face.bold,
     fontSize: size.label,
-    fontWeight: "700",
     letterSpacing: tracking,
     textTransform: "uppercase",
   },
   body: { fontFamily: face.text, fontSize: size.body, lineHeight: size.body * 1.45 },
-  title: { fontFamily: face.condensed, fontSize: size.title, fontWeight: "700" },
+  small: { fontFamily: face.text, fontSize: size.small, lineHeight: size.small * 1.4 },
+  title: { fontFamily: face.bold, fontSize: size.title, lineHeight: size.title * 1.25 },
   note: {
     fontFamily: face.text,
     fontSize: size.body,
@@ -761,54 +912,86 @@ const t = StyleSheet.create({
 });
 
 const c = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: color.stock },
+  screen: { flex: 1, backgroundColor: color.ground },
   flex: { flex: 1 },
   body: { padding: space.step, paddingBottom: space.rift },
   head: {
-    backgroundColor: color.rack,
+    backgroundColor: color.card,
     paddingHorizontal: space.step,
     paddingBottom: space.snug,
+    borderBottomWidth: 1,
+    borderBottomColor: color.rule,
   },
-  headRow: { flexDirection: "row", alignItems: "flex-end", gap: space.snug },
+  headRow: { flexDirection: "row", alignItems: "center", gap: space.snug, minHeight: touch.min },
+  back: {
+    width: touch.min,
+    height: touch.min,
+    borderRadius: touch.min / 2,
+    marginLeft: -space.snug,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   headText: { flex: 1, minWidth: 0 },
+  headTitle: { fontFamily: face.bold, fontSize: size.title, lineHeight: size.title * 1.2, color: color.ink },
+  headSub: { fontFamily: face.text, fontSize: size.small, lineHeight: size.small * 1.35, color: color.muted },
   // flexShrink, never flex:1 on the text inside: this column is sized by its content, so
-  // a flexible child resolves to zero width and the register renders as a bare pip with
+  // a flexible child resolves to zero width and the register renders as a bare icon with
   // its sentence invisible.
   headRegister: { maxWidth: "46%", flexShrink: 1 },
-  back: {
-    alignSelf: "flex-start",
-    minHeight: touch.min,
-    justifyContent: "center",
-    paddingRight: space.step,
-    marginLeft: -space.tight,
-    paddingLeft: space.tight,
-  },
-  backPressed: { opacity: 0.7 },
-  backText: {
-    fontFamily: face.condensed,
-    fontSize: size.body,
-    fontWeight: "700",
-    letterSpacing: tracking,
-    textTransform: "uppercase",
-    color: color.onRackMuted,
-  },
   shelf: {
-    backgroundColor: color.stock,
+    backgroundColor: color.card,
     paddingHorizontal: space.step,
-    paddingTop: space.snug,
+    paddingTop: space.snug + 2,
     borderTopWidth: 1,
     borderTopColor: color.rule,
-    gap: space.tight,
+    gap: space.snug,
+    elevation: 8,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: -2 },
   },
+  card: {
+    backgroundColor: color.card,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: color.rule,
+    overflow: "hidden",
+  },
+  cardPad: { padding: space.step, gap: space.snug },
+  hero: {
+    backgroundColor: color.hero,
+    borderRadius: radius.card + 4,
+    padding: space.gap - 4,
+    gap: space.snug,
+  },
+  tileRow: { flexDirection: "row", gap: space.snug },
+  tile: {
+    backgroundColor: color.card,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: color.rule,
+    padding: space.step,
+    gap: space.snug,
+    minHeight: 128,
+    overflow: "hidden",
+  },
+  tileLabel: { fontFamily: face.bold, fontSize: size.body, lineHeight: size.body * 1.3, color: color.ink },
+  tileHint: { fontFamily: face.text, fontSize: size.label + 1, lineHeight: (size.label + 1) * 1.35, color: color.muted },
 });
 
 const f = StyleSheet.create({
   panel: { gap: space.hair },
+  inline: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: space.snug,
+  },
   figure: {
-    fontFamily: face.condensed,
+    fontFamily: face.bold,
     fontSize: size.figure,
-    lineHeight: size.figure * 1.1,
-    fontWeight: "700",
+    lineHeight: size.figure * 1.15,
   },
   amountRow: {
     flexDirection: "row",
@@ -816,115 +999,98 @@ const f = StyleSheet.create({
     justifyContent: "space-between",
     gap: space.snug,
   },
-  amount: { fontFamily: face.text, fontSize: size.body, fontWeight: "700" },
+  amount: { fontFamily: face.bold, fontSize: size.body },
 });
 
 const r = StyleSheet.create({
   slot: {
     flexDirection: "row",
-    minHeight: touch.min,
-    backgroundColor: "transparent",
-    // Pulled into the gutter by the spine's own width, so slot content aligns with the
-    // body copy and the hairlines rather than sitting indented from them.
-    marginLeft: -spine,
+    alignItems: "center",
+    minHeight: touch.min + 8,
+    paddingHorizontal: space.step,
+    gap: space.step - 4,
+    backgroundColor: color.card,
   },
-  slotOn: { backgroundColor: color.ochreWash },
-  slotPressed: { backgroundColor: color.stockSunk },
-  spine: { width: spine, backgroundColor: "transparent" },
-  spineOn: { backgroundColor: color.ochre },
-  slotBody: { flex: 1, paddingVertical: space.snug, gap: space.hair },
+  slotOn: { backgroundColor: color.primaryWash },
+  slotPressed: { backgroundColor: color.sunk },
+  slotBody: { flex: 1, paddingVertical: space.snug + 2, gap: space.hair },
   slotRow: { flexDirection: "row", alignItems: "center", gap: space.snug },
   slotLeft: { flex: 1, minWidth: 0 },
   slotRight: { alignItems: "flex-end" },
-  slotUnder: { paddingTop: space.hair },
-  slotText: { fontFamily: face.text, fontSize: size.body },
-  slotAmount: { fontFamily: face.text, fontSize: size.body, fontWeight: "700" },
-  slotBlocked: { color: color.refusal, paddingTop: space.hair },
+  slotText: { fontFamily: face.text, fontSize: size.body, lineHeight: size.body * 1.35 },
+  slotAmount: { fontFamily: face.bold, fontSize: size.body },
   rule: { height: 1, backgroundColor: color.rule },
 });
 
 const k = StyleSheet.create({
   wrap: { gap: space.tight },
+  reasonRow: { flexDirection: "row", gap: space.tight, alignItems: "flex-start" },
   reason: {
+    flex: 1,
     fontFamily: face.text,
-    fontSize: size.body,
-    lineHeight: size.body * 1.4,
-    color: color.ink,
+    fontSize: size.small,
+    lineHeight: size.small * 1.4,
+    color: color.muted,
   },
   base: {
     minHeight: touch.shelf,
-    borderRadius: 4,
+    borderRadius: radius.button,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
     gap: space.snug,
     paddingHorizontal: space.step,
+    overflow: "hidden",
   },
-  filled: { backgroundColor: color.rack },
+  filled: { backgroundColor: color.primary },
+  filledPressed: { backgroundColor: color.primaryPressed },
   danger: { backgroundColor: color.refusal },
-  quiet: { backgroundColor: color.stockSunk },
-  stub: { backgroundColor: color.stockSunk, borderWidth: 1, borderColor: color.rule },
-  pressed: { opacity: 0.86 },
-  label: {
-    fontFamily: face.condensed,
-    fontSize: size.body,
-    fontWeight: "700",
-    letterSpacing: tracking,
-    textTransform: "uppercase",
-    color: color.onRack,
-  },
-  labelStub: { color: color.suppressed },
+  quiet: { backgroundColor: color.primaryWash },
+  stub: { backgroundColor: color.sunk },
+  label: { fontFamily: face.bold, fontSize: size.body + 1 },
 });
 
 const a = StyleSheet.create({
   base: {
     minHeight: touch.min,
-    borderRadius: 4,
+    borderRadius: radius.button,
     borderWidth: 1.5,
-    borderColor: color.rack,
+    borderColor: color.primary,
+    backgroundColor: color.card,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
-    gap: space.tight,
+    gap: space.tight + 2,
     paddingHorizontal: space.step,
+    overflow: "hidden",
   },
   danger: { borderColor: color.refusal },
-  dead: { borderColor: color.rule },
-  pressed: { backgroundColor: color.stockSunk },
-  label: {
-    fontFamily: face.condensed,
-    fontSize: size.body,
-    fontWeight: "700",
-    letterSpacing: tracking,
-    textTransform: "uppercase",
-    color: color.rack,
-  },
-  reason: {
-    fontFamily: face.text,
-    fontSize: size.body,
-    lineHeight: size.body * 1.4,
-    color: color.ink,
+  dead: { borderColor: color.rule, backgroundColor: color.sunk },
+  pressed: { backgroundColor: color.primaryWash },
+  label: { fontFamily: face.bold, fontSize: size.body },
+  link: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.hair + 2,
+    minHeight: 36,
+    paddingHorizontal: space.tight,
+    borderRadius: radius.pill,
   },
 });
 
 const s = StyleSheet.create({
-  /**
-   * A BAND, NOT A BOX. With a full hairline rectangle a statement stacked next to the
-   * outlined `Action` buttons at near-identical weight, and a notice shaped like a button
-   * at 5am in a market is a tap waiting to happen. Hairlines top and bottom only; the
-   * outlined rectangle belongs to things that are pressable.
-   */
   box: {
-    paddingVertical: space.snug,
-    paddingHorizontal: space.step,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    gap: space.tight,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: space.step - 2,
+    borderRadius: radius.field,
+    borderWidth: 1,
+    gap: space.snug + 2,
   },
+  text: { flex: 1, gap: space.tight - 2 },
   tag: {
-    fontFamily: face.condensed,
+    fontFamily: face.bold,
     fontSize: size.label,
-    fontWeight: "700",
     letterSpacing: tracking,
     textTransform: "uppercase",
   },
@@ -932,94 +1098,79 @@ const s = StyleSheet.create({
     fontFamily: face.mono,
     fontSize: size.label,
     lineHeight: size.label * 1.4,
-    color: color.suppressed,
+    color: color.muted,
   },
-  action: { alignSelf: "flex-start" },
+  action: { alignSelf: "flex-start", paddingTop: space.tight },
 });
 
 const i = StyleSheet.create({
-  wrap: { gap: space.tight },
+  wrap: { gap: space.tight + 2 },
+  label: { fontFamily: face.bold, fontSize: size.small, color: color.muted },
+  box: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.snug,
+    backgroundColor: color.card,
+    borderRadius: radius.field,
+    borderWidth: 1.5,
+    borderColor: color.ruleStrong,
+    paddingHorizontal: space.step - 2,
+    minHeight: touch.shelf,
+  },
+  boxOn: { borderColor: color.primary, borderWidth: 2, paddingHorizontal: space.step - 2.5 },
+  boxOff: { backgroundColor: color.sunk, borderColor: color.rule },
   input: {
+    flex: 1,
     fontFamily: face.text,
     fontSize: size.title,
     color: color.ink,
-    backgroundColor: color.stockSunk,
-    paddingHorizontal: space.snug,
     paddingVertical: space.snug,
-    minHeight: touch.min,
-    borderBottomWidth: 3,
-    borderBottomColor: color.rule,
-    borderTopLeftRadius: 3,
-    borderTopRightRadius: 3,
   },
-  inputFigure: { fontFamily: face.condensed, fontSize: size.figure, fontWeight: "700" },
-  inputMono: {
-    fontFamily: face.mono,
-    fontSize: size.body,
-    letterSpacing: Platform.OS === "android" ? 1 : 2,
-  },
-  inputOn: { borderBottomColor: color.ochre },
+  inputFigure: { fontFamily: face.bold, fontSize: size.figure - 8 },
+  inputMono: { fontFamily: face.mono, fontSize: size.body, letterSpacing: 1 },
 });
 
 const p = StyleSheet.create({
-  /** Same geometry as `Slot`: pulled into the gutter, minimum touch height. */
-  slot: {
+  card: {
     flexDirection: "row",
-    minHeight: touch.min,
-    marginLeft: -spine,
+    alignItems: "center",
+    gap: space.step - 2,
+    padding: space.step - 2,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: color.confirmedRule,
     backgroundColor: color.confirmedWash,
   },
-  gutter: {
-    width: spine + space.gap,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  /** The punch: a hole bitten clean through the ticket. Drawn, never a glyph. */
-  notch: {
-    width: 15,
-    height: 15,
-    borderRadius: 8,
-    backgroundColor: color.stock,
-    borderWidth: 2,
-    borderColor: color.confirmed,
-  },
-  body: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingRight: space.step,
-    paddingVertical: space.snug,
-    gap: space.step,
-  },
-  serial: {
-    fontFamily: face.condensed,
-    fontSize: size.title,
-    fontWeight: "700",
-    letterSpacing: tracking,
-    color: color.confirmed,
-  },
-  spent: {
-    fontFamily: face.condensed,
+  tag: {
+    fontFamily: face.bold,
     fontSize: size.label,
-    fontWeight: "700",
     letterSpacing: tracking,
     textTransform: "uppercase",
     color: color.confirmed,
   },
-});
-
-const g = StyleSheet.create({
-  register: { flexDirection: "row", alignItems: "flex-start", gap: space.tight },
-  pip: { width: 10, height: 10, borderRadius: 5, marginTop: 5 },
-  registerText: {
-    flexShrink: 1,
-    fontFamily: face.text,
-    fontSize: size.label,
-    lineHeight: size.label * 1.35,
-    color: color.onRackMuted,
-    textAlign: "right",
+  serial: {
+    fontFamily: face.bold,
+    fontSize: size.title + 2,
+    letterSpacing: 0.5,
+    color: color.ink,
   },
 });
 
-export { color, face, size, space, touch } from "./tokens";
+const g = StyleSheet.create({
+  register: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.tight - 2,
+    paddingHorizontal: space.snug,
+    paddingVertical: space.tight - 1,
+    borderRadius: radius.pill,
+  },
+  registerText: {
+    flexShrink: 1,
+    fontFamily: face.bold,
+    fontSize: size.label,
+    lineHeight: size.label * 1.3,
+  },
+});
+
+export { color, face, icon, radius, size, space, touch, type IconName } from "./tokens";

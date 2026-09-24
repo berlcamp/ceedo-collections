@@ -17,8 +17,8 @@ import {
   Label,
   Punch,
   RackHead,
+  List,
   Rift,
-  Rule,
   Screen,
   Slot,
   Statement,
@@ -193,10 +193,11 @@ export default function SignIn() {
 
   return (
     <Screen
-      head={<RackHead title="Sign in" subtitle="CEEDO Collector" />}
+      head={<RackHead title="Sign in" subtitle="CEEDO Collector" icon="account-key-outline" />}
       shelf={
         <Punch
           label="Sign in"
+          icon="login"
           blocked={blocked}
           busy={verifying}
           busyLabel="Checking"
@@ -222,6 +223,7 @@ export default function SignIn() {
       */}
       <Action
         label="Sync now"
+        icon="sync"
         busy={syncing}
         busyLabel="Syncing"
         blocked={verifying ? "Waiting for the PIN check to finish." : null}
@@ -257,10 +259,11 @@ export default function SignIn() {
         <>
           <Label>Collector</Label>
           <View style={{ height: 8 }} />
-          <Rule />
-          {collectors.map((collector) => (
-            <View key={collector.id}>
+          <List>
+            {collectors.map((collector) => (
               <Slot
+                key={collector.id}
+                selectable
                 selected={collectorId === collector.id}
                 suppressed={collectorId !== null && collectorId !== collector.id}
                 onPress={() => setCollectorId(collector.id)}
@@ -271,9 +274,8 @@ export default function SignIn() {
                   </View>
                 }
               />
-              <Rule />
-            </View>
-          ))}
+            ))}
+          </List>
         </>
       )}
 
@@ -282,6 +284,7 @@ export default function SignIn() {
       <Field
         label="PIN"
         voice="mono"
+        icon="lock-outline"
         value={pin}
         onChangeText={setPin}
         placeholder="6 digits"

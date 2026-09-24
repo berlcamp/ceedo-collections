@@ -8,6 +8,7 @@ import { decodeEnrollment, encodeEnrollment } from "@ceedo/shared";
 import {
   Action,
   Body,
+  Card,
   Field,
   Label,
   Note,
@@ -139,6 +140,7 @@ export default function Enroll() {
       shelf={
         <Punch
           label="Enrol with these values"
+          icon="shield-check-outline"
           busy={busy}
           busyLabel="Enrolling"
           blocked={missing(
@@ -149,10 +151,12 @@ export default function Enroll() {
         />
       }
     >
-      <Body>
-        Scan the QR code on the admin&apos;s Device credential screen, or type the two values
-        from it. The secret is shown there once and cannot be read back.
-      </Body>
+      <Card>
+        <Body>
+          Scan the QR code on the admin&apos;s Device credential screen, or type the two values
+          from it. The secret is shown there once and cannot be read back.
+        </Body>
+      </Card>
 
       <Rift />
 
@@ -171,6 +175,7 @@ export default function Enroll() {
 
       <Action
         label={scanning ? "Stop scanning" : "Scan the QR code"}
+        icon={scanning ? "stop-circle-outline" : "qrcode-scan"}
         blocked={busy ? "Waiting for the current enrolment to finish." : null}
         onPress={async () => {
           if (scanning) {
@@ -198,6 +203,7 @@ export default function Enroll() {
       <Field
         label="Credential ID"
         voice="mono"
+        icon="identifier"
         value={credentialId}
         onChangeText={setCredentialId}
         placeholder="Credential ID"
@@ -208,6 +214,7 @@ export default function Enroll() {
       <Field
         label="Secret"
         voice="mono"
+        icon="key-outline"
         value={secret}
         onChangeText={setSecret}
         placeholder="Secret"
@@ -236,7 +243,7 @@ export default function Enroll() {
 const camera = StyleSheet.create({
   frame: {
     height: 300,
-    borderRadius: 4,
+    borderRadius: 16,
     overflow: "hidden",
     backgroundColor: color.ink,
   },

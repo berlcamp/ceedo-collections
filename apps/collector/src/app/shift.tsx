@@ -1,6 +1,5 @@
 import { useCallback, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
-import { View } from "react-native";
 import { randomUUID } from "expo-crypto";
 import {
   deviceSite,
@@ -14,18 +13,21 @@ import {
 import {
   Action,
   Body,
+  Card,
   Figure,
   Group,
+  Hero,
+  Icon,
   Label,
   Note,
   Punch,
   RackHead,
   Register,
   Rift,
-  Rule,
   Screen,
-  Slot,
   Statement,
+  Tile,
+  TileGrid,
   color,
 } from "../ui";
 import { syncFailure } from "../ui/failures";
@@ -95,8 +97,8 @@ export default function Shift() {
   if (!collector) {
     return (
       <Screen
-        head={<RackHead title="Shift" />}
-        shelf={<Punch label="Go to sign-in" onPress={() => router.replace("/sign-in")} />}
+        head={<RackHead title="Shift" icon="briefcase-outline" />}
+        shelf={<Punch label="Go to sign-in" icon="login" onPress={() => router.replace("/sign-in")} />}
       >
         <Note>Not signed in.</Note>
       </Screen>
@@ -151,6 +153,7 @@ export default function Shift() {
         <RackHead
           title={collector.full_name ?? collector.id}
           subtitle={`Business date ${businessDate()}`}
+          icon="account-circle-outline"
           register={
             fresh ? <Register state={fresh.state} detail={fresh.short} /> : undefined
           }
@@ -163,10 +166,11 @@ export default function Shift() {
               the warning above it pushed the control that resolves the block clean off
               the bottom of the scroll -- a stated reason with its fix out of sight. */}
           {stillQueued ? (
-            <Action label="Sync now" busy={busy} busyLabel="Syncing" onPress={() => void sync()} />
+            <Action label="Sync now" icon="sync" busy={busy} busyLabel="Syncing" onPress={() => void sync()} />
           ) : null}
           <Punch
             label="Close out"
+            icon="cash-register"
             // Short, and NOT a repeat of the statement in the body. The body explains the
             // consequence and carries the Sync control; the shelf names what is missing,
             // which is all a reason attached to a dead button owes.
@@ -183,6 +187,7 @@ export default function Shift() {
         ) : (
           <Punch
             label="Open a shift"
+            icon="play-circle-outline"
             busy={busy}
             busyLabel="Opening"
             onPress={async () => {
@@ -207,53 +212,56 @@ export default function Shift() {
       }
     >
       {shift ? (
-        <>
+        <Hero>
           <Figure
+            on="hero"
             label={`Taken this shift · ${totals.count} receipt${totals.count === 1 ? "" : "s"}`}
             value={fromWire(totals.total)}
             absent="This tablet cannot read its own total for this shift. Do not close out — tell the office."
           />
-          <Rift h={10} />
           {/* A clock time, not the wire value. `clockTime` returns null rather than a
               guess, and then the screen says it has no time instead of printing one. */}
-          <Body>
-            {clockTime(shift.opened_at)
-              ? `Open since ${clockTime(shift.opened_at)}`
-              : "Open on this tablet."}
-          </Body>
-        </>
+          <Group gap={6}>
+            <Label tone={color.onHeroMuted}>
+              {clockTime(shift.opened_at)
+                ? `Open since ${clockTime(shift.opened_at)}`
+                : "Open on this tablet"}
+            </Label>
+          </Group>
+        </Hero>
       ) : (
-        <Note>No shift is open on this tablet for you.</Note>
+        <Card>
+          <Group gap={8}>
+            <Icon name="briefcase-clock-outline" tone={color.primary} size={32} />
+            <Body>No shift is open on this tablet for you.</Body>
+            <Body tone={color.muted}>Open one below to start the round.</Body>
+          </Group>
+        </Card>
       )}
 
       {shift ? (
         <>
-          <Rift />
+          <Rift h={28} />
           <Label>The round</Label>
-          <View style={{ height: 8 }} />
-          <Rule />
+          <Rift h={10} />
           {/*
             A terminal, parking lot or slaughterhouse has no stalls and no tenants (parent
             §5.1): its round IS the fee screen. Only a market shows the lease paths. An
             unknown site (no sync yet) shows the market's, which is what it did before.
           */}
           {site && site.type !== "market" ? (
-            <>
-              <Slot onPress={() => router.push("/ambulant")} left="Collect a fee" />
-              <Rule />
-            </>
+            <TileGrid>
+              <Tile icon="cash-plus" label="Collect a fee" hint="Quantity × rate" onPress={() => router.push("/ambulant")} />
+              <Tile icon="file-cancel-outline" label="Spoil a form" hint="A mis-written OR" onPress={() => router.push("/spoil")} />
+            </TileGrid>
           ) : (
-            <>
-              <Slot onPress={() => router.push("/scan")} left="Scan a tenant card" />
-              <Rule />
-              <Slot onPress={() => router.push("/leases")} left="Collect from a stall" />
-              <Rule />
-              <Slot onPress={() => router.push("/ambulant")} left="On-the-spot fee" />
-              <Rule />
-            </>
+            <TileGrid>
+              <Tile icon="qrcode-scan" label="Scan a tenant card" hint="Fastest" onPress={() => router.push("/scan")} />
+              <Tile icon="store-search-outline" label="Collect from a stall" hint="Search by stall or name" onPress={() => router.push("/leases")} />
+              <Tile icon="cash-plus" label="On-the-spot fee" hint="No lease needed" onPress={() => router.push("/ambulant")} />
+              <Tile icon="file-cancel-outline" label="Spoil a form" hint="A mis-written OR" onPress={() => router.push("/spoil")} />
+            </TileGrid>
           )}
-          <Slot onPress={() => router.push("/spoil")} left="Spoil a form" />
-          <Rule />
         </>
       ) : null}
 
@@ -284,9 +292,10 @@ export default function Shift() {
       ) : null}
 
       <Group>
-        <Action label="Sync now" busy={busy} busyLabel="Syncing" onPress={() => void sync()} />
+        <Action label="Sync now" icon="sync" busy={busy} busyLabel="Syncing" onPress={() => void sync()} />
         <Action
           label="Sign out"
+          icon="logout"
           tone="danger"
           onPress={() => {
             // Clears a session, never data (parent §6.4). The outbox and every local shift

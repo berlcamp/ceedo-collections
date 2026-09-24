@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import { ScrollView, View } from "react-native";
-import { Action, Body, Field, Note, RackHead, Register, Rule, Screen, Slot, Title, color } from "../ui";
+import { Action, Body, Field, List, Note, RackHead, Register, Screen, Slot, Title, color } from "../ui";
 import { freshness, type Freshness } from "../ui/staleness";
 import { businessDate } from "../sync/device-sync";
 import { deviceDriver } from "../db/driver";
@@ -82,11 +82,8 @@ export default function Leases() {
         />
       }
     >
-      <Action label="Scan a tenant card instead" tone="quiet" onPress={() => router.push("/scan")} />
-
-      <View style={{ height: 16 }} />
-
       <Field
+        icon="magnify"
         label="Stall number or tenant name"
         placeholder="Search"
         autoCorrect={false}
@@ -97,20 +94,28 @@ export default function Leases() {
         }}
       />
 
+      <View style={{ height: 12 }} />
+      <Action
+        label="Scan a tenant card instead"
+        icon="qrcode-scan"
+        onPress={() => router.push("/scan")}
+      />
       <View style={{ height: 16 }} />
 
       {hits.length === 0 ? (
-        <Note>
+        <Note icon={query.trim() === "" ? "store-off-outline" : "text-search"}>
           {query.trim() === ""
             ? "No leases on this tablet yet. Sync from the shift screen."
             : `Nothing matches "${query.trim()}".`}
         </Note>
       ) : (
         <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled">
-          <Rule />
-          {hits.map((hit) => (
-            <View key={hit.lease_id}>
+          <List>
+            {hits.map((hit) => (
               <Slot
+                key={hit.lease_id}
+                icon="storefront-outline"
+                nav
                 onPress={() => router.push(`/lease/${hit.lease_id}`)}
                 left={
                   <View style={{ gap: 2 }}>
@@ -128,9 +133,9 @@ export default function Leases() {
                   </View>
                 }
               />
-              <Rule />
-            </View>
-          ))}
+            ))}
+          </List>
+          <View style={{ height: 24 }} />
         </ScrollView>
       )}
     </Screen>

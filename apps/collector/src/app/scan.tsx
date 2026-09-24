@@ -84,6 +84,7 @@ export default function Scan() {
           <Rift h={12} />
           <Action
             label="Scan again"
+            icon="qrcode-scan"
             onPress={() => {
               latched.current = false;
               setRefusal(null);
@@ -95,7 +96,7 @@ export default function Scan() {
       <Rift />
       <Body tone={color.muted}>Card torn, wet or missing? Search by the stall number instead.</Body>
       <Rift h={12} />
-      <Action label="Search by stall number" tone="quiet" onPress={() => router.replace("/leases")} />
+      <Action label="Search by stall number" icon="store-search-outline" onPress={() => router.replace("/leases")} />
     </Screen>
   );
 }
@@ -114,7 +115,7 @@ function explain(result: Exclude<CardResolution, { kind: "lease" }>): string {
 const camera = StyleSheet.create({
   frame: {
     height: 360,
-    borderRadius: 4,
+    borderRadius: 16,
     overflow: "hidden",
     backgroundColor: color.ink,
   },

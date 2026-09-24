@@ -6,6 +6,7 @@ import { enqueue, orEntryContext } from "@ceedo/sync-engine";
 import {
   Action,
   Body,
+  Card,
   Field,
   Note,
   Punch,
@@ -134,6 +135,7 @@ export default function Spoil() {
       shelf={
         <Punch
           label="Mark spoiled"
+          icon="file-cancel-outline"
           blocked={blocked}
           busy={busy}
           busyLabel="Recording"
@@ -165,16 +167,19 @@ export default function Spoil() {
         />
       }
     >
-      <Body>
-        The form stays in the booklet and is accounted for on return: used + spoiled +
-        unused must equal the total serials.
-      </Body>
+      <Card>
+        <Body>
+          The form stays in the booklet and is accounted for on return: used + spoiled +
+          unused must equal the total serials.
+        </Body>
+      </Card>
 
       <Rift />
 
       <Field
         label="OR number"
         voice="figure"
+        icon="receipt-text-outline"
         keyboardType="number-pad"
         placeholder="OR number"
         value={orText}
@@ -189,6 +194,7 @@ export default function Spoil() {
 
       <Field
         label="Why"
+        icon="comment-text-outline"
         placeholder="Torn, misprinted…"
         value={reason}
         onChangeText={(text) => {
@@ -203,7 +209,7 @@ export default function Spoil() {
         <Statement
           tone="refusal"
           detail={contextDetail}
-          action={<Action label="Try again" onPress={loadContext} />}
+          action={<Action label="Try again" icon="refresh" onPress={loadContext} />}
         >
           {contextError}
         </Statement>
@@ -227,6 +233,7 @@ export default function Spoil() {
             action={
               <Action
                 label="Yes, that is the form in my hand"
+                icon="check"
                 onPress={() => setAcceptedSkip(true)}
               />
             }

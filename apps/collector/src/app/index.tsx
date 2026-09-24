@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { Body, Group, Label, Punch, RackHead, Rift, Rule, Screen, Slot } from "../ui";
+import { Body, Card, Group, Label, List, Punch, RackHead, Rift, Screen, Slot, color } from "../ui";
 
 /**
  * The app's entry point.
@@ -14,39 +14,67 @@ export default function Index() {
 
   return (
     <Screen
-      head={<RackHead title="CEEDO Collector" subtitle="Market collections" />}
-      shelf={<Punch label="Sign in" onPress={() => router.push("/sign-in")} />}
+      head={<RackHead title="CEEDO Collector" subtitle="Market collections" icon="storefront-outline" />}
+      shelf={<Punch label="Sign in" icon="login" onPress={() => router.push("/sign-in")} />}
     >
-      <Group>
+      <Card>
         <Label>The route</Label>
         <Body>
           A tablet is enrolled once at the office, then signed into at the start of every
           round. Everything after that works without signal.
         </Body>
-      </Group>
+      </Card>
 
       <Rift h={24} />
 
-      <Rule />
-      <Slot onPress={() => router.push("/enroll")} left="Enrol this tablet" />
-      <Rule />
-      <Slot onPress={() => router.push("/sign-in")} left="Sign in" />
-      <Rule />
+      <List>
+        <Slot
+          icon="tablet-cellphone"
+          nav
+          onPress={() => router.push("/enroll")}
+          left={
+            <Group gap={2}>
+              <Body>Enrol this tablet</Body>
+              <Label>Once, at the office</Label>
+            </Group>
+          }
+        />
+        <Slot
+          icon="account-key-outline"
+          nav
+          onPress={() => router.push("/sign-in")}
+          left={
+            <Group gap={2}>
+              <Body>Sign in</Body>
+              <Label>Start of every round</Label>
+            </Group>
+          }
+        />
+      </List>
 
       <Rift />
 
-      <Group>
+      <Group gap={4}>
         <Label>Device probes</Label>
-        <Body>
+        <Body tone={color.muted}>
           Measurements that can only be taken on the real tablet. Not part of a round.
         </Body>
       </Group>
-      <Rift h={16} />
-      <Rule />
-      <Slot onPress={() => router.push("/bcrypt-probe")} left="bcrypt cost 12, under Hermes" />
-      <Rule />
-      <Slot onPress={() => router.push("/engine-probe")} left="The sync engine, on expo-sqlite" />
-      <Rule />
+      <Rift h={12} />
+      <List>
+        <Slot
+          icon="speedometer"
+          nav
+          onPress={() => router.push("/bcrypt-probe")}
+          left="bcrypt cost 12, under Hermes"
+        />
+        <Slot
+          icon="database-sync-outline"
+          nav
+          onPress={() => router.push("/engine-probe")}
+          left="The sync engine, on expo-sqlite"
+        />
+      </List>
     </Screen>
   );
 }

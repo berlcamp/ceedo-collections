@@ -5,6 +5,7 @@ import { parsePesoInput, toDecimalString } from "@ceedo/shared";
 import {
   Amount,
   Body,
+  Card,
   Field,
   Figure,
   Group,
@@ -117,10 +118,11 @@ export default function Closeout() {
       }
       shelf={
         outcome ? (
-          <Punch label="Back to the shift" onPress={() => router.replace("/shift")} />
+          <Punch label="Back to the shift" icon="arrow-left" onPress={() => router.replace("/shift")} />
         ) : (
           <Punch
             label="Close the shift"
+            icon="lock-check-outline"
             busy={busy}
             busyLabel="Closing"
             blocked={
@@ -133,11 +135,13 @@ export default function Closeout() {
         )
       }
     >
-      <Figure
-        label={`This tablet recorded · ${totals.count} receipt${totals.count === 1 ? "" : "s"}`}
-        value={fromWire(totals.total)}
-        absent="This tablet cannot read its own total for this shift. Do not close out — tell the office."
-      />
+      <Card>
+        <Figure
+          label={`This tablet recorded · ${totals.count} receipt${totals.count === 1 ? "" : "s"}`}
+          value={fromWire(totals.total)}
+          absent="This tablet cannot read its own total for this shift. Do not close out — tell the office."
+        />
+      </Card>
 
       <Rift />
 
@@ -145,6 +149,7 @@ export default function Closeout() {
       <Field
         label="Cash in the drawer"
         voice="figure"
+        icon="cash-multiple"
         value={declared}
         onChangeText={setDeclared}
         placeholder="0.00"
@@ -200,6 +205,7 @@ export default function Closeout() {
             </Group>
           </Statement>
           <Rift h={16} />
+          <Card>
           {/* Signed, and said in words as well as digits: over and short are different
               problems and a supervisor reading only a number would not know which. */}
           <Figure
@@ -210,6 +216,7 @@ export default function Closeout() {
             tone={variance === 0 ? "confirmed" : "refusal"}
             absent="The variance could not be read. Tell the office before handing the tablet over."
           />
+          </Card>
         </>
       ) : null}
 

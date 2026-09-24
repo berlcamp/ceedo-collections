@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { Fragment, useCallback, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { View } from "react-native";
 import {
@@ -17,6 +17,7 @@ import {
   Action,
   Amount,
   Body,
+  Card,
   Field,
   Figure,
   Label,
@@ -24,8 +25,8 @@ import {
   Punch,
   RackHead,
   Register,
+  List,
   Rift,
-  Rule,
   Screen,
   Slot,
   Statement,
@@ -191,9 +192,10 @@ export default function Lease() {
   const periodRow = (group: (typeof groups)[number]) => {
     const on = ranks.includes(group.groupRank);
     return (
-      <View key={group.groupRank}>
         <Slot
+          key={group.groupRank}
           onPress={() => tapRow(group.groupRank)}
+          selectable
           selected={on}
           suppressed={ranks.length > 0 && !on}
           // Two lines by construction rather than by wrapping: one line held
@@ -207,8 +209,6 @@ export default function Lease() {
           }
           right={format(group.outstanding)}
         />
-        <Rule />
-      </View>
     );
   };
 
@@ -234,12 +234,13 @@ export default function Lease() {
             visible, at the largest type in the app, immediately above the control that
             commits it.
           */}
-          <Figure label="Receipt total" value={format(gross)} />
+          <Figure label="Receipt total" value={format(gross)} inline />
           {ranks.length > 0 && change > 0 ? (
             <Amount label="Change" value={format(change)} tone="confirmed" />
           ) : null}
           <Punch
             label="Proceed to payment"
+            icon="arrow-right-circle-outline"
             blocked={blocked}
           onPress={() => {
             if (feeTypeId === null) return;
@@ -270,7 +271,9 @@ export default function Lease() {
         </>
       }
     >
-      <Amount label="Balance" value={format(balance)} />
+      <Card>
+        <Amount label="Balance" value={format(balance)} />
+      </Card>
 
       {fresh && fresh.state !== "fresh" ? (
         <>
@@ -280,6 +283,7 @@ export default function Lease() {
             action={
               <Action
                 label="Sync now"
+                icon="sync"
                 busy={busy}
                 busyLabel="Syncing"
                 onPress={async () => {
@@ -332,10 +336,9 @@ export default function Lease() {
       <View style={{ height: 8 }} />
 
       {groups.length === 0 ? (
-        <Note>Nothing outstanding.</Note>
+        <Note icon="check-all">Nothing outstanding.</Note>
       ) : (
-        <>
-          <Rule />
+        <List>
           {blocks.map((block) => {
             // A month holding one period (any monthly lease) is just that period's row: a
             // header over a single row would only add a tap.
@@ -344,7 +347,7 @@ export default function Lease() {
             const inBlock = block.groups.filter((g) => ranks.includes(g.groupRank)).length;
             const open = isOpen(block.month);
             return (
-              <View key={block.month}>
+              <Fragment key={block.month}>
                 {/*
                   Parent §9.3: grouped by month, collapsible. Collapsing hides rows, never
                   the selection: the header carries the spine and a count whenever the
@@ -353,6 +356,7 @@ export default function Lease() {
                 */}
                 <Slot
                   onPress={() => toggleMonth(block.month)}
+                  icon={open ? "calendar-minus" : "calendar-plus"}
                   selected={inBlock > 0}
                   suppressed={ranks.length > 0 && inBlock === 0}
                   left={
@@ -367,12 +371,11 @@ export default function Lease() {
                   }
                   right={format(block.outstanding)}
                 />
-                <Rule />
                 {open ? block.groups.map((group) => periodRow(group)) : null}
-              </View>
+              </Fragment>
             );
           })}
-        </>
+        </List>
       )}
 
       <Rift h={28} />
@@ -380,6 +383,7 @@ export default function Lease() {
       <Field
         label="Or enter what the tenant is handing over"
         voice="figure"
+        icon="cash"
         keyboardType="decimal-pad"
         placeholder="0.00"
         value={tendered}

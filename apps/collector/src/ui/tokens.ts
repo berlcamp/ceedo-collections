@@ -1,136 +1,129 @@
-import { Platform } from "react-native";
+import type { ComponentProps } from "react";
+import type MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 
 /**
- * THE CONDUCTOR'S RACK.
+ * CEEDO COLLECTOR — "CIVIC LEDGER".
  *
- * The world is the bus and jeepney conductor's ticket rack: a mobile collector working a
- * route with pre-numbered accountable paper, punching a serial to spend it, reconciling the
- * rack against cash at the end. It is the closest working analogue this product has, and it
- * is a LAYOUT LAW, not a picture — ranked slots, one live slot, spent ones you can see.
- * No wood grain, no drawn brass, no skeuomorphic perforation.
+ * A clean, professional light theme: slate ground, white cards, a navy masthead for the
+ * figures that matter, one sky-blue action colour and outline icons from a single family.
+ * Derived from the ui-ux-pro-max design system for a government revenue tool ("Minimalism &
+ * Swiss Style", navy + blue, Atkinson Hyperlegible).
  *
- * The full direction contract lives in `.impeccable/surfaces/src-app.md`. Read it before
- * changing anything here.
+ * THE PHYSICAL CONTEXT STILL GOVERNS. An Android tablet held one-handed, in daylight, in a
+ * Philippine public market, by someone with a queue waiting and a receipt booklet in the
+ * other hand. Contrast and figure size are not taste here: a collector reads a number off
+ * this screen and writes it onto a paper Official Receipt by hand.
  *
- * EVERY VALUE BELOW WAS CHOSEN FOR A TABLET HELD ONE-HANDED, IN DAYLIGHT, IN A PHILIPPINE
- * PUBLIC MARKET, BY SOMEONE WITH A QUEUE WAITING AND A RECEIPT BOOKLET IN THE OTHER HAND.
- * Contrast and figure size are not taste here; a collector reads a number off this screen
- * and writes it onto a paper Official Receipt by hand.
- */
-
-/**
- * Ticket stock, rack board, punch ink, one accent, three reserved signals.
+ * Every text pairing below was computed against its own ground, not assumed (WCAG ratio):
+ *   ink on card        17.9:1     muted on card      7.6:1     suppressed on card  4.8:1
+ *   muted on ground     7.0:1     onPrimary/primary  5.9:1     refusal on card     6.5:1
+ *   confirmed on card   5.0:1     warning on card    5.0:1     onHero on hero     17.9:1
  *
- * Deliberately NOT cream. The ground is a cool matte stock, because a warm paper ground is
- * where this kind of work drifts by default and because a cool ground holds its contrast
- * better under the yellow cast of direct tropical sun.
- *
- * Every text pairing below was computed against its own ground, not assumed:
- *   ink on stock        15.0:1     muted on stock       7.1:1
- *   suppressed on stock  5.0:1     refusal on stock     5.9:1
- *   confirmed on stock   5.8:1     stock on rack board 10.3:1
- *
- * `warning` is 3.4:1 on stock and is therefore A RULE AND A TAG, NEVER BODY TEXT. Warning
- * copy is set in `ink` on `warningWash`. This is the one colour in the set that cannot
- * carry a sentence, and forgetting that is how an amber message becomes unreadable at noon.
+ * `suppressed` is for text on CARDS only (4.3:1 on the ground). Rows live on cards.
  */
 export const color = {
-  /** Ticket stock. The ground of every screen. */
-  stock: "#F1F3F1",
-  /** A slightly recessed stock, for insets and the unissued slot. */
-  stockSunk: "#E4E8E5",
-  /** The rack board: worn transit teal. Masthead strip and the action shelf. */
-  rack: "#0E4A44",
-  /** A lifted rack tone, for a pressed shelf. */
-  rackLift: "#14625A",
-  /** Punch ink. Body text and figures. */
-  ink: "#16181A",
-  /** Secondary text. Tinted from the rack's hue rather than gray (craft floor). */
-  muted: "#4A5450",
-  /** Suppressed text: an unselected slot once a run is chosen. Still 5.0:1, never a wash. */
-  suppressed: "#616B66",
-  /** Hairline rule between slots. */
-  rule: "#CDD4D0",
+  /** The screen ground. */
+  ground: "#F1F5F9",
+  /** Cards, list groups, the app bar, the action shelf. */
+  card: "#FFFFFF",
+  /** A recessed fill: a disabled button, a pressed row, an icon tile. */
+  sunk: "#E8EDF3",
+  /** Hairlines and card borders. */
+  rule: "#E2E8F0",
+  /** Field borders, which must read as a boundary (3:1 against the card). */
+  ruleStrong: "#94A3B8",
 
-  /** THE ONE ACCENT. Live and selected, and nothing else. */
-  ochre: "#C2761B",
-  /** The wash behind a selected slot. Ink stays fully legible on it. */
-  ochreWash: "#F7E9D4",
+  /** Body text and figures. */
+  ink: "#0F172A",
+  /** Secondary text. */
+  muted: "#475569",
+  /** A row dropped back once a selection exists elsewhere. Still 4.8:1, never a wash. */
+  suppressed: "#64748B",
 
-  /**
-   * RESERVED SIGNALS. Each is spent on exactly one meaning and never decorates.
-   * A refusal red that also rules a heading is a red nobody reads.
-   */
-  refusal: "#B3261E",
-  refusalWash: "#FBE9E7",
-  confirmed: "#1B6B45",
-  confirmedWash: "#E6F2EB",
-  /** Rule and tag only — never text. See the note above. */
-  warning: "#B4780A",
-  warningWash: "#FBF0D8",
+  /** THE ACTION COLOUR: primary buttons, focus, selection. */
+  primary: "#0369A1",
+  primaryPressed: "#075985",
+  /** The tint behind a selected row and a tonal button. */
+  primaryWash: "#E0F2FE",
+  onPrimary: "#FFFFFF",
 
-  /** On the rack board. */
-  onRack: "#F1F3F1",
-  onRackMuted: "#A8C2BD",
+  /** The navy hero: the shift summary card. */
+  hero: "#0F172A",
+  onHero: "#FFFFFF",
+  onHeroMuted: "#CBD5E1",
+
+  /** RESERVED SIGNALS. Each is spent on exactly one meaning and never decorates. */
+  refusal: "#B91C1C",
+  refusalWash: "#FEF2F2",
+  refusalRule: "#FECACA",
+  confirmed: "#15803D",
+  confirmedWash: "#F0FDF4",
+  confirmedRule: "#BBF7D0",
+  warning: "#B45309",
+  warningWash: "#FFFBEB",
+  warningRule: "#FDE68A",
 } as const;
 
 /**
- * FOUR SIZES. The incumbent screens used ten ad-hoc sizes between 13 and 34, picked per
- * file; the relationship between them was invisible because there wasn't one.
- *
- * `figure` is the fare panel — the number that gets copied onto the paper — and it is the
- * largest type in the app on every screen that has one.
+ * Five sizes. `figure` is the number that gets copied onto the paper — the largest type in
+ * the app on every screen that has one.
  */
 export const size = {
   figure: 40,
-  title: 26,
+  title: 22,
   body: 17,
+  small: 15,
   label: 13,
 } as const;
 
 /**
- * Native Android faces, deliberately.
- *
- * `sans-serif-condensed` IS Roboto Condensed on Android and ships with the OS, so the
- * condensed label voice costs no bundle and — the reason that actually matters — cannot
- * fail to load at 5am in a market where a webfont fetch has no network to run on. Material
- * 3 names Roboto as the system face and asks brands to express through the type scale,
- * which is what the caps tracking, the four sizes and the weight steps below do.
- *
- * Roboto's digits are monospaced by default, so every peso figure aligns on its decimal
- * column for free — no `fontVariant: ['tabular-nums']`, which React Native does not apply
- * on Android anyway.
+ * Atkinson Hyperlegible, from the Braille Institute: built so that 0/O, 1/l/I and 5/S
+ * cannot be confused — which is the whole job of a screen whose figures are hand-copied.
+ * Bundled with the app (never fetched), so it cannot fail to load in a market with no
+ * signal. On Android each weight is its own family, so `fontWeight` is never set on these.
  */
 export const face = {
-  /** Tracked caps labels, stall numbers, the fare panel. */
-  condensed: Platform.select({ android: "sans-serif-condensed", default: "System" }),
-  /** Body copy and messages. */
-  text: Platform.select({ android: "sans-serif", default: "System" }),
+  text: "AtkinsonHyperlegible_400Regular",
+  bold: "AtkinsonHyperlegible_700Bold",
   /** Credentials and the PIN — character-by-character transcription, not prose. */
-  mono: Platform.select({ android: "monospace", default: "Menlo" }),
+  mono: "monospace",
 } as const;
 
-/** One spacing rhythm. Tight inside a group, generous between groups. */
+/** One 4/8 spacing rhythm. */
 export const space = {
   hair: 2,
   tight: 6,
   snug: 10,
   step: 16,
   gap: 24,
-  rift: 36,
+  rift: 32,
 } as const;
 
 /**
- * 48dp is the Material minimum; the shelf takes 56 because it is the one control a
- * collector hits one-handed, at arm's length, without looking away from a queue.
+ * 48dp is the Android minimum; the primary button takes 56 because it is the one control
+ * a collector hits one-handed, at arm's length, without looking away from a queue.
  */
 export const touch = {
   min: 48,
   shelf: 56,
 } as const;
 
-/** The rack's spine: the continuous ochre edge that marks a selected run. */
-export const spine = 5;
+export const radius = {
+  field: 12,
+  button: 14,
+  card: 16,
+  pill: 999,
+} as const;
 
-/** Tracking for the caps label voice. */
-export const tracking = 1.1;
+/** Icon sizes as tokens, never ad hoc. */
+export const icon = {
+  sm: 18,
+  md: 22,
+  lg: 28,
+} as const;
+
+/** One icon family, outline style: Material Community Icons. */
+export type IconName = ComponentProps<typeof MaterialCommunityIcons>["name"];
+
+/** Tracking for the small-caps section label. */
+export const tracking = 0.8;

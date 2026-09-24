@@ -13,6 +13,7 @@ import { commitReceipt, orEntryContext } from "@ceedo/sync-engine";
 import {
   Action,
   Amount,
+  Card,
   Field,
   Figure,
   Group,
@@ -189,6 +190,7 @@ export default function Receipt() {
       shelf={
         <Punch
           label="Record this receipt"
+          icon="content-save-check-outline"
           blocked={blocked}
           busy={busy}
           busyLabel="Recording"
@@ -247,18 +249,21 @@ export default function Receipt() {
     >
       {/* The amount leads: it is what the collector has just counted and is about to
           write onto the paper, and this screen exists only because that paper is real. */}
-      <Group gap={10}>
-        <Figure label="Amount received" value={format(pending.grossAmount)} />
-        {pending.kind === "lease" && pending.change > 0 ? (
-          <Amount label="Change" value={format(pending.change)} tone="confirmed" />
-        ) : null}
-      </Group>
+      <Card>
+        <Group gap={10}>
+          <Figure label="Amount received" value={format(pending.grossAmount)} />
+          {pending.kind === "lease" && pending.change > 0 ? (
+            <Amount label="Change" value={format(pending.change)} tone="confirmed" />
+          ) : null}
+        </Group>
+      </Card>
 
       <Rift />
 
       <Field
         label="Write the receipt, then enter its number"
         voice="figure"
+        icon="receipt-text-outline"
         keyboardType="number-pad"
         placeholder="OR number"
         value={orText}
@@ -271,7 +276,7 @@ export default function Receipt() {
         <Statement
           tone="refusal"
           detail={contextDetail}
-          action={<Action label="Try again" onPress={loadContext} />}
+          action={<Action label="Try again" icon="refresh" onPress={loadContext} />}
         >
           {contextError}
         </Statement>
@@ -300,6 +305,7 @@ export default function Receipt() {
             action={
               <Action
                 label="Yes, that is the number written"
+                icon="check"
                 onPress={() => setAcceptedSkip(true)}
               />
             }
