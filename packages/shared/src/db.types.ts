@@ -1651,6 +1651,7 @@ export type Database = {
         Args: { p_reason: string; p_remittance_id: string }
         Returns: undefined
       }
+      claim_my_invite: { Args: never; Returns: boolean }
       close_shift: {
         Args: {
           p_declared_total: number
