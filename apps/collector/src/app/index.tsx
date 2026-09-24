@@ -4,10 +4,10 @@ import { Body, Card, Group, Label, List, Punch, RackHead, Rift, Screen, Slot, co
 /**
  * The app's entry point.
  *
- * It lists the route a tablet takes from the office to a market round, plus the two
- * probes. The probes stay -- they are the only things that will catch an expo-sqlite or
- * Hermes behaviour change on a future SDK upgrade -- but they are filed below the work
- * rather than above it, because a collector opening this app is not looking for them.
+ * It lists the route a tablet takes from the office to a market round, plus -- in
+ * development builds only -- the two probes. The probes stay because they are the only
+ * things that will catch an expo-sqlite or Hermes behaviour change on a future SDK
+ * upgrade, but a production tablet never shows them.
  */
 export default function Index() {
   const router = useRouter();
@@ -52,29 +52,38 @@ export default function Index() {
         />
       </List>
 
-      <Rift />
+      {/*
+        DEVELOPMENT BUILDS ONLY. The engine probe writes 1,500 fake charges into the real
+        local tables and moves the sync cursor, so on a production tablet one curious tap
+        would leave the device's mirror wrong. `__DEV__` is false in every EAS build.
+      */}
+      {__DEV__ ? (
+        <>
+          <Rift />
 
-      <Group gap={4}>
-        <Label>Device probes</Label>
-        <Body tone={color.muted}>
-          Measurements that can only be taken on the real tablet. Not part of a round.
-        </Body>
-      </Group>
-      <Rift h={12} />
-      <List>
-        <Slot
-          icon="speedometer"
-          nav
-          onPress={() => router.push("/bcrypt-probe")}
-          left="bcrypt cost 12, under Hermes"
-        />
-        <Slot
-          icon="database-sync-outline"
-          nav
-          onPress={() => router.push("/engine-probe")}
-          left="The sync engine, on expo-sqlite"
-        />
-      </List>
+          <Group gap={4}>
+            <Label>Device probes</Label>
+            <Body tone={color.muted}>
+              Measurements that can only be taken on the real tablet. Not part of a round.
+            </Body>
+          </Group>
+          <Rift h={12} />
+          <List>
+            <Slot
+              icon="speedometer"
+              nav
+              onPress={() => router.push("/bcrypt-probe")}
+              left="bcrypt cost 12, under Hermes"
+            />
+            <Slot
+              icon="database-sync-outline"
+              nav
+              onPress={() => router.push("/engine-probe")}
+              left="The sync engine, on expo-sqlite"
+            />
+          </List>
+        </>
+      ) : null}
     </Screen>
   );
 }

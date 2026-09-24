@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Redirect } from "expo-router";
 import { randomUUID } from "expo-crypto";
 import { Button, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";
@@ -20,7 +21,16 @@ import { applyPull, readSyncState, enqueue, pushable } from "@ceedo/sync-engine"
  * after this task -- it costs one route and it is the only thing that will catch an
  * expo-sqlite behaviour change on an SDK upgrade.
  */
-export default function EngineProbe() {
+/**
+ * Development builds only, and enforced here as well as by hiding the link: a deep link to
+ * this route on a production tablet must not reach the probe either.
+ */
+export default function EngineProbeRoute() {
+  if (!__DEV__) return <Redirect href="/" />;
+  return <EngineProbe />;
+}
+
+function EngineProbe() {
   const db = openDeviceDb();
   const { success, error } = useMigrations(drizzle(db), migrations);
   const [log, setLog] = useState<string[]>([]);

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Redirect } from "expo-router";
 import { Button, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import bcrypt from "bcryptjs";
 // Relative, not the `@/modules/...` alias the Expo docs show: this project already maps
@@ -46,7 +47,16 @@ function engineName(): string {
     : `NOT Hermes (${Platform.OS})`;
 }
 
-export default function BcryptProbe() {
+/**
+ * Development builds only, and enforced here as well as by hiding the link: a deep link to
+ * this route on a production tablet must not reach the probe either.
+ */
+export default function BcryptProbeRoute() {
+  if (!__DEV__) return <Redirect href="/" />;
+  return <BcryptProbe />;
+}
+
+function BcryptProbe() {
   const [lines, setLines] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const engine = engineName();
