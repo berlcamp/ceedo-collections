@@ -57,7 +57,9 @@ export default function EngineProbe() {
         await applyPull(driver, {
           cursor: 9999,
           epoch: 0,
-          charges: [{ id: "bad", no_such_column: 1 }],
+          // A null primary key, not an unknown column: applyPull now drops unknown columns
+          // on purpose, so they can no longer make an apply fail.
+          charges: [{ id: null, lease_id: "bad", amount: "1.00", row_version: 1 }],
         });
         out.push("ATOMICITY FAILED: a bad apply did not throw");
       } catch {

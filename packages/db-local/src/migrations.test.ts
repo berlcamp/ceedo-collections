@@ -22,6 +22,27 @@ describe("device migrations", () => {
     for (const f of files) run(db, f);
   });
 
+  it("leave a fresh install with the sync_state row its first sync reads", () => {
+    // Found on the first production install: only a dev probe screen ever created this row,
+    // so enrolment failed with "sync_state row 1 is missing".
+    const db = new Database(":memory:");
+    for (const f of files) run(db, f);
+    expect(db.prepare("select id, cursor, epoch from sync_state").all()).toEqual([
+      { id: 1, cursor: 0, epoch: 0 },
+    ]);
+  });
+
+  it("does not disturb an existing tablet's sync position", () => {
+    const db = new Database(":memory:");
+    for (const f of files.filter((f) => f < "0003")) run(db, f);
+    db.exec("insert or replace into sync_state (id, cursor, epoch) values (1, 812, 2)");
+    run(db, files.find((f) => f.startsWith("0003"))!);
+    expect(db.prepare("select cursor, epoch from sync_state where id = 1").get()).toEqual({
+      cursor: 812,
+      epoch: 2,
+    });
+  });
+
   it("0002 adds fee_types.facility_type and forces one full re-pull", () => {
     // A tablet that pulled fee types before it had this column had the value dropped by
     // applyPull, and its cursor is already past those rows. Resetting it re-fetches them.
