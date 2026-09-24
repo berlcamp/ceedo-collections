@@ -1671,6 +1671,10 @@ export type Database = {
         }
         Returns: string
       }
+      create_collector: {
+        Args: { p_employee_no: string; p_full_name: string }
+        Returns: string
+      }
       cutover_date: { Args: never; Returns: string }
       escalate_exception: {
         Args: { p_exception_id: string; p_reason: string }

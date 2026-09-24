@@ -1,5 +1,8 @@
 import { isAdmin } from "@ceedo/shared";
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { buttonClass } from "@/components/ui/button";
+import { AddCollectorDialog } from "@/components/staff/add-collector-dialog";
 import { ResourceFormDialog, type ResourceFormSpec } from "@/components/admin/resource-form-dialog";
 import { ResourceTable } from "@/components/admin/resource-table";
 import { DeviceCredentialPanel } from "@/components/devices/device-credential-panel";
@@ -99,7 +102,19 @@ export default async function ResourcePage({
         // into being through migration 0009's claim trigger on a real Google sign-in, so
         // offering "New staff member" would be offering something the engine cannot do.
         actions={
-          canWrite && config.writeMode !== "edit" ? <ResourceFormDialog spec={spec} /> : null
+          canWrite && config.writeMode !== "edit" ? (
+            <ResourceFormDialog spec={spec} />
+          ) : config.key === "users" && isAdmin(staff.role) ? (
+            // Staff has no generic "New" form: a web user only comes into being through a
+            // Google sign-in. Collectors are added directly (they use tablets only, with a
+            // PIN, migration 0048); web staff are invited.
+            <>
+              <Link href="/staff-invites" className={buttonClass("secondary", "md")}>
+                Invite web staff
+              </Link>
+              <AddCollectorDialog />
+            </>
+          ) : null
         }
       />
 

@@ -94,3 +94,12 @@ describe("fee types' Collected at", () => {
     expect(schema.safeParse({ ...cashOnly, facility_type: "any" }).success).toBe(false);
   });
 });
+
+describe("a refused role change on Staff", () => {
+  it("shows the database's own sentence, not a generic foreign-key message", async () => {
+    const { toSaveResult } = await import("./save-result");
+    const message = "A supervisor needs a Google sign-in. Invite them from Staff invitations instead.";
+    const result = toSaveResult({ success: true, data: {} } as never, { code: "23514", message });
+    expect(result).toMatchObject({ ok: false, formError: message });
+  });
+});
