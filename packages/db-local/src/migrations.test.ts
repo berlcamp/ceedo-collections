@@ -59,4 +59,30 @@ describe("device migrations", () => {
       epoch: 3,
     });
   });
+
+  it("0004 removes the engine probe's fake charges and rewinds the cursor", () => {
+    // The probe was reachable on production tablets and wrote into the real mirror.
+    const db = new Database(":memory:");
+    for (const f of files.filter((f) => f < "0004")) run(db, f);
+    db.exec("insert or replace into sync_state (id, cursor, epoch) values (1, 1500, 2)");
+    const charge = db.prepare(
+      "insert into charges (id, lease_id, amount, row_version) values (?, ?, '100.00', 1)",
+    );
+    charge.run("probe-0", "probe-lease");
+    charge.run("probe-1499", "probe-lease");
+    // A real row whose id happens to start the same way is not the probe's.
+    charge.run("probe-real", "lease-7");
+    charge.run("c-1", "lease-7");
+
+    run(db, files.find((f) => f.startsWith("0004"))!);
+
+    expect(db.prepare("select id from charges order by id").all()).toEqual([
+      { id: "c-1" },
+      { id: "probe-real" },
+    ]);
+    expect(db.prepare("select cursor, epoch from sync_state where id = 1").get()).toEqual({
+      cursor: 0,
+      epoch: 2,
+    });
+  });
 });
