@@ -52,7 +52,7 @@ describe("the device engine, end to end", () => {
     for (const entry of journal.entries) {
       sqlite.exec(readFileSync(`${migrations}${entry.tag}.sql`, "utf8"));
     }
-    sqlite.exec("insert into sync_state (id, cursor, epoch) values (1, 0, 0)");
+    // The device migrations create the sync_state row themselves since 7e4de81.
     driver = betterSqliteDriver(sqlite);
   }, 120_000);
 

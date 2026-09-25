@@ -456,4 +456,46 @@ describe("sync_pull", () => {
       await conn.end();
     }
   });
+
+  it("sends a collector, and their booklets, when their collection area is added after the device last pulled", async () => {
+    // Found in production 2026-09-25: collectors added on the web never reached a tablet
+    // that had already synced. The collector's app_users row predated the device's cursor
+    // and adding a collection area does not touch it, so `u.row_version > p_cursor` hid
+    // them for good. The assignment's own row_version has to open the gate too.
+    const fx = await createSyncFixture(db);
+    const { userId: lateId } = await createAppUser({
+      email: uniqueEmail("late-collector@example.com"),
+      role: "collector",
+    });
+    const { rows: formTypeRows } = await db.query(
+      `select id from ceedo_collections.form_types where code = 'OR51'`,
+    );
+    const { rows: bookletRows } = await db.query(
+      `insert into ceedo_collections.booklets
+         (form_type_id, serial_prefix, start_no, end_no, received_date)
+       values ($1, $2, 1, 50, '2026-01-01') returning id`,
+      [formTypeRows[0].id, uniqueCode("LATE-BK")],
+    );
+    const bookletId = bookletRows[0].id as string;
+    await db.query(
+      `insert into ceedo_collections.booklet_assignments
+         (booklet_id, collector_id, assigned_at, returned_at)
+       values ($1, $2, '2026-01-01', null)`,
+      [bookletId, lateId],
+    );
+
+    const first = await pull(fx.deviceId);
+    expect(first.collectors.map((c) => c.id)).not.toContain(lateId);
+
+    await db.query(
+      `insert into ceedo_collections.collector_assignments (collector_id, facility_id, section_id, active)
+       values ($1, $2, null, true)`,
+      [lateId, fx.facilityId],
+    );
+
+    const delta = await pull(fx.deviceId, Number(first.cursor));
+    expect(delta.collectors.map((c) => c.id)).toContain(lateId);
+    expect(delta.booklets.map((b) => b.id)).toContain(bookletId);
+    expect(delta.booklet_assignments.map((b) => b.booklet_id)).toContain(bookletId);
+  });
 });
