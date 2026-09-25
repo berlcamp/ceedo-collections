@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   BookMarked,
+  BookUser,
   Building2,
   CircleDollarSign,
   Clock,
@@ -41,6 +42,7 @@ export const NAV_ICONS: Record<string, LucideIcon> = {
   rates: CircleDollarSign,
   "form-types": ScrollText,
   booklets: BookMarked,
+  "booklet-assignments": BookUser,
   devices: Tablet,
   "device-assignments": MapPin,
   "collector-assignments": MapPin,

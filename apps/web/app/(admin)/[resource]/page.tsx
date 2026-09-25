@@ -53,13 +53,17 @@ export default async function ResourcePage({
     // runtime, so postgrest-js cannot statically parse the rename and its
     // generic-string fallback type does not structurally overlap a plain
     // record — the query itself is still correct, only its static type is not.
-    const optionSelect: string = `id, label:${source.optionLabel}`;
+    const optionSelect: string = source.optionText
+      ? `id, ${source.optionText.select}`
+      : `id, label:${source.optionLabel}`;
     const { data } = await supabase.from(source.table).select(optionSelect);
     dynamicOptions[field.optionsFrom] = (data ?? []).map((row) => {
       const record = row as unknown as Record<string, unknown>;
       return {
         value: String(record.id),
-        label: String(record.label ?? record.id),
+        label: source.optionText
+          ? source.optionText.format(record)
+          : String(record.label ?? record.id),
       };
     });
   }

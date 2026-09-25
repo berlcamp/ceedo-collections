@@ -41,6 +41,11 @@ export interface ResourceConfig<S extends ZodObject<ZodRawShape> = ZodObject<Zod
   /** Column used as the display label when this resource is another field's optionsFrom source. */
   optionLabel: string;
   /**
+   * When one column cannot tell the choices apart: the columns to fetch and how to join
+   * them into a label. Booklets need it, since many share a prefix and differ by range.
+   */
+  optionText?: { select: string; format: (row: Record<string, unknown>) => string };
+  /**
    * What to say when this screen has no rows.
    *
    * Required, not optional, and deliberately per-resource: "Nothing here yet." is true of

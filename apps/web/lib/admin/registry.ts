@@ -408,6 +408,69 @@ const configs: ResourceConfig[] = [
     select: "id, serial_prefix, start_no, end_no, received_date, status, form_types(code)",
     orderBy: "start_no",
     optionLabel: "serial_prefix",
+    optionText: {
+      select: "serial_prefix, start_no, end_no",
+      format: (row) => `${row.serial_prefix} ${row.start_no}–${row.end_no}`,
+    },
+    readRoles: BACK_OFFICE,
+    writeRoles: SUPERVISOR_UP,
+  },
+  {
+    // Hands a booklet to a collector. A tablet refuses any OR number from a booklet its
+    // collector does not hold, and post_collection() checks the same on the server against
+    // assigned_at..returned_at, so an issued date in the future refuses today's receipts.
+    // Supervisors may write this (migration 0008). The database refuses a non-collector
+    // (booklet_assignments_collector_only) and a booklet already in someone's hands on
+    // those dates (booklet_one_holder); both messages are shown as-is.
+    key: "booklet-assignments",
+    table: "booklet_assignments",
+    title: "Booklet issuance",
+    singular: "booklet issuance",
+    empty:
+      "No booklets issued yet. Issue an OR booklet to a collector here; until then their tablet refuses every OR number, however the booklet is registered.",
+    schema: z.object({
+      booklet_id: uuid,
+      collector_id: uuid,
+      assigned_at: isoDate,
+      returned_at: isoDate.nullable(),
+    }),
+    fields: [
+      { name: "booklet_id", label: "Booklet", type: "select", optionsFrom: "booklets" },
+      {
+        name: "collector_id",
+        label: "Collector",
+        type: "select",
+        optionsFrom: "users",
+        help: "Collectors only. Another role is refused by the database.",
+      },
+      {
+        name: "assigned_at",
+        label: "Issued",
+        type: "date",
+        help: "Receipts dated before this are refused, so use today or earlier.",
+      },
+      {
+        name: "returned_at",
+        label: "Returned",
+        type: "date",
+        optional: true,
+        help: "Leave blank while the collector holds it. Set it when the booklet comes back.",
+      },
+    ],
+    // Aliased embeds: formatCell shows one column per join, so the range is fetched twice
+    // under different names to give From and To their own columns.
+    columns: [
+      { key: "booklets", label: "Booklet" },
+      { key: "first", label: "From" },
+      { key: "last", label: "To" },
+      { key: "app_users", label: "Collector" },
+      { key: "assigned_at", label: "Issued" },
+      { key: "returned_at", label: "Returned" },
+    ],
+    select:
+      "id, assigned_at, returned_at, booklets(serial_prefix), first:booklets(start_no), last:booklets(end_no), app_users(full_name)",
+    orderBy: "created_at",
+    optionLabel: "id",
     readRoles: BACK_OFFICE,
     writeRoles: SUPERVISOR_UP,
   },
