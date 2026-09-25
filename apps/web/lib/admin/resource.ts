@@ -15,6 +15,11 @@ export interface FieldConfig {
   /** Names a resource whose rows become the choices, e.g. "facilities". */
   optionsFrom?: string;
   optional?: boolean;
+  /**
+   * An optional select's choice for "no value", e.g. "All sections". Without it an
+   * optional select cannot be cleared once set: Radix refuses an item whose value is "".
+   */
+  emptyLabel?: string;
   help?: string;
 }
 
@@ -23,6 +28,8 @@ type TableName = keyof Database["ceedo_collections"]["Tables"];
 export interface ColumnConfig {
   key: string;
   label: string;
+  /** Shown for a null value when null has a meaning, e.g. a section of "All sections". */
+  emptyText?: string;
 }
 
 export interface ResourceConfig<S extends ZodObject<ZodRawShape> = ZodObject<ZodRawShape>> {

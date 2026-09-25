@@ -528,7 +528,8 @@ const configs: ResourceConfig[] = [
         type: "select",
         optionsFrom: "sections",
         optional: true,
-        help: "Leave blank to assign the whole facility. A terminal or slaughterhouse has no sections.",
+        emptyLabel: "All sections",
+        help: "All sections covers the whole facility. A terminal or slaughterhouse has no sections.",
       },
       {
         name: "active",
@@ -540,7 +541,7 @@ const configs: ResourceConfig[] = [
     columns: [
       { key: "devices", label: "Tablet" },
       { key: "facilities", label: "Facility" },
-      { key: "sections", label: "Section" },
+      { key: "sections", label: "Section", emptyText: "All sections" },
       { key: "active", label: "Active" },
     ],
     // sections is disambiguated: device_assignments carries two foreign keys into it
@@ -588,14 +589,15 @@ const configs: ResourceConfig[] = [
         type: "select",
         optionsFrom: "sections",
         optional: true,
-        help: "Leave blank to assign the whole facility.",
+        emptyLabel: "All sections",
+        help: "All sections covers the whole facility.",
       },
       { name: "active", label: "Active", type: "boolean" },
     ],
     columns: [
       { key: "app_users", label: "Collector" },
       { key: "facilities", label: "Facility" },
-      { key: "sections", label: "Section" },
+      { key: "sections", label: "Section", emptyText: "All sections" },
       { key: "active", label: "Active" },
     ],
     // Same disambiguation as device-assignments above: collector_assignments also carries

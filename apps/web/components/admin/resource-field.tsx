@@ -6,6 +6,10 @@ import { FieldShell, TextInput } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import type { FieldConfig, SelectOption } from "@/lib/admin/resource";
 
+// Stands in for "" (no value) inside the Radix select, which refuses an empty item value.
+// Never posted: the hidden input below sends "" in its place, which coerce() turns to null.
+const EMPTY = "__empty__";
+
 /**
  * One field of a registry-driven form.
  *
@@ -41,7 +45,9 @@ export function ResourceField({
         ? value
           ? "Yes"
           : "No"
-        : ((options ?? config.options)?.find((option) => option.value === raw)?.label ?? raw);
+        : raw === "" && config.emptyLabel
+          ? config.emptyLabel
+          : ((options ?? config.options)?.find((option) => option.value === raw)?.label ?? raw);
     return (
       <FieldShell
         id={id}
@@ -61,6 +67,27 @@ export function ResourceField({
         >
           {shown === "" ? "—" : shown}
         </p>
+      </FieldShell>
+    );
+  }
+
+  if (config.type === "select" && config.emptyLabel) {
+    return (
+      <FieldShell
+        id={id}
+        label={config.label}
+        optional={config.optional}
+        help={config.help}
+        error={error}
+      >
+        <input type="hidden" name={config.name} value={selectValue} />
+        <Select
+          id={id}
+          value={selectValue === "" ? EMPTY : selectValue}
+          onValueChange={(next) => setSelectValue(next === EMPTY ? "" : next)}
+          options={[{ value: EMPTY, label: config.emptyLabel }, ...(options ?? config.options ?? [])]}
+          invalid={Boolean(error)}
+        />
       </FieldShell>
     );
   }

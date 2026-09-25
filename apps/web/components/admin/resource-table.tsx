@@ -36,6 +36,11 @@ function formatCell(value: unknown): string {
   return String(value);
 }
 
+function cellText(row: Row, column: ColumnConfig): string {
+  const text = formatCell(row[column.key]);
+  return text === "—" && column.emptyText ? column.emptyText : text;
+}
+
 /** A column earns a facet chip when its values are few, repeated, and short — a status,
  * a type, a period. A column of distinct names is a search, not a set of checkboxes. */
 function facetable(rows: Row[], key: string): boolean {
@@ -88,7 +93,8 @@ export function ResourceTable({
       label: column.label,
       render: (row) => {
         const text = formatCell(row[column.key]);
-        return text === "—" ? <span className="text-ink-3">—</span> : text;
+        if (text !== "—") return text;
+        return <span className="text-ink-3">{column.emptyText ?? "—"}</span>;
       },
       sortValue: (row) => {
         const value = row[column.key];
@@ -96,8 +102,8 @@ export function ResourceTable({
         const text = formatCell(value);
         return text === "—" ? null : text;
       },
-      searchValue: (row) => formatCell(row[column.key]),
-      ...(facetable(rows, column.key) ? { facet: (row: Row) => formatCell(row[column.key]) } : {}),
+      searchValue: (row) => cellText(row, column),
+      ...(facetable(rows, column.key) ? { facet: (row: Row) => cellText(row, column) } : {}),
     }));
 
     if (spec && editRows) {
