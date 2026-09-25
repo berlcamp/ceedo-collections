@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { Button, buttonClass, type ButtonVariant } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { useSubmit } from "@/components/ui/use-submit";
 import { FieldShell, TextArea, TextInput } from "@/components/ui/field";
 import {
   correctException,
@@ -53,7 +54,6 @@ function ExceptionDialog({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState<SaveResult | null>(null);
-  const [pending, setPending] = useState(false);
 
   // A dialog reopened after a failed save should not still be wearing that attempt's
   // errors. Cleared as the dialog closes, not in an effect watching the state that just
@@ -63,35 +63,34 @@ function ExceptionDialog({
     if (!next) setResult(null);
   }
 
-  async function onSubmit(formData: FormData) {
-    setPending(true);
+  const { pending, onSubmit } = useSubmit(async (formData) => {
     const outcome = await action(formData);
-    setPending(false);
     setResult(outcome);
     if (outcome.ok) {
       setOpen(false);
       router.refresh();
     }
-  }
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger className={buttonClass("ghost", "sm", triggerTone)}>{trigger}</DialogTrigger>
       <DialogContent
+        busy={pending}
         width="sm"
         {...(tone ? { tone } : {})}
         title={title}
         description={description}
         footer={
           <>
-            <DialogClose className={buttonClass("ghost", "md")}>Close</DialogClose>
-            <Button type="submit" form={formId} variant={submitVariant} disabled={pending}>
+            <DialogClose className={buttonClass("ghost", "md")} disabled={pending}>Close</DialogClose>
+            <Button type="submit" form={formId} variant={submitVariant} loading={pending}>
               {pending ? submitting : submit}
             </Button>
           </>
         }
       >
-        <form id={formId} action={onSubmit}>
+        <form id={formId} onSubmit={onSubmit}>
           {children}
           {result && !result.ok && result.formError ? (
             <p className="mt-2 rounded-lg border border-ribbon/40 bg-ribbon-soft px-3 py-2 text-xs leading-relaxed text-ribbon">

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ResourceField } from "@/components/admin/resource-field";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { useSubmit } from "@/components/ui/use-submit";
 import { saveResource } from "@/lib/admin/actions";
 import type { SaveResult } from "@/lib/admin/save-result";
 import type { FieldConfig, SelectOption } from "@/lib/admin/resource";
@@ -56,7 +57,6 @@ export function ResourceFormDialog({
   const setOpen = (next: boolean) =>
     controlled ? controlledOnOpenChange?.(next) : setOwnOpen(next);
   const [result, setResult] = useState<SaveResult | null>(null);
-  const [pending, setPending] = useState(false);
 
   const editing = target !== undefined;
 
@@ -68,17 +68,15 @@ export function ResourceFormDialog({
     if (!next) setResult(null);
   }
 
-  async function onSubmit(formData: FormData) {
-    setPending(true);
+  const { pending, onSubmit } = useSubmit(async (formData) => {
     const outcome = await saveResource(spec.resourceKey, formData, editing ? target.id : undefined);
-    setPending(false);
     setResult(outcome);
     if (outcome.ok) {
       setOpen(false);
       // revalidatePath ran server-side; this is what makes the open screen pick it up.
       router.refresh();
     }
-  }
+  });
 
   const fieldErrors = result && !result.ok ? result.fieldErrors : {};
   const title = editing ? `Edit ${spec.singular}` : `New ${spec.singular}`;
@@ -105,19 +103,20 @@ export function ResourceFormDialog({
       )}
 
       <DialogContent
+        busy={pending}
         title={title}
         // Only an edit needs a subtitle, and the row it is editing is the useful one.
         {...(editing ? { description: target.label } : {})}
         footer={
           <>
-            <DialogClose className={buttonClass("ghost", "md")}>Cancel</DialogClose>
-            <Button type="submit" form="resource-form" variant="primary" disabled={pending}>
+            <DialogClose className={buttonClass("ghost", "md")} disabled={pending}>Cancel</DialogClose>
+            <Button type="submit" form="resource-form" variant="primary" loading={pending}>
               {pending ? "Saving…" : `Save ${spec.singular}`}
             </Button>
           </>
         }
       >
-        <form id="resource-form" action={onSubmit}>
+        <form id="resource-form" onSubmit={onSubmit}>
           {spec.fields.map((field) => (
             <ResourceField
               key={field.name}

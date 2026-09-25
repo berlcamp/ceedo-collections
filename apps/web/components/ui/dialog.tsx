@@ -26,6 +26,7 @@ export function DialogContent({
   footer,
   width = "md",
   tone = "neutral",
+  busy = false,
 }: {
   title: string;
   /** Says what the action will do. Required: every dialog here disposes of something. */
@@ -35,6 +36,8 @@ export function DialogContent({
   width?: "sm" | "md" | "lg";
   /** `danger` marks a dialog that voids or writes off money already collected. */
   tone?: "neutral" | "danger";
+  /** A save is in flight: Escape, an outside click and the close button do nothing. */
+  busy?: boolean;
 }) {
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -48,6 +51,12 @@ export function DialogContent({
       />
       <DialogPrimitive.Content
         ref={contentRef}
+        onEscapeKeyDown={(event) => {
+          if (busy) event.preventDefault();
+        }}
+        onInteractOutside={(event) => {
+          if (busy) event.preventDefault();
+        }}
         onOpenAutoFocus={(event) => {
           // Radix focuses the first tabbable node, which here is the close button in the
           // docket's head. Send it to the first real field; fall back to Radix's own
@@ -97,7 +106,9 @@ export function DialogContent({
           </div>
           <DialogPrimitive.Close
             aria-label="Close"
+            disabled={busy}
             className={cn(
+              "disabled:pointer-events-none disabled:opacity-45",
               "on-chassis -mr-1 mt-px shrink-0 rounded-md p-1 transition-colors duration-150",
               tone === "danger"
                 ? "text-tape-raised/70 hover:bg-black/15 hover:text-tape-raised"

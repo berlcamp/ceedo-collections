@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
+import { useBusy } from "@/components/ui/use-submit";
 import { FieldShell } from "@/components/ui/field";
 import { Notice, Panel } from "@/components/ui/panel";
 import { Select } from "@/components/ui/select";
@@ -31,8 +32,8 @@ export interface DeviceOption {
  */
 export function DeviceCredentialPanel({ devices }: { devices: DeviceOption[] }) {
   const [deviceId, setDeviceId] = useState("");
-  const [issuing, setIssuing] = useState(false);
-  const [revoking, setRevoking] = useState(false);
+  const { busy: issuing, run: runIssue } = useBusy();
+  const { busy: revoking, run: runRevoke } = useBusy();
   const [issued, setIssued] = useState<IssueCredentialResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [qr, setQr] = useState<string | null>(null);
@@ -52,14 +53,16 @@ export function DeviceCredentialPanel({ devices }: { devices: DeviceOption[] }) 
     }).then(setQr, () => setQr(null));
   }, [issued]);
 
-  async function onIssue() {
-    if (!deviceId) return;
-    setIssuing(true);
+  function onIssue() {
+    if (!deviceId || revoking) return;
+    void runIssue(issue);
+  }
+
+  async function issue() {
     setError(null);
     const formData = new FormData();
     formData.set("deviceId", deviceId);
     const result = await issueCredential(formData);
-    setIssuing(false);
     if (!result.ok) {
       setError(result.formError ?? "Could not issue a credential.");
       setIssued(null);
@@ -68,14 +71,16 @@ export function DeviceCredentialPanel({ devices }: { devices: DeviceOption[] }) 
     setIssued(result);
   }
 
-  async function onRevoke() {
-    if (!deviceId) return;
-    setRevoking(true);
+  function onRevoke() {
+    if (!deviceId || issuing) return;
+    void runRevoke(revoke);
+  }
+
+  async function revoke() {
     setError(null);
     const formData = new FormData();
     formData.set("deviceId", deviceId);
     const result = await revokeCredential(formData);
-    setRevoking(false);
     if (!result.ok) {
       setError(result.formError ?? "Could not revoke the credential.");
       return;
@@ -114,14 +119,16 @@ export function DeviceCredentialPanel({ devices }: { devices: DeviceOption[] }) 
         <Button
           variant="primary"
           onClick={onIssue}
-          disabled={!deviceId || issuing || revoking}
+          loading={issuing}
+          disabled={!deviceId || revoking}
         >
           {issuing ? "Issuing…" : "Issue credential"}
         </Button>
         <Button
           variant="secondary"
           onClick={onRevoke}
-          disabled={!deviceId || issuing || revoking}
+          loading={revoking}
+          disabled={!deviceId || issuing}
           className="border-ribbon/45 text-ribbon hover:bg-ribbon-soft"
         >
           {revoking ? "Revoking…" : "Revoke credential"}

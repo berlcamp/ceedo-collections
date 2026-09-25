@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useBusy } from "@/components/ui/use-submit";
 import { FieldShell, TextInput } from "@/components/ui/field";
 import { Notice, Panel } from "@/components/ui/panel";
 import { Select } from "@/components/ui/select";
@@ -27,19 +28,21 @@ export interface CollectorOption {
 export function SetPinPanel({ collectors }: { collectors: CollectorOption[] }) {
   const [collectorId, setCollectorId] = useState("");
   const [pin, setPin] = useState("");
-  const [pending, setPending] = useState(false);
+  const { busy: pending, run } = useBusy();
   const [error, setError] = useState<string | null>(null);
   const [savedFor, setSavedFor] = useState<string | null>(null);
 
-  async function onSubmit() {
+  function onSubmit() {
     if (!collectorId || !/^\d{6}$/.test(pin)) return;
-    setPending(true);
+    void run(save);
+  }
+
+  async function save() {
     setError(null);
     const formData = new FormData();
     formData.set("collectorId", collectorId);
     formData.set("pin", pin);
     const result = await setCollectorPin(formData);
-    setPending(false);
     if (!result.ok) {
       setError(result.formError ?? "Could not set the PIN.");
       setSavedFor(null);
@@ -103,7 +106,8 @@ export function SetPinPanel({ collectors }: { collectors: CollectorOption[] }) {
       <Button
         variant="primary"
         onClick={onSubmit}
-        disabled={pending || !collectorId || !/^\d{6}$/.test(pin)}
+        loading={pending}
+        disabled={!collectorId || !/^\d{6}$/.test(pin)}
       >
         {pending ? "Saving…" : "Set PIN"}
       </Button>

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { useBusy, useSubmit } from "@/components/ui/use-submit";
 import { FieldShell, TextArea } from "@/components/ui/field";
 import { cancelRemittance, verifyRemittance } from "@/lib/remittances/actions";
 import type { SaveResult } from "@/lib/admin/save-result";
@@ -11,21 +12,21 @@ import type { SaveResult } from "@/lib/admin/save-result";
 /** Accounting's check against the bank. Shown only to someone who may verify this slip. */
 export function VerifyButton({ id }: { id: string }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useBusy();
   const [error, setError] = useState<string | null>(null);
   return (
     <span className="inline-flex items-center gap-2">
       <Button
         size="sm"
         variant="primary"
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true);
-          const outcome = await verifyRemittance(id);
-          setBusy(false);
-          if (outcome.ok) router.refresh();
-          else setError(outcome.formError ?? "Could not verify.");
-        }}
+        loading={busy}
+        onClick={() =>
+          run(async () => {
+            const outcome = await verifyRemittance(id);
+            if (outcome.ok) router.refresh();
+            else setError(outcome.formError ?? "Could not verify.");
+          })
+        }
       >
         {busy ? "Verifying…" : "Verify"}
       </Button>
@@ -39,18 +40,15 @@ export function CancelRemittanceDialog({ id, slip }: { id: string; slip: string 
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState<SaveResult | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  async function onSubmit(formData: FormData) {
-    setBusy(true);
+  const { pending: busy, onSubmit } = useSubmit(async (formData) => {
     const outcome = await cancelRemittance(formData);
-    setBusy(false);
     setResult(outcome);
     if (outcome.ok) {
       setOpen(false);
       router.refresh();
     }
-  }
+  });
 
   return (
     <Dialog
@@ -64,20 +62,21 @@ export function CancelRemittanceDialog({ id, slip }: { id: string; slip: string 
         Cancel
       </DialogTrigger>
       <DialogContent
+        busy={busy}
         tone="danger"
         width="sm"
         title={`Cancel slip ${slip}`}
         description="The entry stays on the record, marked cancelled. Its shifts become free for a corrected slip."
         footer={
           <>
-            <DialogClose className={buttonClass("ghost", "md")}>Close</DialogClose>
-            <Button type="submit" form={`cancel-${id}`} variant="danger" disabled={busy}>
+            <DialogClose className={buttonClass("ghost", "md")} disabled={busy}>Close</DialogClose>
+            <Button type="submit" form={`cancel-${id}`} variant="danger" loading={busy}>
               {busy ? "Cancelling…" : "Cancel slip"}
             </Button>
           </>
         }
       >
-        <form id={`cancel-${id}`} action={onSubmit}>
+        <form id={`cancel-${id}`} onSubmit={onSubmit}>
           <input type="hidden" name="remittanceId" value={id} />
           <FieldShell
             id={`reason-${id}`}

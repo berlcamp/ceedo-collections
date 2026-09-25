@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useSubmit } from "@/components/ui/use-submit";
 import { FieldShell, TextInput } from "@/components/ui/field";
 import { Notice, Panel } from "@/components/ui/panel";
 import { Select } from "@/components/ui/select";
@@ -32,16 +33,16 @@ export function OpeningBalanceForm({
   cutoverDate: string;
 }) {
   const [result, setResult] = useState<SaveResult | null>(null);
-  const [pending, setPending] = useState(false);
   const [leaseId, setLeaseId] = useState("");
 
-  async function onSubmit(formData: FormData) {
-    setPending(true);
+  const { pending, onSubmit } = useSubmit(async (formData, form) => {
     const outcome = await recordOpeningBalance(formData);
-    setPending(false);
     setResult(outcome);
-    if (outcome.ok) setLeaseId("");
-  }
+    if (outcome.ok) {
+      form.reset();
+      setLeaseId("");
+    }
+  });
 
   const fieldErrors = result && !result.ok ? result.fieldErrors : {};
 
@@ -59,7 +60,7 @@ export function OpeningBalanceForm({
       note="One per lease, for arrears from before the cutover only. Periods from the cutover onward are billed by the nightly accrual job, not recorded here."
       className="max-w-xl"
     >
-      <form action={onSubmit}>
+      <form onSubmit={onSubmit}>
         <FieldShell id="ob-lease" label="Lease" error={fieldErrors.leaseId}>
           <Select
             id="ob-lease"
@@ -130,7 +131,7 @@ export function OpeningBalanceForm({
           </Notice>
         ) : null}
 
-        <Button type="submit" variant="primary" disabled={pending}>
+        <Button type="submit" variant="primary" loading={pending}>
           {pending ? "Recording…" : "Record opening balance"}
         </Button>
       </form>

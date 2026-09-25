@@ -1,3 +1,4 @@
+import { Loader2 } from "lucide-react";
 import type { ButtonHTMLAttributes } from "react";
 import { cn } from "./cn";
 
@@ -48,10 +49,26 @@ export function Button({
   size = "md",
   className,
   type = "button",
+  loading = false,
+  disabled,
+  children,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  /** Disables the button and shows a spinner beside its label while work is in flight. */
+  loading?: boolean;
 }) {
-  return <button type={type} className={buttonClass(variant, size, className)} {...props} />;
+  return (
+    <button
+      type={type}
+      className={buttonClass(variant, size, className)}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      {...props}
+    >
+      {loading ? <Loader2 size={14} strokeWidth={2} className="animate-spin" aria-hidden /> : null}
+      {children}
+    </button>
+  );
 }

@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { Centavos } from "@ceedo/shared";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { useSubmit } from "@/components/ui/use-submit";
 import { FieldShell, TextArea, TextInput } from "@/components/ui/field";
 import { condoneCharge } from "@/lib/ledger/actions";
 import type { SaveResult } from "@/lib/admin/save-result";
@@ -29,7 +30,6 @@ export function CondoneDialog({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState<SaveResult | null>(null);
-  const [pending, setPending] = useState(false);
 
   // A dialog reopened after a failed save should not still be wearing that attempt's
   // errors. Cleared as the dialog closes, not in an effect watching the state that just
@@ -39,33 +39,32 @@ export function CondoneDialog({
     if (!next) setResult(null);
   }
 
-  async function onSubmit(formData: FormData) {
-    setPending(true);
+  const { pending, onSubmit } = useSubmit(async (formData) => {
     const outcome = await condoneCharge(formData);
-    setPending(false);
     setResult(outcome);
     if (outcome.ok) {
       setOpen(false);
       router.refresh();
     }
-  }
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger className={buttonClass("ghost", "sm")}>Condone</DialogTrigger>
       <DialogContent
+        busy={pending}
         title={`Condone ${detail}`}
         description="Writes off this charge against an authorising ordinance. Cannot exceed the amount still outstanding."
         footer={
           <>
-            <DialogClose className={buttonClass("ghost", "md")}>Close</DialogClose>
-            <Button type="submit" form="condone-form" variant="primary" disabled={pending}>
+            <DialogClose className={buttonClass("ghost", "md")} disabled={pending}>Close</DialogClose>
+            <Button type="submit" form="condone-form" variant="primary" loading={pending}>
               {pending ? "Condoning…" : "Condone"}
             </Button>
           </>
         }
       >
-        <form id="condone-form" action={onSubmit}>
+        <form id="condone-form" onSubmit={onSubmit}>
           <input type="hidden" name="chargeId" value={chargeId} />
           <input type="hidden" name="leaseId" value={leaseId} />
 

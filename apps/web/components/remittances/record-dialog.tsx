@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { useSubmit } from "@/components/ui/use-submit";
 import { FieldShell, NativeSelect, TextInput } from "@/components/ui/field";
 import { recordRemittance } from "@/lib/remittances/actions";
 import { pesos } from "@/lib/reports/report";
@@ -32,7 +33,6 @@ export function RecordDialog({
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [amount, setAmount] = useState("");
   const [result, setResult] = useState<SaveResult | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const theirs = pending.filter((s) => s.collectorId === collectorId);
   const declared = theirs.filter((s) => ticked.has(s.id)).reduce((a, s) => a + s.declared, 0);
@@ -63,16 +63,14 @@ export function RecordDialog({
     }
   }
 
-  async function onSubmit(formData: FormData) {
-    setBusy(true);
+  const { pending: busy, onSubmit } = useSubmit(async (formData) => {
     const outcome = await recordRemittance(formData);
-    setBusy(false);
     setResult(outcome);
     if (outcome.ok) {
       onOpenChange(false);
       router.refresh();
     }
-  }
+  });
 
   const errors = result && !result.ok ? result.fieldErrors : {};
   const withShifts = collectors.filter((c) => pending.some((s) => s.collectorId === c.id));
@@ -84,18 +82,19 @@ export function RecordDialog({
         Record deposit
       </DialogTrigger>
       <DialogContent
+        busy={busy}
         title="Record a deposit"
         description="From the collector's deposit slip. Accounting verifies it afterwards."
         footer={
           <>
-            <DialogClose className={buttonClass("ghost", "md")}>Cancel</DialogClose>
-            <Button type="submit" form="remittance-form" variant="primary" disabled={busy}>
+            <DialogClose className={buttonClass("ghost", "md")} disabled={busy}>Cancel</DialogClose>
+            <Button type="submit" form="remittance-form" variant="primary" loading={busy}>
               {busy ? "Saving…" : "Record deposit"}
             </Button>
           </>
         }
       >
-        <form id="remittance-form" action={onSubmit}>
+        <form id="remittance-form" onSubmit={onSubmit}>
           <FieldShell id="collectorId" label="Collector" error={errors.collectorId}>
             <NativeSelect
               id="collectorId"

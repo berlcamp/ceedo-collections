@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { useSubmit } from "@/components/ui/use-submit";
 import { FieldShell, TextArea } from "@/components/ui/field";
 import { cancelCollection } from "@/lib/ledger/actions";
 import type { SaveResult } from "@/lib/admin/save-result";
@@ -18,7 +19,6 @@ export function CancelDialog({ collectionId, orNo }: { collectionId: string; orN
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState<SaveResult | null>(null);
-  const [pending, setPending] = useState(false);
 
   // A dialog reopened after a failed save should not still be wearing that attempt's
   // errors. Cleared as the dialog closes, not in an effect watching the state that just
@@ -28,16 +28,14 @@ export function CancelDialog({ collectionId, orNo }: { collectionId: string; orN
     if (!next) setResult(null);
   }
 
-  async function onSubmit(formData: FormData) {
-    setPending(true);
+  const { pending, onSubmit } = useSubmit(async (formData) => {
     const outcome = await cancelCollection(formData);
-    setPending(false);
     setResult(outcome);
     if (outcome.ok) {
       setOpen(false);
       router.refresh();
     }
-  }
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -45,20 +43,21 @@ export function CancelDialog({ collectionId, orNo }: { collectionId: string; orN
         Cancel
       </DialogTrigger>
       <DialogContent
+        busy={pending}
         tone="danger"
         width="sm"
         title={`Void OR ${orNo}`}
         description="The receipt stays on the record -- this only stops it counting toward what is owed, and needs a written reason."
         footer={
           <>
-            <DialogClose className={buttonClass("ghost", "md")}>Close</DialogClose>
-            <Button type="submit" form="cancel-form" variant="danger" disabled={pending}>
+            <DialogClose className={buttonClass("ghost", "md")} disabled={pending}>Close</DialogClose>
+            <Button type="submit" form="cancel-form" variant="danger" loading={pending}>
               {pending ? "Voiding…" : "Void receipt"}
             </Button>
           </>
         }
       >
-        <form id="cancel-form" action={onSubmit}>
+        <form id="cancel-form" onSubmit={onSubmit}>
           <input type="hidden" name="collectionId" value={collectionId} />
           <FieldShell id="cancel-reason" label="Reason">
             <TextArea id="cancel-reason" name="reason" required rows={3} />
