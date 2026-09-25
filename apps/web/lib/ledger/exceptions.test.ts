@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeReason, summarisePayload, type ExceptionRow } from "./exceptions";
+import { describeReason, summarisePayload } from "./exceptions";
 
 describe("describeReason", () => {
   it("renders every reason the server can return", () => {

@@ -36,21 +36,26 @@ export function DeviceCredentialPanel({ devices }: { devices: DeviceOption[] }) 
   const { busy: revoking, run: runRevoke } = useBusy();
   const [issued, setIssued] = useState<IssueCredentialResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [qr, setQr] = useState<string | null>(null);
+  // Keyed by the credential it encodes, so a code left over from an earlier issue is simply
+  // not shown, rather than cleared by a setState inside the effect.
+  const [rendered, setRendered] = useState<{ credentialId: string; url: string } | null>(null);
+  const qr =
+    issued?.credentialId && rendered?.credentialId === issued.credentialId ? rendered.url : null;
 
   useEffect(() => {
-    if (!issued?.credentialId || !issued.secret) {
-      setQr(null);
-      return;
-    }
+    if (!issued?.credentialId || !issued.secret) return;
+    const credentialId = issued.credentialId;
     // Rendered client-side from state that already holds the secret. It must never be sent
     // anywhere to be turned into an image -- the whole point of `issue_device_credential`
     // returning it once is that it exists in exactly one place for one moment.
-    QRCode.toDataURL(encodeEnrollment(issued.credentialId, issued.secret), {
+    QRCode.toDataURL(encodeEnrollment(credentialId, issued.secret), {
       errorCorrectionLevel: "M",
       margin: 2,
       width: 256,
-    }).then(setQr, () => setQr(null));
+    }).then(
+      (url) => setRendered({ credentialId, url }),
+      () => setRendered(null),
+    );
   }, [issued]);
 
   function onIssue() {

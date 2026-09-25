@@ -26,17 +26,11 @@ export default async function ReportPage({
     Object.entries(search).flatMap(([k, v]) => (typeof v === "string" ? [[k, v]] : [])),
   ).toString();
 
+  // Only the build is guarded: JSX in a try block reads as if it caught render errors,
+  // which it cannot (react-hooks/error-boundaries).
+  let report: Awaited<ReturnType<typeof entry.build>>;
   try {
-    const report = await entry.build(readParams(search));
-    return (
-      <div className="mx-auto max-w-[80rem]">
-        <ReportToolbar xlsxHref={`/reports/${key}/xlsx${query ? `?${query}` : ""}`} />
-        <ReportDocument
-          report={report}
-          generatedAt={new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" })}
-        />
-      </div>
-    );
+    report = await entry.build(readParams(search));
   } catch (caught) {
     if (!(caught instanceof ReportInputError)) throw caught;
     return (
@@ -48,4 +42,14 @@ export default async function ReportPage({
       </div>
     );
   }
+
+  return (
+    <div className="mx-auto max-w-[80rem]">
+      <ReportToolbar xlsxHref={`/reports/${key}/xlsx${query ? `?${query}` : ""}`} />
+      <ReportDocument
+        report={report}
+        generatedAt={new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" })}
+      />
+    </div>
+  );
 }

@@ -70,6 +70,7 @@ export async function buildRcd(p: ReportParams): Promise<Report> {
       })),
   ]
     .sort((a, b) => a.sort - b.sort)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped from the row
     .map(({ sort: _sort, ...row }) => row);
 
   const accountability = held
