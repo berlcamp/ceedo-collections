@@ -96,6 +96,7 @@ export default async function ResourcePage({
     fields: config.fields,
     dynamicOptions,
     lockedOnEdit: [...(config.lockedOnEdit ?? [])],
+    deletable: Boolean(config.deletable),
   };
 
   return (

@@ -64,3 +64,36 @@ export function toSaveResult(
 
   return { ok: true, id };
 }
+
+export type DeleteResult = { ok: true } | { ok: false; formError: string };
+
+/**
+ * A delete is refused by a foreign key when anything still refers to the row (a tenant's
+ * lease, a stall's lease, a facility's sections), and that refusal is the whole rule: no
+ * separate "is it in use" check that could drift from the schema. RLS refuses silently
+ * instead, deleting nothing, which is why the deleted count is checked too.
+ */
+export function toDeleteResult(
+  dbError: DbError | null,
+  deleted: number,
+  inUseMessage: string,
+): DeleteResult {
+  if (dbError) {
+    return {
+      ok: false,
+      formError:
+        dbError.code === "23503"
+          ? inUseMessage
+          : dbError.code === "42501"
+            ? "You do not have permission to delete this."
+            : dbError.message,
+    };
+  }
+  if (deleted === 0) {
+    return {
+      ok: false,
+      formError: "That record no longer exists, or you do not have permission to delete it.",
+    };
+  }
+  return { ok: true };
+}

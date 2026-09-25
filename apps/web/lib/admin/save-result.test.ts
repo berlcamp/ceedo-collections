@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { toSaveResult } from "./save-result.js";
+import { toDeleteResult, toSaveResult } from "./save-result.js";
 
 const schema = z.object({ code: z.string().min(1), name: z.string().min(1) });
 
@@ -75,5 +75,21 @@ describe("toSaveResult", () => {
   it("returns ok when the parse succeeds and there is no database error", () => {
     const parsed = schema.safeParse({ code: "CPM", name: "Market" });
     expect(toSaveResult(parsed, null, "new-id")).toEqual({ ok: true, id: "new-id" });
+  });
+});
+
+describe("toDeleteResult", () => {
+  it("succeeds when a row was deleted", () => {
+    expect(toDeleteResult(null, 1, "in use")).toEqual({ ok: true });
+  });
+
+  it("says why when another record still refers to it", () => {
+    const result = toDeleteResult({ code: "23503", message: "violates foreign key" }, 0, "Has a lease.");
+    expect(result).toEqual({ ok: false, formError: "Has a lease." });
+  });
+
+  it("reports a delete that removed nothing, as RLS does silently", () => {
+    const result = toDeleteResult(null, 0, "in use");
+    expect(result).toMatchObject({ ok: false, formError: expect.stringMatching(/permission/) });
   });
 });

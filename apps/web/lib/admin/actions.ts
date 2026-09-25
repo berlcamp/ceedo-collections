@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getServerClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/supabase/session";
 import { RESOURCES, type ResourceConfig } from "./resource";
-import { toSaveResult, type SaveResult } from "./save-result";
+import { toDeleteResult, toSaveResult, type DeleteResult, type SaveResult } from "./save-result";
 import { updatePayload } from "./edit";
 
 function coerce(config: ResourceConfig, formData: FormData): Record<string, unknown> {
@@ -71,6 +71,27 @@ export async function saveResource(
     parsed,
     error ? { code: error.code ?? "", message: error.message } : null,
     (data as { id?: string } | null)?.id ?? targetId ?? "",
+  );
+
+  if (result.ok) revalidatePath(`/${config.key}`);
+  return result;
+}
+
+export async function deleteResource(resourceKey: string, id: string): Promise<DeleteResult> {
+  const config = RESOURCES[resourceKey];
+  if (!config?.deletable) return { ok: false, formError: "This record cannot be deleted." };
+
+  const staff = await requireStaff();
+  if (!config.writeRoles.includes(staff.role)) {
+    return { ok: false, formError: "You do not have permission to delete this." };
+  }
+
+  const supabase = await getServerClient();
+  const { data, error } = await supabase.from(config.table).delete().eq("id", id).select("id");
+  const result = toDeleteResult(
+    error ? { code: error.code ?? "", message: error.message } : null,
+    data?.length ?? 0,
+    config.deletable.inUse,
   );
 
   if (result.ok) revalidatePath(`/${config.key}`);

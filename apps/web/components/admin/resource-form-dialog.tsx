@@ -6,8 +6,8 @@ import { useState } from "react";
 import { ResourceField } from "@/components/admin/resource-field";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
-import { useSubmit } from "@/components/ui/use-submit";
-import { saveResource } from "@/lib/admin/actions";
+import { useBusy, useSubmit } from "@/components/ui/use-submit";
+import { deleteResource, saveResource } from "@/lib/admin/actions";
 import type { SaveResult } from "@/lib/admin/save-result";
 import type { FieldConfig, SelectOption } from "@/lib/admin/resource";
 
@@ -20,6 +20,8 @@ export interface ResourceFormSpec {
   dynamicOptions: Record<string, SelectOption[]>;
   /** Shown read-only on an edit; see `ResourceConfig.lockedOnEdit`. */
   lockedOnEdit?: string[];
+  /** Offer Delete on an edit; see `ResourceConfig.deletable`. */
+  deletable?: boolean;
 }
 
 /** One existing row, for a resource the engine updates rather than creates. */
@@ -57,6 +59,10 @@ export function ResourceFormDialog({
   const setOpen = (next: boolean) =>
     controlled ? controlledOnOpenChange?.(next) : setOwnOpen(next);
   const [result, setResult] = useState<SaveResult | null>(null);
+  // Delete asks twice: the first click arms it, the second deletes.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const { busy: deleting, run: runDelete } = useBusy();
 
   const editing = target !== undefined;
 
@@ -65,7 +71,29 @@ export function ResourceFormDialog({
   // changed — that is a cascading render for something the event already knows.
   function onOpenChange(next: boolean) {
     setOpen(next);
-    if (!next) setResult(null);
+    if (!next) {
+      setResult(null);
+      setConfirmingDelete(false);
+      setDeleteError(null);
+    }
+  }
+
+  function onDelete() {
+    if (!target) return;
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
+    void runDelete(async () => {
+      const outcome = await deleteResource(spec.resourceKey, target.id);
+      setConfirmingDelete(false);
+      if (!outcome.ok) {
+        setDeleteError(outcome.formError);
+        return;
+      }
+      onOpenChange(false);
+      router.refresh();
+    });
   }
 
   const { pending, onSubmit } = useSubmit(async (formData) => {
@@ -103,14 +131,25 @@ export function ResourceFormDialog({
       )}
 
       <DialogContent
-        busy={pending}
+        busy={pending || deleting}
         title={title}
         // Only an edit needs a subtitle, and the row it is editing is the useful one.
         {...(editing ? { description: target.label } : {})}
         footer={
           <>
-            <DialogClose className={buttonClass("ghost", "md")} disabled={pending}>Cancel</DialogClose>
-            <Button type="submit" form="resource-form" variant="primary" loading={pending}>
+            {editing && spec.deletable ? (
+              <Button
+                variant={confirmingDelete ? "danger" : "ghost"}
+                className={confirmingDelete ? "mr-auto" : "mr-auto text-ribbon hover:bg-ribbon-soft hover:text-ribbon"}
+                onClick={onDelete}
+                loading={deleting}
+                disabled={pending}
+              >
+                {deleting ? "Deleting…" : confirmingDelete ? "Confirm delete" : "Delete"}
+              </Button>
+            ) : null}
+            <DialogClose className={buttonClass("ghost", "md")} disabled={pending || deleting}>Cancel</DialogClose>
+            <Button type="submit" form="resource-form" variant="primary" loading={pending} disabled={deleting}>
               {pending ? "Saving…" : `Save ${spec.singular}`}
             </Button>
           </>
@@ -127,6 +166,17 @@ export function ResourceFormDialog({
               locked={editing && (spec.lockedOnEdit ?? []).includes(field.name)}
             />
           ))}
+
+          {confirmingDelete ? (
+            <p className="mt-3 rounded-lg border border-ribbon/40 bg-ribbon-soft px-3 py-2 text-xs leading-relaxed text-ribbon">
+              Delete this {spec.singular}? This cannot be undone. Click Confirm delete to go ahead.
+            </p>
+          ) : null}
+          {deleteError ? (
+            <p className="mt-3 rounded-lg border border-ribbon/40 bg-ribbon-soft px-3 py-2 text-xs leading-relaxed text-ribbon">
+              {deleteError}
+            </p>
+          ) : null}
 
           {result && !result.ok && result.formError ? (
             <p className="mt-3 rounded-lg border border-ribbon/40 bg-ribbon-soft px-3 py-2 text-xs leading-relaxed text-ribbon">

@@ -60,6 +60,10 @@ const configs: ResourceConfig[] = [
     optionLabel: "name",
     readRoles: BACK_OFFICE,
     writeRoles: ADMIN_ONLY,
+    deletable: {
+      inUse:
+        "This facility has sections, tablets or collection areas, so it can't be deleted. Mark it inactive instead.",
+    },
   },
   {
     key: "sections",
@@ -133,6 +137,9 @@ const configs: ResourceConfig[] = [
     optionLabel: "stall_no",
     readRoles: BACK_OFFICE,
     writeRoles: ADMIN_ONLY,
+    deletable: {
+      inUse: "This stall has a lease, so it can't be deleted. Mark it inactive instead.",
+    },
   },
   {
     key: "tenants",
@@ -163,6 +170,9 @@ const configs: ResourceConfig[] = [
     optionLabel: "full_name",
     readRoles: BACK_OFFICE,
     writeRoles: ADMIN_ONLY,
+    deletable: {
+      inUse: "This tenant has a lease, so they can't be deleted. Mark them inactive instead.",
+    },
   },
   {
     key: "leases",

@@ -88,6 +88,11 @@ export interface ResourceConfig<S extends ZodObject<ZodRawShape> = ZodObject<Zod
    * each field's `help` says so. Enforced in `saveResource`, not just by the form.
    */
   lockedOnEdit?: readonly string[];
+  /**
+   * Offers Delete on the edit form, to the resource's writeRoles. The database decides:
+   * a row anything still refers to is refused by its foreign key, and `inUse` says so.
+   */
+  deletable?: { inUse: string };
 }
 
 export const RESOURCES: Record<string, ResourceConfig> = {};
