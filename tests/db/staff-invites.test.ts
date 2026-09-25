@@ -222,21 +222,22 @@ describe("staff invites", () => {
 
   it("does not abort the auth.users insert on a colliding employee_no — the person just gets no access", async () => {
     const collidingEmployeeNo = uniqueCode("DUP");
-    // An existing, already-claimed staff member holding this employee_no.
+    const email = uniqueEmail("bad.invite@example.com");
+    const { error: inviteError } = await service.from("staff_invites").insert({
+      email,
+      employee_no: collidingEmployeeNo,
+      full_name: "Bad Invite",
+      role: "supervisor",
+    });
+    expect(inviteError).toBeNull();
+
+    // The number is taken AFTER the invite: 0049 refuses a taken number at invite time,
+    // but a member added later under the same number still collides at claim time.
     await createAppUser({
       email: "existing-empno@example.com",
       role: "supervisor",
       employeeNo: collidingEmployeeNo,
     });
-
-    const email = uniqueEmail("bad.invite@example.com");
-    const { error: inviteError } = await service.from("staff_invites").insert({
-      email,
-      employee_no: collidingEmployeeNo, // unique within staff_invites, but collides with app_users
-      full_name: "Bad Invite",
-      role: "supervisor",
-    });
-    expect(inviteError).toBeNull();
 
     // The claim will fail (app_users.employee_no is unique) — proving that failure is
     // swallowed inside the trigger, not propagated up to abort this insert, is the whole

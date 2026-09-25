@@ -33,7 +33,10 @@ export async function requireStaff(): Promise<StaffSession> {
   // trigger that claims invites never fires for them (migration 0047). Only reached by
   // non-members, so a member's page load pays nothing for it.
   if (userId && !member) {
-    const { data: claimed } = await supabase.rpc("claim_my_invite");
+    const { data: claimed, error } = await supabase.rpc("claim_my_invite");
+    // A failed claim still ends at /no-access, but it must not fail silently: the person
+    // sees the same page whether they were never invited or the claim itself broke.
+    if (error) console.error("claim_my_invite failed", { userId, error });
     if (claimed) member = await readMember();
   }
 
