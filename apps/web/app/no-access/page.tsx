@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { signOut } from "@/lib/auth/actions";
 
 export default function NoAccessPage() {
   return (
@@ -14,12 +14,16 @@ export default function NoAccessPage() {
         <p className="mt-3 text-sm leading-relaxed text-chassis-dim">
           Collectors do not use this site — collections are recorded on the tablet.
         </p>
-        <Link
-          href="/sign-in"
-          className="mt-6 inline-block text-sm font-medium text-chassis-ink underline decoration-chassis-500 hover:decoration-chassis-ink"
-        >
-          Back to sign in
-        </Link>
+        {/* A sign-out, not a link: the session is still live, and signing in again with a
+            different Google account needs it ended first. */}
+        <form action={signOut}>
+          <button
+            type="submit"
+            className="mt-6 inline-block text-sm font-medium text-chassis-ink underline decoration-chassis-500 hover:decoration-chassis-ink"
+          >
+            Sign out and use another account
+          </button>
+        </form>
       </div>
     </main>
   );

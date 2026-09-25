@@ -7,7 +7,12 @@ export default function SignInPage() {
   async function signIn() {
     await getBrowserClient().auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        // Always offer the account chooser. Without it Google silently reuses the last
+        // account, so someone who signed out of the wrong one could never switch.
+        queryParams: { prompt: "select_account" },
+      },
     });
   }
 

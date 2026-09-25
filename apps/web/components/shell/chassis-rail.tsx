@@ -1,7 +1,7 @@
 "use client";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { Landmark, Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { Landmark, LogOut, Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -9,6 +9,7 @@ import { NAV_ICONS } from "@/components/shell/nav-icons";
 import { cn } from "@/components/ui/cn";
 import { Tooltip } from "@/components/ui/tooltip";
 import { RAIL_COOKIE, RAIL_COOKIE_MAX_AGE } from "@/components/shell/rail-cookie";
+import { signOut } from "@/lib/auth/actions";
 
 export interface NavGroup {
   heading: string;
@@ -171,7 +172,9 @@ export function ChassisRail({
 
       <div className={cn("shrink-0", compact ? "px-2 py-3" : "p-3")}>
         <div className="mx-1 mb-3 h-px bg-chassis-600" />
-        <div className={cn("flex items-center gap-2", compact ? "justify-center" : "px-1")}>
+        <div
+          className={cn("flex items-center gap-2", compact ? "flex-col justify-center" : "px-1")}
+        >
           <Tooltip label={`${staffName} · ${staffRole}`} side="right" disabled={!compact}>
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-chassis-accent text-2xs font-bold text-chassis-900">
               {initials}
@@ -183,6 +186,17 @@ export function ChassisRail({
               {staffRole}
             </span>
           </span>
+          <form action={signOut} className={compact ? undefined : "ml-auto"}>
+            <Tooltip label="Sign out" side="right">
+              <button
+                type="submit"
+                aria-label="Sign out"
+                className="on-chassis rounded-md p-1.5 text-chassis-dim/60 transition-colors duration-150 hover:bg-chassis-700 hover:text-chassis-ink"
+              >
+                <LogOut size={16} strokeWidth={1.75} />
+              </button>
+            </Tooltip>
+          </form>
         </div>
       </div>
     </nav>
