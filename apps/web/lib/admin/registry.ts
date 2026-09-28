@@ -28,6 +28,22 @@ function occupancyOf(row: Record<string, unknown>) {
   );
 }
 
+/**
+ * "CPM · Fish · Stall 12 · 6 sqm". A bare stall number is ambiguous: numbers repeat
+ * across sections. Reads a stalls row selected with `sections(name, facilities(code))`.
+ */
+function stallLabel(stall: Record<string, unknown>): string {
+  const section = stall.sections as { name: string; facilities: { code: string } | null } | null;
+  return [
+    section?.facilities?.code,
+    section?.name,
+    `Stall ${stall.stall_no}`,
+    stall.area_sqm != null ? `${stall.area_sqm} sqm` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 const configs: ResourceConfig[] = [
   {
     key: "facilities",
@@ -157,16 +173,7 @@ const configs: ResourceConfig[] = [
     optionText: {
       select:
         "stall_no, area_sqm, active, sections(name, facilities(code)), leases(status, start_date, end_date, tenants(full_name))",
-      format: (row) => {
-        const section = row.sections as { name: string; facilities: { code: string } | null } | null;
-        const parts = [
-          section?.facilities?.code,
-          section?.name,
-          `Stall ${row.stall_no}`,
-          row.area_sqm != null ? `${row.area_sqm} sqm` : null,
-        ].filter(Boolean);
-        return `${parts.join(" · ")} — ${occupancyText(occupancyOf(row))}`;
-      },
+      format: (row) => `${stallLabel(row)} — ${occupancyText(occupancyOf(row))}`,
     },
     derive: (row) => {
       const occupancy = occupancyOf(row);
@@ -263,7 +270,7 @@ const configs: ResourceConfig[] = [
       },
     ],
     columns: [
-      { key: "stalls", label: "Stall" },
+      { key: "stall", label: "Stall" },
       { key: "tenants", label: "Tenant" },
       { key: "start_date", label: "From" },
       { key: "end_date", label: "To" },
@@ -272,7 +279,10 @@ const configs: ResourceConfig[] = [
       { key: "status", label: "Status" },
     ],
     select:
-      "id, start_date, end_date, rate_amount, accrual_period, due_day, status, stalls(stall_no), tenants(full_name)",
+      "id, start_date, end_date, rate_amount, accrual_period, due_day, status, stalls(stall_no, area_sqm, sections(name, facilities(code))), tenants(full_name)",
+    derive: (row) => ({
+      stall: row.stalls ? stallLabel(row.stalls as Record<string, unknown>) : null,
+    }),
     orderBy: "start_date",
     optionLabel: "start_date",
     readRoles: BACK_OFFICE,
