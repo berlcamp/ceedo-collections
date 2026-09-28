@@ -52,6 +52,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
+    "ota:preview": "npx --yes eas-cli@latest update --channel preview --environment preview",
+    "ota:production": "npx --yes eas-cli@latest update --channel production --environment production",
     "sync-migrations": "rm -rf drizzle && cp -R ../../packages/db-local/drizzle drizzle"
   },
   "private": true
