@@ -32,9 +32,9 @@ describe("the device schema's two halves", () => {
     );
   });
 
-  it("mirrors all 17 arrays sync_pull returns", () => {
+  it("mirrors all 18 arrays sync_pull returns", () => {
     // Verified against sync_pull's jsonb_build_object key list, migration
-    // 20260918000037_sync_pull_truncate.sql. `devices` is deliberately NOT among them:
+    // 20260928000051_reinstate_collection.sql. `devices` is deliberately NOT among them:
     // the authenticate heartbeat bumps devices.row_version on every call, and the device
     // never receives its own row, so that churn costs cursor motion and no payload.
     expect([...PULLED_TABLES].sort()).toEqual(
@@ -42,7 +42,8 @@ describe("the device schema's two halves", () => {
         "facilities", "sections", "stalls", "tenants", "leases",
         "fee_types", "rates", "collectors", "booklets", "booklet_assignments",
         "consumed_serials", "spoiled_forms", "charges", "collections",
-        "collection_allocations", "collection_cancellations", "charge_condonations",
+        "collection_allocations", "collection_cancellations", "collection_reinstatements",
+        "charge_condonations",
       ].sort(),
     );
   });

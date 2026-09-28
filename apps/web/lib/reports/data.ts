@@ -73,7 +73,7 @@ export async function receipts(from: string, to: string, collectorId?: string | 
   const cancelled = new Set(
     (
       await byIds(ids, (chunk) =>
-        supabase.from("collection_cancellations").select("collection_id").in("collection_id", chunk),
+        supabase.from("standing_cancellations").select("collection_id").in("collection_id", chunk),
       )
     ).map((c) => c.collection_id),
   );

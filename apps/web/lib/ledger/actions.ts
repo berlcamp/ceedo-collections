@@ -54,6 +54,32 @@ export async function cancelCollection(formData: FormData): Promise<SaveResult> 
   return { ok: true, id: data ?? parsed.data.collectionId };
 }
 
+/**
+ * Undoes a cancellation. Nothing is deleted: reinstate_collection() appends a
+ * reinstatement row that lifts the standing cancellation, and both stay on the record.
+ * Same gate and the same written-reason rule as cancelling.
+ */
+export async function reinstateCollection(formData: FormData): Promise<SaveResult> {
+  const staff = await requireStaff();
+  if (!canResolveExceptions(staff.role)) return PERMISSION_DENIED;
+
+  const parsed = cancelSchema.safeParse({
+    collectionId: formData.get("collectionId"),
+    reason: formData.get("reason"),
+  });
+  if (!parsed.success) return toSaveResult(parsed, null);
+
+  const supabase = await ledgerClient();
+  const { data, error } = await supabase.rpc("reinstate_collection", {
+    p_collection_id: parsed.data.collectionId,
+    p_reason: parsed.data.reason,
+  });
+  if (error) return rpcFailure(error.message);
+
+  revalidatePath("/ledger/collections");
+  return { ok: true, id: data ?? parsed.data.collectionId };
+}
+
 const condoneSchema = z.object({
   chargeId: z.string().uuid(),
   leaseId: z.string().uuid(),

@@ -15,6 +15,9 @@ const SCHEMA = `
   create table collection_cancellations (
     id text primary key, collection_id text
   );
+  create table collection_reinstatements (
+    id text primary key, cancellation_id text
+  );
   create table charge_condonations (id text primary key, charge_id text, amount text);
   create table local_collections (
     id text primary key, or_no integer, booklet_id text, collector_id text,
@@ -224,5 +227,16 @@ describe("leaseLedger", () => {
     `);
     const groups = await leaseLedger(driver, "L1");
     expect(groups[0]!.chargeIds).toEqual(["r1", "s1"]);
+  });
+
+  it("counts a reinstated collection's allocations again", async () => {
+    db.exec(`
+      insert into collection_allocations (id, collection_id, charge_id, amount)
+      values ('a1','k9','r1','1500.00');
+      insert into collection_cancellations (id, collection_id) values ('x1','k9');
+      insert into collection_reinstatements (id, cancellation_id) values ('u1','x1');
+    `);
+    const { perCharge } = await leaseLedgerDetail(driver, "L1");
+    expect(perCharge.has("r1")).toBe(false);
   });
 });

@@ -3,7 +3,7 @@
 import { format, sum } from "@ceedo/shared";
 import { DataTable } from "@/components/data-table/data-table";
 import type { DataColumn } from "@/components/data-table/types";
-import { CancelDialog } from "@/components/ledger/cancel-dialog";
+import { CancelDialog, UndoCancelDialog } from "@/components/ledger/cancel-dialog";
 import { Money } from "@/components/ledger/money";
 import { Mark, QuietMark } from "@/components/ui/mark";
 import type { CollectionRow } from "@/lib/ledger/queries";
@@ -21,8 +21,8 @@ function columns(canCancel: boolean): DataColumn<CollectionRow>[] {
         </span>
       ),
     },
-    { key: "date", label: "Collected", nowrap: true, sortValue: (row) => row.businessDate, facet: (row) => row.businessDate, render: (row) => row.businessDate },
-    { key: "collector", label: "Collector", sortValue: (row) => row.collectorName, facet: (row) => row.collectorName, render: (row) => row.collectorName },
+    { key: "date", label: "Collected", nowrap: true, sortValue: (row) => row.businessDate, render: (row) => row.businessDate },
+    { key: "collector", label: "Collector", sortValue: (row) => row.collectorName, render: (row) => row.collectorName },
     { key: "stall_or_payer", label: "Stall / Payer", sortValue: (row) => row.stallOrPayer, render: (row) => row.stallOrPayer },
     {
       key: "gross",
@@ -55,16 +55,18 @@ function columns(canCancel: boolean): DataColumn<CollectionRow>[] {
       key: "action",
       label: "",
       align: "right",
-      width: "5.5rem",
+      width: "7rem",
       // The cancel action is presentation-gated the same way the rest of this app gates
       // a write: RLS on collection_cancellations only admits supervisor/accounting/admin
       // to read, and cancel_collection() itself refuses anyone but supervisor or admin
       // (migration 20260918000023) -- this `canCancel` check just keeps the button off
       // an accounting user's screen for a call the database would refuse anyway.
       render: (row) =>
-        canCancel && !row.cancelled ? (
+        !canCancel ? null : row.cancelled ? (
+          <UndoCancelDialog collectionId={row.id} orNo={row.orNo} />
+        ) : (
           <CancelDialog collectionId={row.id} orNo={row.orNo} />
-        ) : null,
+        ),
     },
   ];
 }

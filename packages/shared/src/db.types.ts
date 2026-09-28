@@ -60,7 +60,7 @@ export type Database = {
           created_at?: string
           employee_no: string
           full_name: string
-          id: string
+          id?: string
           pin_hash?: string | null
           role: Database["ceedo_collections"]["Enums"]["app_role"]
           row_version?: number
@@ -440,7 +440,7 @@ export type Database = {
           {
             foreignKeyName: "collection_cancellations_collection_id_fkey"
             columns: ["collection_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "collections"
             referencedColumns: ["id"]
           },
@@ -490,6 +490,55 @@ export type Database = {
             columns: ["fee_type_id"]
             isOneToOne: false
             referencedRelation: "fee_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      collection_reinstatements: {
+        Row: {
+          cancellation_id: string
+          id: string
+          reason: string
+          reinstated_at: string
+          reinstated_by: string
+          row_version: number
+        }
+        Insert: {
+          cancellation_id: string
+          id?: string
+          reason: string
+          reinstated_at?: string
+          reinstated_by: string
+          row_version?: number
+        }
+        Update: {
+          cancellation_id?: string
+          id?: string
+          reason?: string
+          reinstated_at?: string
+          reinstated_by?: string
+          row_version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collection_reinstatements_cancellation_id_fkey"
+            columns: ["cancellation_id"]
+            isOneToOne: true
+            referencedRelation: "collection_cancellations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_reinstatements_cancellation_id_fkey"
+            columns: ["cancellation_id"]
+            isOneToOne: true
+            referencedRelation: "standing_cancellations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_reinstatements_reinstated_by_fkey"
+            columns: ["reinstated_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
             referencedColumns: ["id"]
           },
         ]
@@ -1598,6 +1647,48 @@ export type Database = {
           },
         ]
       }
+      standing_cancellations: {
+        Row: {
+          cancelled_at: string | null
+          cancelled_by: string | null
+          collection_id: string | null
+          id: string | null
+          reason: string | null
+          row_version: number | null
+        }
+        Insert: {
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          collection_id?: string | null
+          id?: string | null
+          reason?: string | null
+          row_version?: number | null
+        }
+        Update: {
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          collection_id?: string | null
+          id?: string | null
+          reason?: string | null
+          row_version?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collection_cancellations_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_cancellations_collection_id_fkey"
+            columns: ["collection_id"]
+            isOneToOne: false
+            referencedRelation: "collections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       subsidiary_ledger: {
         Row: {
           cancelled: boolean | null
@@ -1731,6 +1822,10 @@ export type Database = {
         Args: { p_collector: string; p_device_id: string; p_payload: Json }
         Returns: Json
       }
+      reinstate_collection: {
+        Args: { p_collection_id: string; p_reason: string }
+        Returns: string
+      }
       rental_fee_type: {
         Args: {
           p_accrual_period: Database["ceedo_collections"]["Enums"]["accrual_period"]
@@ -1819,12 +1914,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1848,11 +1943,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1873,11 +1968,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1898,11 +1993,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1915,11 +2010,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

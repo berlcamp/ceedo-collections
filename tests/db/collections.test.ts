@@ -150,7 +150,7 @@ describe("collections constraints", () => {
         `insert into ceedo_collections.collection_cancellations (collection_id, reason, cancelled_by)
          values ($1, 'second', $2)`, [id, fx.collectorId],
       ),
-    ).rejects.toThrow(/collection_cancellations_collection_id_key/);
+    ).rejects.toThrow(/already cancelled/);
   });
 
   it("refuses a cancellation with a blank reason", async () => {

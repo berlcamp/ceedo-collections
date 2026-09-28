@@ -387,6 +387,17 @@ export const collectionCancellations = sqliteTable("collection_cancellations", {
   rowVersion: integer("row_version"),
 });
 
+// Lifts a cancellation (server migration 20260928000051). A receipt counts as cancelled
+// while it has a cancellation with no reinstatement here; sync-engine ledger.ts applies it.
+export const collectionReinstatements = sqliteTable("collection_reinstatements", {
+  id: text("id").primaryKey(),
+  cancellationId: text("cancellation_id"),
+  reason: text("reason"),
+  reinstatedBy: text("reinstated_by"),
+  reinstatedAt: text("reinstated_at"),
+  rowVersion: integer("row_version"),
+});
+
 export const chargeCondonations = sqliteTable("charge_condonations", {
   id: text("id").primaryKey(),
   chargeId: text("charge_id"),
@@ -407,5 +418,6 @@ export const PULLED_TABLES = [
   "facilities", "sections", "stalls", "tenants", "leases",
   "fee_types", "rates", "collectors", "booklets", "booklet_assignments",
   "consumed_serials", "spoiled_forms", "charges", "collections",
-  "collection_allocations", "collection_cancellations", "charge_condonations",
+  "collection_allocations", "collection_cancellations", "collection_reinstatements",
+  "charge_condonations",
 ] as const;

@@ -106,7 +106,10 @@ async function readLedgerInput(
     "select charge_id, amount from charge_condonations",
   );
   const cancelled = await driver.select<{ collection_id: string }>(
-    "select collection_id from collection_cancellations",
+    // Only a cancellation no reinstatement has lifted still voids the receipt.
+    `select cc.collection_id from collection_cancellations cc
+      where not exists (
+        select 1 from collection_reinstatements r where r.cancellation_id = cc.id)`,
   );
 
   return {

@@ -240,9 +240,10 @@ export async function getSubsidiaryLedger(leaseId: string): Promise<SubsidiaryLe
 
   const reasonById = new Map<string, string>();
   for (const c of await selectByIds(cancelledIds, (chunk) =>
-    supabase.from("collection_cancellations").select("collection_id, reason").in("collection_id", chunk),
+    supabase.from("standing_cancellations").select("collection_id, reason").in("collection_id", chunk),
   )) {
-    reasonById.set(c.collection_id, c.reason);
+    // A view's columns are all nullable to the type generator; these never are.
+    reasonById.set(c.collection_id!, c.reason!);
   }
 
   // Same reasoning as the cancellation lookup above: subsidiary_ledger's `entry_type =
@@ -351,7 +352,7 @@ export async function getCollections(filters: {
       supabase.from("leases").select("id, stalls(stall_no)").in("id", chunk),
     ),
     selectByIds(collectionIds, (chunk) =>
-      supabase.from("collection_cancellations").select("collection_id, reason").in("collection_id", chunk),
+      supabase.from("standing_cancellations").select("collection_id, reason").in("collection_id", chunk),
     ),
   ]);
 

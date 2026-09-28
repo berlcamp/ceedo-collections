@@ -206,3 +206,89 @@ describe("cancel_collection", () => {
     ).rejects.toThrow(/or_already_used/);
   });
 });
+
+describe("reinstate_collection", () => {
+  async function cancelled() {
+    const collectionId = await postCollectionAsOwner(db, fx, { groupRanks: [1] });
+    const { client: supervisor, userId } = await createAppUser({
+      email: "supervisor@example.com", role: "supervisor",
+    });
+    const { error } = await supervisor.rpc("cancel_collection", {
+      p_collection_id: collectionId, p_reason: "wrong stall",
+    });
+    expect(error).toBeNull();
+    return { collectionId, supervisor, userId };
+  }
+
+  const outstanding = async () => {
+    const { rows } = await db.query(
+      `select outstanding from ceedo_collections.charge_balances
+        where lease_id = $1 order by due_date limit 1`, [fx.leaseId],
+    );
+    return Number(rows[0].outstanding);
+  };
+
+  it("counts the receipt again and keeps both rows on the record", async () => {
+    const { collectionId, supervisor, userId } = await cancelled();
+    expect(await outstanding()).toBe(50);
+
+    const { error } = await supervisor.rpc("reinstate_collection", {
+      p_collection_id: collectionId, p_reason: "Cancelled the wrong OR",
+    });
+    expect(error).toBeNull();
+    expect(await outstanding()).toBe(0);
+
+    const { rows } = await db.query(
+      `select cc.id, r.reinstated_by
+         from ceedo_collections.collection_cancellations cc
+         join ceedo_collections.collection_reinstatements r on r.cancellation_id = cc.id
+        where cc.collection_id = $1`, [collectionId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].reinstated_by).toBe(userId);
+
+    const { rows: ledger } = await db.query(
+      `select cancelled from ceedo_collections.subsidiary_ledger
+        where entry_type = 'collection' and source_id = $1`, [collectionId],
+    );
+    expect(ledger[0].cancelled).toBe(false);
+  });
+
+  it("allows cancelling again after a reinstatement", async () => {
+    const { collectionId, supervisor } = await cancelled();
+    await supervisor.rpc("reinstate_collection", { p_collection_id: collectionId, p_reason: "undo" });
+    const { error } = await supervisor.rpc("cancel_collection", {
+      p_collection_id: collectionId, p_reason: "void after all",
+    });
+    expect(error).toBeNull();
+    expect(await outstanding()).toBe(50);
+  });
+
+  it("refuses a receipt that is not cancelled", async () => {
+    const collectionId = await postCollectionAsOwner(db, fx, { groupRanks: [1] });
+    const { client: supervisor } = await createAppUser({
+      email: "supervisor@example.com", role: "supervisor",
+    });
+    const { error } = await supervisor.rpc("reinstate_collection", {
+      p_collection_id: collectionId, p_reason: "nothing to undo",
+    });
+    expect(error!.message).toMatch(/not cancelled/);
+  });
+
+  it("refuses a blank reason and an accounting user", async () => {
+    const { collectionId, supervisor } = await cancelled();
+    const blank = await supervisor.rpc("reinstate_collection", {
+      p_collection_id: collectionId, p_reason: "  ",
+    });
+    expect(blank.error!.message).toMatch(/written reason/);
+
+    const { client: accounting } = await createAppUser({
+      email: "accounting@example.com", role: "accounting",
+    });
+    const { error } = await accounting.rpc("reinstate_collection", {
+      p_collection_id: collectionId, p_reason: "not allowed",
+    });
+    expect(error!.message).toMatch(/supervisor or administrator/);
+    expect(await outstanding()).toBe(50);
+  });
+});
