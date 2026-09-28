@@ -45,6 +45,8 @@ export interface ResourceConfig<S extends ZodObject<ZodRawShape> = ZodObject<Zod
   /** PostgREST select expression, including any joined labels. */
   select: string;
   orderBy: string;
+  /** Newest first, for a log. Default is ascending. */
+  orderDescending?: boolean;
   /** Column used as the display label when this resource is another field's optionsFrom source. */
   optionLabel: string;
   /**
@@ -52,6 +54,13 @@ export interface ResourceConfig<S extends ZodObject<ZodRawShape> = ZodObject<Zod
    * them into a label. Booklets need it, since many share a prefix and differ by range.
    */
   optionText?: { select: string; format: (row: Record<string, unknown>) => string };
+  /**
+   * Columns computed on the server from each fetched row, merged in before the table sees
+   * it. For a fact no single column holds, e.g. whether a stall is vacant, which is read
+   * from its leases. Runs server-side because the table is a client component, and a
+   * function cannot cross that boundary inside a column config.
+   */
+  derive?: (row: Record<string, unknown>) => Record<string, unknown>;
   /**
    * What to say when this screen has no rows.
    *

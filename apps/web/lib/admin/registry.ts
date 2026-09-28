@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { manilaToday } from "../reports/params";
+import { OCCUPANCY_LABEL, occupancyText, stallOccupancy, type StallLease } from "./occupancy";
 import { registerResource, type ResourceConfig } from "./resource";
 
 const ADMIN_ONLY = ["admin"] as const;
@@ -17,6 +19,14 @@ const name = z.string().min(1, "Required");
 const optionalText = z.string().min(1).nullable();
 const money = z.number().min(0, "Must not be negative");
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
+
+function occupancyOf(row: Record<string, unknown>) {
+  return stallOccupancy(
+    row.active !== false,
+    (row.leases as StallLease[] | null) ?? [],
+    manilaToday(),
+  );
+}
 
 const configs: ResourceConfig[] = [
   {
@@ -130,11 +140,37 @@ const configs: ResourceConfig[] = [
       { key: "stall_no", label: "Stall" },
       { key: "sections", label: "Section" },
       { key: "area_sqm", label: "Area (sqm)" },
+      { key: "occupancy", label: "Occupancy" },
+      { key: "occupant", label: "Tenant" },
       { key: "active", label: "Active" },
     ],
-    select: "id, stall_no, area_sqm, active, sections(name)",
+    select:
+      "id, stall_no, area_sqm, active, sections(name), leases(status, start_date, end_date, tenants(full_name))",
     orderBy: "stall_no",
     optionLabel: "stall_no",
+    // A bare stall number is ambiguous (numbers repeat across sections) and says nothing
+    // about whether the stall is free, which is the one thing a new lease needs to know.
+    optionText: {
+      select:
+        "stall_no, area_sqm, active, sections(name, facilities(code)), leases(status, start_date, end_date, tenants(full_name))",
+      format: (row) => {
+        const section = row.sections as { name: string; facilities: { code: string } | null } | null;
+        const parts = [
+          section?.facilities?.code,
+          section?.name,
+          `Stall ${row.stall_no}`,
+          row.area_sqm != null ? `${row.area_sqm} sqm` : null,
+        ].filter(Boolean);
+        return `${parts.join(" · ")} — ${occupancyText(occupancyOf(row))}`;
+      },
+    },
+    derive: (row) => {
+      const occupancy = occupancyOf(row);
+      return {
+        occupancy: OCCUPANCY_LABEL[occupancy.state],
+        occupant: "tenant" in occupancy ? occupancy.tenant : null,
+      };
+    },
     readRoles: BACK_OFFICE,
     writeRoles: ADMIN_ONLY,
     deletable: {
@@ -219,6 +255,7 @@ const configs: ResourceConfig[] = [
           { value: "ended", label: "Ended" },
           { value: "terminated", label: "Terminated" },
         ],
+        help: "To free the stall, set Ended (term ran out) or Terminated (cut short) and fill in the end date. Billing stops and the stall shows as vacant.",
       },
     ],
     columns: [
@@ -752,6 +789,8 @@ const configs: ResourceConfig[] = [
     ],
     select: "id, at, action, entity, entity_id, app_users(full_name)",
     orderBy: "at",
+    // Latest first: what someone opens the log for is usually what just changed.
+    orderDescending: true,
     optionLabel: "action",
     readRoles: BACK_OFFICE,
     writeRoles: [],

@@ -34,11 +34,17 @@ export default async function ResourcePage({
   const staff = await requireStaff();
   const supabase = await getServerClient();
 
-  const { data: rows, error } = await supabase
+  const { data: fetched, error } = await supabase
     .from(config.table)
     // Widened with the raw form columns so an edit form opens with its values filled in.
     .select(selectWithFields(config.select, config.fields.map((field) => field.name)))
-    .order(config.orderBy);
+    .order(config.orderBy, { ascending: !config.orderDescending });
+  const rows = config.derive
+    ? (fetched ?? []).map((row) => {
+        const record = row as unknown as Record<string, unknown>;
+        return { ...record, ...config.derive!(record) };
+      })
+    : fetched;
 
   // Load choices for any select field that draws them from another table. Each
   // source resource names its own label column via `optionLabel` — guessing at
@@ -57,15 +63,18 @@ export default async function ResourcePage({
       ? `id, ${source.optionText.select}`
       : `id, label:${source.optionLabel}`;
     const { data } = await supabase.from(source.table).select(optionSelect);
-    dynamicOptions[field.optionsFrom] = (data ?? []).map((row) => {
-      const record = row as unknown as Record<string, unknown>;
-      return {
-        value: String(record.id),
-        label: source.optionText
-          ? source.optionText.format(record)
-          : String(record.label ?? record.id),
-      };
-    });
+    dynamicOptions[field.optionsFrom] = (data ?? [])
+      .map((row) => {
+        const record = row as unknown as Record<string, unknown>;
+        return {
+          value: String(record.id),
+          label: source.optionText
+            ? source.optionText.format(record)
+            : String(record.label ?? record.id),
+        };
+      })
+      // Natural order, so "Stall 2" comes before "Stall 10".
+      .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
   }
 
   // Every row of a writable resource can be opened for editing from the table, so the
