@@ -83,7 +83,8 @@ None recorded. There is no supplied logo, wordmark, palette or typeface for the 
 app. The splash currently uses `#208AEF` and the Android adaptive icon `#E6F4FE`, both Expo
 scaffold values rather than chosen brand colors.
 
-"CEEDO" is the office name and appears as the app title.
+"CEEDO" is the office name (City Economic Enterprise and Development Office) and appears
+as the app title.
 
 ## Evidence on Hand
 

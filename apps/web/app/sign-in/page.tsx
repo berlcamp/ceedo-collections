@@ -25,7 +25,7 @@ export default function SignInPage() {
           <h1 className="text-2xl font-semibold tracking-[-0.015em] text-chassis-ink">
             CEEDO Collections
           </h1>
-          <p className="mt-1.5 text-sm text-chassis-dim">City Economic Enterprise Office</p>
+          <p className="mt-1.5 text-sm text-chassis-dim">City Economic Enterprise and Development Office</p>
         </div>
 
         <Button

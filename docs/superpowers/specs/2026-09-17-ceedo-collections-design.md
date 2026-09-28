@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-17
 **Status:** Approved for planning
-**Scope:** Field collection and collections accounting for the City Economic Enterprise Office (CEEDO)
+**Scope:** Field collection and collections accounting for the City Economic Enterprise and Development Office (CEEDO)
 
 ---
 

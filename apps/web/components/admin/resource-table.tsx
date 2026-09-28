@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Pencil } from "lucide-react";
 import { buttonClass } from "@/components/ui/button";
+import { Mark } from "@/components/ui/mark";
 import { DataTable } from "@/components/data-table/data-table";
 import type { DataColumn } from "@/components/data-table/types";
 import {
@@ -93,6 +94,8 @@ export function ResourceTable({
       label: column.label,
       render: (row) => {
         const text = formatCell(row[column.key]);
+        const tone = column.badge?.[text];
+        if (tone) return <Mark tone={tone}>{text}</Mark>;
         if (text !== "—") return text;
         return <span className="text-ink-3">{column.emptyText ?? "—"}</span>;
       },

@@ -53,7 +53,7 @@ export async function TenantCard({ card }: { card: CardRow }) {
       </div>
 
       <footer className="border-t-[0.2mm] border-black pt-[2.5mm] text-[3mm]">
-        City Economic Enterprise Office
+        City Economic Enterprise and Development Office
       </footer>
     </article>
   );

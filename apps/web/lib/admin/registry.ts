@@ -140,7 +140,11 @@ const configs: ResourceConfig[] = [
       { key: "stall_no", label: "Stall" },
       { key: "sections", label: "Section" },
       { key: "area_sqm", label: "Area (sqm)" },
-      { key: "occupancy", label: "Occupancy" },
+      {
+        key: "occupancy",
+        label: "Occupancy",
+        badge: { Vacant: "proof", Occupied: "office", Reserved: "warn", Inactive: "neutral" },
+      },
       { key: "occupant", label: "Tenant" },
       { key: "active", label: "Active" },
     ],

@@ -1,4 +1,5 @@
 import type { Database, Role } from "@ceedo/shared";
+import type { MarkTone } from "@/components/ui/mark";
 import type { ZodObject, ZodRawShape } from "zod";
 
 export interface SelectOption {
@@ -30,6 +31,8 @@ export interface ColumnConfig {
   label: string;
   /** Shown for a null value when null has a meaning, e.g. a section of "All sections". */
   emptyText?: string;
+  /** Renders the cell as a state mark, toned by its text: `{ Vacant: "proof" }`. */
+  badge?: Record<string, MarkTone>;
 }
 
 export interface ResourceConfig<S extends ZodObject<ZodRawShape> = ZodObject<ZodRawShape>> {

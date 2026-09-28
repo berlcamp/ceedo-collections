@@ -24,7 +24,7 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "CEEDO Collections",
-  description: "City Economic Enterprise Office cash-collection system",
+  description: "City Economic Enterprise and Development Office cash-collection system",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

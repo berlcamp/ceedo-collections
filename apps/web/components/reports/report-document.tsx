@@ -11,7 +11,7 @@ export function ReportDocument({ report, generatedAt }: { report: Report; genera
       <style>{`@page { size: A4 landscape; margin: 12mm; }`}</style>
 
       <header className="mb-5 border-b-2 border-black pb-3">
-        <p className="text-xs uppercase tracking-wider">City Economic Enterprise Office</p>
+        <p className="text-xs uppercase tracking-wider">City Economic Enterprise and Development Office</p>
         <h1 className="text-xl font-bold">{report.title}</h1>
         <p className="text-sm">{report.scope}</p>
       </header>

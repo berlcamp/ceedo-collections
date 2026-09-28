@@ -100,7 +100,7 @@ Official Receipt is the legal record, and this app proves the paper and the cash
 ## Brand Commitments
 
 None recorded. There is no supplied logo, wordmark, palette or typeface. "CEEDO
-Collections" and "City Economic Enterprise Office" are the names in use.
+Collections" and "City Economic Enterprise and Development Office" are the names in use.
 
 The collector tablet app has its own separate constraints (one light theme, daylight
 legibility, large money figures) and is **not** a visual reference for this surface: a

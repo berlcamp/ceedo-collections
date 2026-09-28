@@ -1,8 +1,9 @@
 # CEEDO Collections
 
-A market-collections system for a Philippine LGU: a Next.js back office (`apps/web`), an
-offline-first Expo collector app for Android tablets (`apps/collector`), and a Supabase
-(Postgres + Edge Functions) backend under `supabase/`.
+A market-collections system for the City Economic Enterprise and Development Office
+(CEEDO) of a Philippine LGU: a Next.js back office (`apps/web`), an offline-first Expo
+collector app for Android tablets (`apps/collector`), and a Supabase (Postgres + Edge
+Functions) backend under `supabase/`.
 
 ```bash
 pnpm install
