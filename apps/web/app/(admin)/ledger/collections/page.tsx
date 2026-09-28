@@ -22,7 +22,7 @@ export default async function CollectionsPage({
   return (
     <div>
       <ScreenHeader
-        title="Collections"
+        title="Receipts"
         note="Every receipt posted from a tablet, most recent first."
       />
 

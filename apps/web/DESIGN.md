@@ -540,6 +540,12 @@ otherwise.
   registry, and a React component cannot cross the RSC boundary — so the layout passes a string
   and `components/shell/nav-icons.tsx` maps it back to a glyph on the client. One library, one
   16px size, one stroke.
+- **Modules, not tables:** each rail item is a module organised by the office's job (Collections,
+  Receivables, Tenants, Market…), defined once in `lib/nav/modules.ts`. A module's screens are
+  tabs in a strip above the header band — 36px links, the current one in medium weight over a
+  2px navy rule, on a `rule` hairline. A one-screen module shows no strip. Every screen keeps
+  its own URL; the rail item is current across all of its module's tabs. A new resource must be
+  filed under a module (a test fails otherwise).
 - **Mobile:** the same chassis as a 56px sticky bar plus a Radix Dialog drawer that slides in
   from the left; tapping an item dismisses it.
 - **Header band:** heading, standing note, actions. **No kicker or eyebrow above the heading** —

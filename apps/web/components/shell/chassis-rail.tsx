@@ -10,12 +10,7 @@ import { cn } from "@/components/ui/cn";
 import { Tooltip } from "@/components/ui/tooltip";
 import { RAIL_COOKIE, RAIL_COOKIE_MAX_AGE } from "@/components/shell/rail-cookie";
 import { signOut } from "@/lib/auth/actions";
-
-export interface NavGroup {
-  heading: string;
-  /** `icon` names an entry in NAV_ICONS; a component cannot cross the RSC boundary. */
-  items: { href: string; label: string; icon: string }[];
-}
+import { activeModule, type NavSection } from "@/lib/nav/match";
 
 /**
  * The chassis: the navy panel the pale field of figures sits beside.
@@ -31,18 +26,22 @@ export interface NavGroup {
  * usually get wrong.
  */
 export function ChassisRail({
-  groups,
+  sections,
   staffName,
   staffRole,
   defaultCollapsed = false,
 }: {
-  groups: NavGroup[];
+  /** From `navFor()`. Each module's `key` names its entry in NAV_ICONS: a component cannot
+   * cross the RSC boundary. */
+  sections: NavSection[];
   staffName: string;
   staffRole: string;
   /** From the rail cookie, read server-side. */
   defaultCollapsed?: boolean;
 }) {
   const pathname = usePathname();
+  // One module is current across all of its tabs, so /stalls and /sections both light Market.
+  const current = activeModule(pathname, sections);
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
 
@@ -121,7 +120,7 @@ export function ChassisRail({
       <div className="h-px shrink-0 bg-chassis-600" />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-1 pt-2 pb-4">
-        {groups.map((group, index) => (
+        {sections.map((group, index) => (
           <div key={group.heading} className={cn("p-2", index > 0 && (compact ? "pt-2" : "pt-4"))}>
             {compact ? (
               // Headings do not fit a 3.5rem rail; a rule keeps the groups apart.
@@ -134,11 +133,11 @@ export function ChassisRail({
               </p>
             )}
             <ul className="flex flex-col">
-              {group.items.map((item) => {
-                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-                const Icon = NAV_ICONS[item.icon];
+              {group.modules.map((item) => {
+                const active = item.key === current?.key;
+                const Icon = NAV_ICONS[item.key];
                 return (
-                  <li key={item.href}>
+                  <li key={item.key}>
                     <Tooltip label={item.label} side="right" disabled={!compact}>
                       <Link
                         href={item.href}
