@@ -350,7 +350,9 @@ const configs: ResourceConfig[] = [
       "No rates yet. A rate is what a fee type costs from a given date onward. Rates are added and dated rather than edited, so what was charged last year stays provable this year.",
     schema: z.object({
       fee_type_id: uuid,
-      rate_class: z.string(),
+      // Blank means unclassified, stored as '' not NULL: the no-overlap constraint compares
+      // rate_class with =, and NULL never equals NULL.
+      rate_class: z.string().nullable().transform((value) => value ?? ""),
       effective_from: isoDate,
       effective_to: isoDate.nullable(),
       amount: money,

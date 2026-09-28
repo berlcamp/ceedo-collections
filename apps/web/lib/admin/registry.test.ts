@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import "./registry";
 import { RESOURCES } from "./resource";
 
@@ -43,4 +44,21 @@ describe("resource registry", () => {
       expect(selected).toContain(config.optionLabel);
     },
   );
+});
+
+describe("optional fields", () => {
+  // The form posts a blank optional field as null (actions.ts coerce). A schema that
+  // refuses null makes the field impossible to leave blank: "expected string, received null".
+  it("accept a blank (null) value in every resource's schema", () => {
+    const refused: string[] = [];
+    for (const config of Object.values(RESOURCES)) {
+      const shape = config.schema.shape;
+      for (const field of config.fields) {
+        const schema = shape[field.name];
+        if (!field.optional || !schema) continue;
+        if (!z.safeParse(schema, null).success) refused.push(`${config.key}.${field.name}`);
+      }
+    }
+    expect(refused).toEqual([]);
+  });
 });
