@@ -37,7 +37,14 @@ function formatCell(value: unknown): string {
   return String(value);
 }
 
+function statusOf(row: Row, column: ColumnConfig) {
+  const value = row[column.key];
+  return value === null || value === undefined ? undefined : column.status?.[String(value)];
+}
+
 function cellText(row: Row, column: ColumnConfig): string {
+  const status = statusOf(row, column);
+  if (status) return status.label;
   const text = formatCell(row[column.key]);
   return text === "—" && column.emptyText ? column.emptyText : text;
 }
@@ -93,16 +100,16 @@ export function ResourceTable({
       key: column.key,
       label: column.label,
       render: (row) => {
+        const status = statusOf(row, column);
+        if (status) return <Mark tone={status.tone}>{status.label}</Mark>;
         const text = formatCell(row[column.key]);
-        const tone = column.badge?.[text];
-        if (tone) return <Mark tone={tone}>{text}</Mark>;
         if (text !== "—") return text;
         return <span className="text-ink-3">{column.emptyText ?? "—"}</span>;
       },
       sortValue: (row) => {
         const value = row[column.key];
         if (typeof value === "number") return value;
-        const text = formatCell(value);
+        const text = statusOf(row, column)?.label ?? formatCell(value);
         return text === "—" ? null : text;
       },
       searchValue: (row) => cellText(row, column),

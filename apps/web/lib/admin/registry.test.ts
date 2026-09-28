@@ -62,3 +62,23 @@ describe("optional fields", () => {
     expect(refused).toEqual([]);
   });
 });
+
+describe("status columns", () => {
+  // A value with no entry falls back to plain text, so a new enum value added to a form
+  // without a mark here would quietly render unlike its neighbours.
+  it("have a mark for every value the form can set", () => {
+    const missing: string[] = [];
+    for (const config of Object.values(RESOURCES)) {
+      for (const column of config.columns) {
+        if (!column.status) continue;
+        const field = config.fields.find((candidate) => candidate.name === column.key);
+        const values =
+          field?.type === "boolean" ? ["true", "false"] : (field?.options ?? []).map((o) => o.value);
+        for (const value of values) {
+          if (!column.status[value]) missing.push(`${config.key}.${column.key}=${value}`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+});

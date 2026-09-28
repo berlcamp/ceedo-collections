@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { manilaToday } from "../reports/params";
 import { OCCUPANCY_LABEL, occupancyText, stallOccupancy, type StallLease } from "./occupancy";
-import { registerResource, type ResourceConfig } from "./resource";
+import { registerResource, type ColumnConfig, type ResourceConfig } from "./resource";
+
+type StatusMarks = NonNullable<ColumnConfig["status"]>;
 
 const ADMIN_ONLY = ["admin"] as const;
 const SUPERVISOR_UP = ["supervisor", "admin"] as const;
@@ -44,6 +46,36 @@ function stallLabel(stall: Record<string, unknown>): string {
     .join(" · ");
 }
 
+// State marks for the list screens' status columns, keyed by the raw value as text.
+// Green for the state things are meant to be in, red where something was cut off, grey
+// for the rest.
+const ACTIVE_STATUS: StatusMarks = {
+  true: { label: "Active", tone: "proof" },
+  false: { label: "Inactive", tone: "neutral" },
+};
+const OCCUPANCY_STATUS: StatusMarks = {
+  Vacant: { label: "Vacant", tone: "proof" },
+  Occupied: { label: "Occupied", tone: "office" },
+  Reserved: { label: "Reserved", tone: "warn" },
+  Inactive: { label: "Inactive", tone: "neutral" },
+};
+const LEASE_STATUS: StatusMarks = {
+  active: { label: "Active", tone: "proof" },
+  ended: { label: "Ended", tone: "neutral" },
+  terminated: { label: "Terminated", tone: "alert" },
+};
+const BOOKLET_STATUS: StatusMarks = {
+  received: { label: "Received", tone: "neutral" },
+  assigned: { label: "Assigned", tone: "office" },
+  in_use: { label: "In use", tone: "proof" },
+  returned: { label: "Returned", tone: "neutral" },
+  exhausted: { label: "Exhausted", tone: "warn" },
+};
+const USER_STATUS: StatusMarks = {
+  active: { label: "Active", tone: "proof" },
+  suspended: { label: "Suspended", tone: "alert" },
+};
+
 const configs: ResourceConfig[] = [
   {
     key: "facilities",
@@ -79,7 +111,7 @@ const configs: ResourceConfig[] = [
       { key: "code", label: "Code" },
       { key: "name", label: "Name" },
       { key: "type", label: "Type" },
-      { key: "active", label: "Active" },
+      { key: "active", label: "Status", status: ACTIVE_STATUS },
     ],
     select: "id, code, name, type, active",
     orderBy: "code",
@@ -159,10 +191,10 @@ const configs: ResourceConfig[] = [
       {
         key: "occupancy",
         label: "Occupancy",
-        badge: { Vacant: "proof", Occupied: "office", Reserved: "warn", Inactive: "neutral" },
+        status: OCCUPANCY_STATUS,
       },
       { key: "occupant", label: "Tenant" },
-      { key: "active", label: "Active" },
+      { key: "active", label: "Status", status: ACTIVE_STATUS },
     ],
     select:
       "id, stall_no, area_sqm, active, sections(name), leases(status, start_date, end_date, tenants(full_name))",
@@ -210,7 +242,7 @@ const configs: ResourceConfig[] = [
     columns: [
       { key: "full_name", label: "Name" },
       { key: "contact_no", label: "Contact" },
-      { key: "active", label: "Active" },
+      { key: "active", label: "Status", status: ACTIVE_STATUS },
     ],
     select: "id, full_name, address, contact_no, active",
     orderBy: "full_name",
@@ -276,7 +308,7 @@ const configs: ResourceConfig[] = [
       { key: "end_date", label: "To" },
       { key: "rate_amount", label: "Rate" },
       { key: "accrual_period", label: "Period" },
-      { key: "status", label: "Status" },
+      { key: "status", label: "Status", status: LEASE_STATUS },
     ],
     select:
       "id, start_date, end_date, rate_amount, accrual_period, due_day, status, stalls(stall_no, area_sqm, sections(name, facilities(code))), tenants(full_name)",
@@ -466,7 +498,7 @@ const configs: ResourceConfig[] = [
       { key: "start_no", label: "From" },
       { key: "end_no", label: "To" },
       { key: "received_date", label: "Received" },
-      { key: "status", label: "Status" },
+      { key: "status", label: "Status", status: BOOKLET_STATUS },
     ],
     select: "id, serial_prefix, start_no, end_no, received_date, status, form_types(code)",
     orderBy: "start_no",
@@ -553,7 +585,7 @@ const configs: ResourceConfig[] = [
       { key: "label", label: "Tablet" },
       { key: "registered_at", label: "Registered" },
       { key: "last_seen_at", label: "Last seen" },
-      { key: "active", label: "Active" },
+      { key: "active", label: "Status", status: ACTIVE_STATUS },
     ],
     select: "id, label, registered_at, last_seen_at, active",
     orderBy: "label",
@@ -605,7 +637,7 @@ const configs: ResourceConfig[] = [
       { key: "devices", label: "Tablet" },
       { key: "facilities", label: "Facility" },
       { key: "sections", label: "Section", emptyText: "All sections" },
-      { key: "active", label: "Active" },
+      { key: "active", label: "Status", status: ACTIVE_STATUS },
     ],
     // sections is disambiguated: device_assignments carries two foreign keys into it
     // (the plain section_id FK, and device_assignments_section_in_facility's composite
@@ -661,7 +693,7 @@ const configs: ResourceConfig[] = [
       { key: "app_users", label: "Collector" },
       { key: "facilities", label: "Facility" },
       { key: "sections", label: "Section", emptyText: "All sections" },
-      { key: "active", label: "Active" },
+      { key: "active", label: "Status", status: ACTIVE_STATUS },
     ],
     // Same disambiguation as device-assignments above: collector_assignments also carries
     // two foreign keys into sections (section_id, and the composite
@@ -772,7 +804,7 @@ const configs: ResourceConfig[] = [
       { key: "employee_no", label: "Employee no." },
       { key: "full_name", label: "Name" },
       { key: "role", label: "Role" },
-      { key: "status", label: "Status" },
+      { key: "status", label: "Status", status: USER_STATUS },
     ],
     select: "id, employee_no, full_name, role, status",
     orderBy: "full_name",

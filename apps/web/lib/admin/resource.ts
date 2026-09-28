@@ -31,8 +31,11 @@ export interface ColumnConfig {
   label: string;
   /** Shown for a null value when null has a meaning, e.g. a section of "All sections". */
   emptyText?: string;
-  /** Renders the cell as a state mark, toned by its text: `{ Vacant: "proof" }`. */
-  badge?: Record<string, MarkTone>;
+  /**
+   * Renders the cell as a state mark. Keyed by the raw value as text -- "true"/"false" for
+   * a boolean, the enum value for a status -- so `active: true` reads "Active", not "Yes".
+   */
+  status?: Record<string, { label: string; tone: MarkTone }>;
 }
 
 export interface ResourceConfig<S extends ZodObject<ZodRawShape> = ZodObject<ZodRawShape>> {
