@@ -36,6 +36,11 @@ export interface ColumnConfig {
    * a boolean, the enum value for a status -- so `active: true` reads "Active", not "Yes".
    */
   status?: Record<string, { label: string; tone: MarkTone }>;
+  /**
+   * False keeps a column out of the filter chips even when its values happen to repeat,
+   * e.g. names and contact numbers, which the free-text search already covers.
+   */
+  facet?: false;
 }
 
 export interface ResourceConfig<S extends ZodObject<ZodRawShape> = ZodObject<ZodRawShape>> {

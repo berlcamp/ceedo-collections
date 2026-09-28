@@ -12,6 +12,18 @@ export interface StallLease {
   tenants: { full_name: string } | null;
 }
 
+/** An active lease whose dates cover today: the tenant holds the stall right now. */
+export function isCurrentLease(
+  lease: Pick<StallLease, "status" | "start_date" | "end_date">,
+  today: string,
+): boolean {
+  return (
+    lease.status === "active" &&
+    lease.start_date <= today &&
+    (lease.end_date === null || lease.end_date >= today)
+  );
+}
+
 export type Occupancy =
   | { state: "inactive" }
   | { state: "vacant" }
@@ -27,7 +39,7 @@ export function stallOccupancy(
   const holding = leases.filter(
     (lease) => lease.status === "active" && (lease.end_date === null || lease.end_date >= today),
   );
-  const current = holding.find((lease) => lease.start_date <= today);
+  const current = holding.find((lease) => isCurrentLease(lease, today));
   if (current) {
     return {
       state: "occupied",

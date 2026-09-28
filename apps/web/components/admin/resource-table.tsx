@@ -113,7 +113,7 @@ export function ResourceTable({
         return text === "—" ? null : text;
       },
       searchValue: (row) => cellText(row, column),
-      ...(facetable(rows, column.key) ? { facet: (row: Row) => cellText(row, column) } : {}),
+      ...(column.facet !== false && facetable(rows, column.key) ? { facet: (row: Row) => cellText(row, column) } : {}),
     }));
 
     if (spec && editRows) {

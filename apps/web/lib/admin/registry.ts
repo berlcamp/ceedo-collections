@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { manilaToday } from "../reports/params";
-import { OCCUPANCY_LABEL, occupancyText, stallOccupancy, type StallLease } from "./occupancy";
+import {
+  OCCUPANCY_LABEL,
+  isCurrentLease,
+  occupancyText,
+  stallOccupancy,
+  type StallLease,
+} from "./occupancy";
 import { registerResource, type ColumnConfig, type ResourceConfig } from "./resource";
 
 type StatusMarks = NonNullable<ColumnConfig["status"]>;
@@ -31,19 +37,12 @@ function occupancyOf(row: Record<string, unknown>) {
 }
 
 /**
- * "CPM · Fish · Stall 12 · 6 sqm". A bare stall number is ambiguous: numbers repeat
- * across sections. Reads a stalls row selected with `sections(name, facilities(code))`.
+ * "Stall 12 · Fish": the number and its section. A bare stall number is ambiguous,
+ * since numbers repeat across sections. Reads a stalls row selected with `sections(name)`.
  */
 function stallLabel(stall: Record<string, unknown>): string {
-  const section = stall.sections as { name: string; facilities: { code: string } | null } | null;
-  return [
-    section?.facilities?.code,
-    section?.name,
-    `Stall ${stall.stall_no}`,
-    stall.area_sqm != null ? `${stall.area_sqm} sqm` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const section = stall.sections as { name: string } | null;
+  return [`Stall ${stall.stall_no}`, section?.name].filter(Boolean).join(" · ");
 }
 
 // State marks for the list screens' status columns, keyed by the raw value as text.
@@ -204,7 +203,7 @@ const configs: ResourceConfig[] = [
     // about whether the stall is free, which is the one thing a new lease needs to know.
     optionText: {
       select:
-        "stall_no, area_sqm, active, sections(name, facilities(code)), leases(status, start_date, end_date, tenants(full_name))",
+        "stall_no, active, sections(name), leases(status, start_date, end_date, tenants(full_name))",
       format: (row) => `${stallLabel(row)} — ${occupancyText(occupancyOf(row))}`,
     },
     derive: (row) => {
@@ -240,11 +239,24 @@ const configs: ResourceConfig[] = [
       { name: "active", label: "Active", type: "boolean" },
     ],
     columns: [
-      { key: "full_name", label: "Name" },
-      { key: "contact_no", label: "Contact" },
+      { key: "full_name", label: "Name", facet: false },
+      { key: "address", label: "Address", facet: false },
+      { key: "contact_no", label: "Contact", facet: false },
+      { key: "current_stalls", label: "Stalls rented", emptyText: "None", facet: false },
       { key: "active", label: "Status", status: ACTIVE_STATUS },
     ],
-    select: "id, full_name, address, contact_no, active",
+    select:
+      "id, full_name, address, contact_no, active, leases(status, start_date, end_date, stalls(stall_no, sections(name)))",
+    // The stalls this tenant holds today, from their current leases.
+    derive: (row) => {
+      const today = manilaToday();
+      const leases = (row.leases as (StallLease & { stalls: Record<string, unknown> | null })[] | null) ?? [];
+      const stalls = leases
+        .filter((lease) => lease.stalls && isCurrentLease(lease, today))
+        .map((lease) => stallLabel(lease.stalls!))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      return { current_stalls: stalls.length ? stalls.join(", ") : null };
+    },
     orderBy: "full_name",
     optionLabel: "full_name",
     readRoles: BACK_OFFICE,
@@ -311,7 +323,7 @@ const configs: ResourceConfig[] = [
       { key: "status", label: "Status", status: LEASE_STATUS },
     ],
     select:
-      "id, start_date, end_date, rate_amount, accrual_period, due_day, status, stalls(stall_no, area_sqm, sections(name, facilities(code))), tenants(full_name)",
+      "id, start_date, end_date, rate_amount, accrual_period, due_day, status, stalls(stall_no, sections(name)), tenants(full_name)",
     derive: (row) => ({
       stall: row.stalls ? stallLabel(row.stalls as Record<string, unknown>) : null,
     }),
