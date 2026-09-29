@@ -64,9 +64,27 @@ async function selectByIds<Row>(
   return out;
 }
 
+/**
+ * "Stall 12 · Fish": the number and its section. Numbers repeat across sections, so the
+ * number alone is ambiguous. Reads a stalls embed selected with `sections(name)`.
+ */
+function stallLabel(stall: { stall_no: string; sections: { name: string } | null } | null): string {
+  return stall ? [`Stall ${stall.stall_no}`, stall.sections?.name].filter(Boolean).join(" · ") : "—";
+}
+
+/** stallLabel() for each lease, for the reporting views that carry only stall_no. */
+async function stallLabelsByLeaseId(leaseIds: string[]): Promise<Map<string, string>> {
+  const supabase = await ledgerClient();
+  const leases = await selectByIds(leaseIds, (chunk) =>
+    supabase.from("leases").select("id, stalls(stall_no, sections(name))").in("id", chunk),
+  );
+  return new Map(leases.map((l) => [l.id, stallLabel(l.stalls)]));
+}
+
 export interface AgingRow {
   leaseId: string;
   stallNo: string;
+  stallLabel: string;
   tenantName: string;
   bucket1to30: Centavos;
   bucket31to60: Centavos;
@@ -87,9 +105,11 @@ export async function getAging(): Promise<AgingRow[]> {
   // lease_id/stall_id/stall_no/tenant_name come from inner joins and a GROUP BY on
   // lease_id (see the view's own definition) -- never null in practice, though the
   // generator marks every view column nullable because it cannot see that guarantee.
+  const labels = await stallLabelsByLeaseId((data ?? []).map((r) => r.lease_id!));
   return (data ?? []).map((r) => ({
     leaseId: r.lease_id!,
     stallNo: r.stall_no!,
+    stallLabel: labels.get(r.lease_id!) ?? `Stall ${r.stall_no}`,
     tenantName: r.tenant_name!,
     bucket1to30: centavos(r.bucket_1_30),
     bucket31to60: centavos(r.bucket_31_60),
@@ -103,6 +123,7 @@ export async function getAging(): Promise<AgingRow[]> {
 export interface DelinquencyRow {
   leaseId: string;
   stallNo: string;
+  stallLabel: string;
   tenantName: string;
   address: string | null;
   contactNo: string | null;
@@ -129,9 +150,11 @@ export async function getDelinquency(): Promise<DelinquencyRow[]> {
   // days_overdue/unpaid_charges are all guaranteed non-null by the view's joins and
   // aggregates (a row only exists here for a lease with unsettled charges); address and
   // contact_no are genuinely nullable tenant fields.
+  const labels = await stallLabelsByLeaseId((data ?? []).map((r) => r.lease_id!));
   return (data ?? []).map((r) => ({
     leaseId: r.lease_id!,
     stallNo: r.stall_no!,
+    stallLabel: labels.get(r.lease_id!) ?? `Stall ${r.stall_no}`,
     tenantName: r.tenant_name!,
     address: r.address,
     contactNo: r.contact_no,
@@ -145,6 +168,7 @@ export async function getDelinquency(): Promise<DelinquencyRow[]> {
 export interface LeaseBalance {
   leaseId: string;
   stallNo: string;
+  stallLabel: string;
   tenantName: string;
   outstanding: Centavos;
   oldestDueDate: string | null;
@@ -164,7 +188,7 @@ export async function getLeaseBalance(leaseId: string): Promise<LeaseBalance | n
     await Promise.all([
       supabase
         .from("leases")
-        .select("id, stalls(stall_no), tenants(full_name)")
+        .select("id, stalls(stall_no, sections(name)), tenants(full_name)")
         .eq("id", leaseId)
         .maybeSingle(),
       supabase.from("lease_balances").select("*").eq("lease_id", leaseId).maybeSingle(),
@@ -176,6 +200,7 @@ export async function getLeaseBalance(leaseId: string): Promise<LeaseBalance | n
   return {
     leaseId,
     stallNo: lease.stalls?.stall_no ?? "—",
+    stallLabel: stallLabel(lease.stalls),
     tenantName: lease.tenants?.full_name ?? "—",
     outstanding: centavos(balance?.outstanding ?? null),
     oldestDueDate: balance?.oldest_due_date ?? null,
@@ -389,7 +414,7 @@ export async function getCutoverDate(): Promise<string> {
 export interface OpeningBalanceLease {
   leaseId: string;
   stallNo: string;
-  /** "Stall 12 · Fish": stall numbers repeat across sections, so the number alone is ambiguous. */
+  /** See stallLabel(). */
   stallLabel: string;
   tenantName: string;
 }
@@ -438,9 +463,7 @@ export async function getOpeningBalanceLeases(): Promise<OpeningBalanceLeases> {
     const base = {
       leaseId: lease.id,
       stallNo: lease.stalls?.stall_no ?? "—",
-      stallLabel: lease.stalls
-        ? [`Stall ${lease.stalls.stall_no}`, lease.stalls.sections?.name].filter(Boolean).join(" · ")
-        : "—",
+      stallLabel: stallLabel(lease.stalls),
       tenantName: lease.tenants?.full_name ?? "—",
     };
     const opening = openingByLeaseId.get(lease.id);

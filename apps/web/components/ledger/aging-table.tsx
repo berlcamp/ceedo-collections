@@ -11,12 +11,13 @@ const columns: DataColumn<AgingRow>[] = [
     key: "stall",
     label: "Stall",
     sortValue: (row) => row.stallNo,
+    searchValue: (row) => row.stallLabel,
     render: (row) => (
       <Link
         href={`/ledger/leases/${row.leaseId}`}
         className="font-medium text-mark underline decoration-mark/35 hover:decoration-mark"
       >
-        {row.stallNo}
+        {row.stallLabel}
       </Link>
     ),
   },

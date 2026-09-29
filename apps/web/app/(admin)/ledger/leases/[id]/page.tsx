@@ -37,7 +37,7 @@ export default async function SubsidiaryLedgerPage({
       </Link>
 
       <ScreenHeader
-        title={`Stall ${balance.stallNo} — ${balance.tenantName}`}
+        title={`${balance.stallLabel} — ${balance.tenantName}`}
         actions={
           // A lost or ruined card is a reprint, not a re-issue (§9.2): the QR is the lease id.
           <>
