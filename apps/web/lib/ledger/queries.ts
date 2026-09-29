@@ -25,9 +25,7 @@ function centavos(value: string | number | null): Centavos {
  * view's definition (`supabase/migrations/20260918000024_reporting_views.sql`) guarantees,
  * with a comment at each one.
  */
-export async function ledgerClient(): Promise<
-  SupabaseClient<Database, "ceedo_collections">
-> {
+export async function ledgerClient(): Promise<SupabaseClient<Database, "ceedo_collections">> {
   return getServerClient();
 }
 
@@ -54,9 +52,7 @@ const IN_CHUNK = 200;
  */
 async function selectByIds<Row>(
   ids: string[],
-  query: (
-    chunk: string[],
-  ) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>,
+  query: (chunk: string[]) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>,
 ): Promise<Row[]> {
   if (ids.length === 0) return [];
   const out: Row[] = [];
@@ -161,26 +157,18 @@ export interface LeaseBalance {
  * no row in `lease_balances` (it is built from unsettled charges only) -- that lease still
  * exists and is reported here with a zero balance, not treated as "not found".
  */
-export async function getLeaseBalance(
-  leaseId: string,
-): Promise<LeaseBalance | null> {
+export async function getLeaseBalance(leaseId: string): Promise<LeaseBalance | null> {
   const supabase = await ledgerClient();
 
-  const [
-    { data: lease, error: leaseError },
-    { data: balance, error: balanceError },
-  ] = await Promise.all([
-    supabase
-      .from("leases")
-      .select("id, stalls(stall_no, sections(name)), tenants(full_name)")
-      .eq("id", leaseId)
-      .maybeSingle(),
-    supabase
-      .from("lease_balances")
-      .select("*")
-      .eq("lease_id", leaseId)
-      .maybeSingle(),
-  ]);
+  const [{ data: lease, error: leaseError }, { data: balance, error: balanceError }] =
+    await Promise.all([
+      supabase
+        .from("leases")
+        .select("id, stalls(stall_no), tenants(full_name)")
+        .eq("id", leaseId)
+        .maybeSingle(),
+      supabase.from("lease_balances").select("*").eq("lease_id", leaseId).maybeSingle(),
+    ]);
   if (leaseError) throw leaseError;
   if (balanceError) throw balanceError;
   if (!lease) return null;
@@ -220,9 +208,7 @@ export interface SubsidiaryLedgerEntry {
   isSettled: boolean | null;
 }
 
-export async function getSubsidiaryLedger(
-  leaseId: string,
-): Promise<SubsidiaryLedgerEntry[]> {
+export async function getSubsidiaryLedger(leaseId: string): Promise<SubsidiaryLedgerEntry[]> {
   const supabase = await ledgerClient();
 
   // Matches the ORDER BY the view's own window function partitions on (migration
@@ -254,10 +240,7 @@ export async function getSubsidiaryLedger(
 
   const reasonById = new Map<string, string>();
   for (const c of await selectByIds(cancelledIds, (chunk) =>
-    supabase
-      .from("standing_cancellations")
-      .select("collection_id, reason")
-      .in("collection_id", chunk),
+    supabase.from("standing_cancellations").select("collection_id, reason").in("collection_id", chunk),
   )) {
     // A view's columns are all nullable to the type generator; these never are.
     reasonById.set(c.collection_id!, c.reason!);
@@ -281,8 +264,7 @@ export async function getSubsidiaryLedger(
   // as nullable because a 'collection' row genuinely has none.
   return rows.map((r) => {
     const sourceId = r.source_id!;
-    const balance =
-      r.entry_type === "charge" ? balanceById.get(sourceId) : undefined;
+    const balance = r.entry_type === "charge" ? balanceById.get(sourceId) : undefined;
     return {
       leaseId: r.lease_id!,
       entryDate: r.entry_date!,
@@ -295,9 +277,7 @@ export async function getSubsidiaryLedger(
       orNo: r.or_no,
       sourceId,
       cancelled: r.cancelled!,
-      cancellationReason: r.cancelled
-        ? (reasonById.get(sourceId) ?? null)
-        : null,
+      cancellationReason: r.cancelled ? (reasonById.get(sourceId) ?? null) : null,
       runningBalance: centavos(r.running_balance),
       outstanding: balance ? centavos(balance.outstanding) : null,
       isSettled: balance ? balance.is_settled : null,
@@ -349,15 +329,11 @@ export async function getCollections(filters: {
 
   let query = supabase
     .from("collections")
-    .select(
-      "id, or_no, business_date, collector_id, lease_id, payer_ref, gross_amount",
-    )
+    .select("id, or_no, business_date, collector_id, lease_id, payer_ref, gross_amount")
     .order("business_date", { ascending: false })
     .order("or_no", { ascending: false });
-  if (filters.businessDate)
-    query = query.eq("business_date", filters.businessDate);
-  if (filters.collectorId)
-    query = query.eq("collector_id", filters.collectorId);
+  if (filters.businessDate) query = query.eq("business_date", filters.businessDate);
+  if (filters.collectorId) query = query.eq("collector_id", filters.collectorId);
 
   const { data, error } = await query;
   if (error) throw error;
@@ -365,11 +341,7 @@ export async function getCollections(filters: {
   if (rows.length === 0) return [];
 
   const collectorIds = [...new Set(rows.map((r) => r.collector_id))];
-  const leaseIds = [
-    ...new Set(
-      rows.map((r) => r.lease_id).filter((id): id is string => id !== null),
-    ),
-  ];
+  const leaseIds = [...new Set(rows.map((r) => r.lease_id).filter((id): id is string => id !== null))];
   const collectionIds = rows.map((r) => r.id);
 
   const [collectors, leases, cancellations] = await Promise.all([
@@ -380,29 +352,20 @@ export async function getCollections(filters: {
       supabase.from("leases").select("id, stalls(stall_no)").in("id", chunk),
     ),
     selectByIds(collectionIds, (chunk) =>
-      supabase
-        .from("standing_cancellations")
-        .select("collection_id, reason")
-        .in("collection_id", chunk),
+      supabase.from("standing_cancellations").select("collection_id, reason").in("collection_id", chunk),
     ),
   ]);
 
   const collectorNameById = new Map(collectors.map((c) => [c.id, c.full_name]));
-  const stallNoByLeaseId = new Map(
-    leases.map((l) => [l.id, l.stalls?.stall_no ?? "—"]),
-  );
-  const reasonById = new Map(
-    cancellations.map((c) => [c.collection_id, c.reason]),
-  );
+  const stallNoByLeaseId = new Map(leases.map((l) => [l.id, l.stalls?.stall_no ?? "—"]));
+  const reasonById = new Map(cancellations.map((c) => [c.collection_id, c.reason]));
 
   return rows.map((r) => ({
     id: r.id,
     orNo: r.or_no,
     businessDate: r.business_date,
     collectorName: collectorNameById.get(r.collector_id) ?? "—",
-    stallOrPayer: r.lease_id
-      ? (stallNoByLeaseId.get(r.lease_id) ?? "—")
-      : (r.payer_ref ?? "—"),
+    stallOrPayer: r.lease_id ? (stallNoByLeaseId.get(r.lease_id) ?? "—") : (r.payer_ref ?? "—"),
     grossAmount: centavos(r.gross_amount),
     cancelled: reasonById.has(r.id),
     cancellationReason: reasonById.get(r.id) ?? null,
@@ -448,31 +411,26 @@ export interface OpeningBalanceLeases {
 export async function getOpeningBalanceLeases(): Promise<OpeningBalanceLeases> {
   const supabase = await ledgerClient();
 
-  const [
-    cutoverDate,
-    { data: activeLeases, error: leasesError },
-    { data: openingCharges, error: chargesError },
-  ] = await Promise.all([
-    getCutoverDate(),
-    supabase
-      .from("leases")
-      .select("id, stalls(stall_no, sections(name)), tenants(full_name)")
-      .eq("status", "active")
-      .order("id"),
-    supabase
-      .from("charge_balances")
-      .select("lease_id, amount, due_date")
-      .eq("charge_type", "opening_balance"),
-  ]);
+  const [cutoverDate, { data: activeLeases, error: leasesError }, { data: openingCharges, error: chargesError }] =
+    await Promise.all([
+      getCutoverDate(),
+      supabase
+        .from("leases")
+        .select("id, stalls(stall_no, sections(name)), tenants(full_name)")
+        .eq("status", "active")
+        .order("id"),
+      supabase
+        .from("charge_balances")
+        .select("lease_id, amount, due_date")
+        .eq("charge_type", "opening_balance"),
+    ]);
   if (leasesError) throw leasesError;
   if (chargesError) throw chargesError;
 
   // due_date on an opening_balance charge IS the real oldest-unpaid date, not the cutover
   // -- record_opening_balance() stores it that way deliberately (migration
   // 20260918000013's comment on the insert) so aging buckets it honestly.
-  const openingByLeaseId = new Map(
-    (openingCharges ?? []).map((c) => [c.lease_id, c]),
-  );
+  const openingByLeaseId = new Map((openingCharges ?? []).map((c) => [c.lease_id, c]));
 
   const pending: OpeningBalanceLease[] = [];
   const recorded: RecordedOpeningBalance[] = [];
@@ -481,9 +439,7 @@ export async function getOpeningBalanceLeases(): Promise<OpeningBalanceLeases> {
       leaseId: lease.id,
       stallNo: lease.stalls?.stall_no ?? "—",
       stallLabel: lease.stalls
-        ? [`Stall ${lease.stalls.stall_no}`, lease.stalls.sections?.name]
-            .filter(Boolean)
-            .join(" · ")
+        ? [`Stall ${lease.stalls.stall_no}`, lease.stalls.sections?.name].filter(Boolean).join(" · ")
         : "—",
       tenantName: lease.tenants?.full_name ?? "—",
     };
@@ -492,11 +448,7 @@ export async function getOpeningBalanceLeases(): Promise<OpeningBalanceLeases> {
       // due_date is a direct, NOT NULL column of the underlying charges table (see
       // db.types.ts's Tables["charges"]) -- charge_balances only carries it as nullable
       // because the generator treats every view column that way.
-      recorded.push({
-        ...base,
-        amount: centavos(opening.amount),
-        oldestUnpaidDate: opening.due_date!,
-      });
+      recorded.push({ ...base, amount: centavos(opening.amount), oldestUnpaidDate: opening.due_date! });
     } else {
       pending.push(base);
     }

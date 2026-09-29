@@ -3,10 +3,7 @@
 import { DataTable } from "@/components/data-table/data-table";
 import type { DataColumn } from "@/components/data-table/types";
 import { Money } from "@/components/ledger/money";
-import type {
-  OpeningBalanceLease,
-  RecordedOpeningBalance,
-} from "@/lib/ledger/queries";
+import type { OpeningBalanceLease, RecordedOpeningBalance } from "@/lib/ledger/queries";
 import { formatDate } from "@/lib/format/date";
 
 const pendingColumns: DataColumn<OpeningBalanceLease>[] = [
@@ -17,12 +14,7 @@ const pendingColumns: DataColumn<OpeningBalanceLease>[] = [
     searchValue: (row) => row.stallLabel,
     render: (row) => row.stallLabel,
   },
-  {
-    key: "tenant",
-    label: "Tenant",
-    sortValue: (row) => row.tenantName,
-    render: (row) => row.tenantName,
-  },
+  { key: "tenant", label: "Tenant", sortValue: (row) => row.tenantName, render: (row) => row.tenantName },
 ];
 
 const recordedColumns: DataColumn<RecordedOpeningBalance>[] = [
@@ -33,12 +25,7 @@ const recordedColumns: DataColumn<RecordedOpeningBalance>[] = [
     searchValue: (row) => row.stallLabel,
     render: (row) => row.stallLabel,
   },
-  {
-    key: "tenant",
-    label: "Tenant",
-    sortValue: (row) => row.tenantName,
-    render: (row) => row.tenantName,
-  },
+  { key: "tenant", label: "Tenant", sortValue: (row) => row.tenantName, render: (row) => row.tenantName },
   {
     key: "amount",
     label: "Amount",
@@ -57,11 +44,7 @@ const recordedColumns: DataColumn<RecordedOpeningBalance>[] = [
   },
 ];
 
-export function PendingOpeningBalancesTable({
-  rows,
-}: {
-  rows: OpeningBalanceLease[];
-}) {
+export function PendingOpeningBalancesTable({ rows }: { rows: OpeningBalanceLease[] }) {
   return (
     <DataTable
       columns={pendingColumns}
@@ -75,11 +58,7 @@ export function PendingOpeningBalancesTable({
   );
 }
 
-export function RecordedOpeningBalancesTable({
-  rows,
-}: {
-  rows: RecordedOpeningBalance[];
-}) {
+export function RecordedOpeningBalancesTable({ rows }: { rows: RecordedOpeningBalance[] }) {
   return (
     <DataTable
       columns={recordedColumns}
