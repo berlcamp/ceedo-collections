@@ -619,16 +619,36 @@ const configs: ResourceConfig[] = [
     title: "Tablet assignments",
     singular: "tablet assignment",
     empty:
-      "No tablet assignments yet. An assignment says which facility and section a tablet collects for, which is how it knows the right leases to pull down before it goes offline.",
-    schema: z.object({
-      device_id: uuid,
-      facility_id: uuid,
-      section_id: uuid.nullable(),
-      active: z.boolean(),
-    }),
+      "No tablet assignments yet. An assignment says which facility and section a tablet collects for (or all facilities), which is how it knows the right leases to pull down before it goes offline.",
+    schema: z
+      .object({
+        device_id: uuid,
+        facility_id: uuid.nullable(),
+        section_id: uuid.nullable(),
+        active: z.boolean(),
+      })
+      // A null facility means every facility (migration 0053). A section belongs to one
+      // facility, so it cannot narrow that; the database refuses the pair as well.
+      .superRefine((value, ctx) => {
+        if (value.facility_id === null && value.section_id !== null) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["section_id"],
+            message: "Choose a facility first, or leave the section as All sections.",
+          });
+        }
+      }),
     fields: [
       { name: "device_id", label: "Tablet", type: "select", optionsFrom: "devices" },
-      { name: "facility_id", label: "Facility", type: "select", optionsFrom: "facilities" },
+      {
+        name: "facility_id",
+        label: "Facility",
+        type: "select",
+        optionsFrom: "facilities",
+        optional: true,
+        emptyLabel: "All facilities",
+        help: "All facilities syncs every facility's stalls and collectors to this tablet.",
+      },
       {
         name: "section_id",
         label: "Section",
@@ -647,7 +667,7 @@ const configs: ResourceConfig[] = [
     ],
     columns: [
       { key: "devices", label: "Tablet" },
-      { key: "facilities", label: "Facility" },
+      { key: "facilities", label: "Facility", emptyText: "All facilities" },
       { key: "sections", label: "Section", emptyText: "All sections" },
       { key: "active", label: "Status", status: ACTIVE_STATUS },
     ],

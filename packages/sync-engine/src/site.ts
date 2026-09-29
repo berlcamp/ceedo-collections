@@ -8,17 +8,19 @@ export interface DeviceSite {
 }
 
 /**
- * The facility this tablet works at, or null before its first sync.
+ * The facility this tablet works at, or null when there is no single one: before its first
+ * sync, or on a tablet assigned to all facilities (migration 0053).
  *
- * sync_pull sends exactly one facility row, the device's assigned one (§6.1), so the local
- * table holds at most one live row. That makes it the answer, with no assignment table to
- * consult on the device.
+ * sync_pull sends the device's assigned facility (§6.1), or every facility for an
+ * all-facilities tablet. One live row is the answer, with no assignment table to consult
+ * on the device. More than one means the tablet works everywhere, and an unknown site
+ * already falls back to the market round and every on-the-spot fee.
  */
 export async function deviceSite(driver: SqliteDriver): Promise<DeviceSite | null> {
   const rows = await driver.select<{ name: string; type: FacilityType }>(
-    "select name, type from facilities where active = 1 order by row_version desc limit 1",
+    "select name, type from facilities where active = 1 limit 2",
   );
-  return rows[0] ?? null;
+  return rows.length === 1 ? rows[0]! : null;
 }
 
 export interface FeeChoice {

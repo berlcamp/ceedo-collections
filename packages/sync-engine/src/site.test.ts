@@ -39,6 +39,12 @@ describe("the device's site and its fees", () => {
     expect(await deviceSite(driver)).toEqual({ name: "IBJT", type: "terminal" });
   });
 
+  it("has no single site on a tablet assigned to all facilities", async () => {
+    db.exec(`insert into facilities values ('f1', 'IBJT', 'terminal', 1, 5),
+                                           ('f2', 'CPM', 'market', 1, 6)`);
+    expect(await deviceSite(driver)).toBeNull();
+  });
+
   it("offers the terminal tablet its vehicle classes, not the slaughterhouse's animals", async () => {
     const names = (await feeChoices(driver, "terminal")).map(
       (c) => `${c.fee_name}${c.rate_class ? `/${c.rate_class}` : ""}`,

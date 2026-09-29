@@ -717,7 +717,7 @@ export type Database = {
           active: boolean
           created_at: string
           device_id: string
-          facility_id: string
+          facility_id: string | null
           id: string
           row_version: number
           section_id: string | null
@@ -726,7 +726,7 @@ export type Database = {
           active?: boolean
           created_at?: string
           device_id: string
-          facility_id: string
+          facility_id?: string | null
           id?: string
           row_version?: number
           section_id?: string | null
@@ -735,7 +735,7 @@ export type Database = {
           active?: boolean
           created_at?: string
           device_id?: string
-          facility_id?: string
+          facility_id?: string | null
           id?: string
           row_version?: number
           section_id?: string | null

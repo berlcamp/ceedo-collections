@@ -184,6 +184,40 @@ describe("devices and assignments", () => {
     expect(data).toBe(false);
   });
 
+  it("permits a collector of any facility on a device assigned to all facilities", async () => {
+    const { facilityId: otherFacilityId, meatId: otherMeatId } = await marketWithSections("DEV-ALL");
+    const { data: device } = await service
+      .from("devices")
+      .insert({ label: uniqueCode("Tablet-ALL") })
+      .select("id")
+      .single();
+    await service
+      .from("device_assignments")
+      .insert({ device_id: device!.id, facility_id: null, section_id: null });
+    const { userId } = await createAppUser({ email: "dev-all@example.com", role: "collector" });
+    await service
+      .from("collector_assignments")
+      .insert({ collector_id: userId, facility_id: otherFacilityId, section_id: otherMeatId });
+    const { data } = await service.rpc("can_collector_use_device", {
+      collector: userId,
+      device: device!.id,
+    });
+    expect(data).toBe(true);
+  });
+
+  it("refuses a section on an all-facilities assignment", async () => {
+    const { data: device } = await service
+      .from("devices")
+      .insert({ label: uniqueCode("Tablet-ALL-SEC") })
+      .select("id")
+      .single();
+    const { error } = await service
+      .from("device_assignments")
+      .insert({ device_id: device!.id, facility_id: null, section_id: fishId })
+      .select();
+    expect(error?.message ?? "").toMatch(/device_assignments_section_needs_facility/);
+  });
+
   it("refuses when the device_assignments row is inactive while the device itself is active", async () => {
     const { data: device } = await service
       .from("devices")
