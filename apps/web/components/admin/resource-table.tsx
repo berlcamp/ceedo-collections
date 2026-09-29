@@ -12,6 +12,7 @@ import {
   type ResourceFormSpec,
 } from "@/components/admin/resource-form-dialog";
 import type { ColumnConfig } from "@/lib/admin/resource";
+import { formatDate, isIsoDate } from "@/lib/format/date";
 
 type Row = Record<string, unknown>;
 
@@ -26,6 +27,7 @@ type Row = Record<string, unknown>;
 function formatCell(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (isIsoDate(value)) return formatDate(value);
   if (typeof value === "object") {
     const nested = value as Record<string, unknown>;
     // A join's label column varies by table; `stalls(stall_no)` has none of the usual names,
@@ -109,6 +111,8 @@ export function ResourceTable({
       sortValue: (row) => {
         const value = row[column.key];
         if (typeof value === "number") return value;
+        // The raw ISO value, which sorts in date order; "05 Sept" would sort by day number.
+        if (isIsoDate(value)) return value;
         const text = statusOf(row, column)?.label ?? formatCell(value);
         return text === "—" ? null : text;
       },

@@ -5,6 +5,7 @@ import { DataTable } from "@/components/data-table/data-table";
 import type { DataColumn } from "@/components/data-table/types";
 import { Money } from "@/components/ledger/money";
 import type { DelinquencyRow } from "@/lib/ledger/queries";
+import { formatDate } from "@/lib/format/date";
 
 const columns: DataColumn<DelinquencyRow>[] = [
   {
@@ -48,7 +49,7 @@ const columns: DataColumn<DelinquencyRow>[] = [
     label: "Oldest due date",
     nowrap: true,
     sortValue: (row) => row.oldestDueDate,
-    render: (row) => row.oldestDueDate ?? <span className="text-ink-3">—</span>,
+    render: (row) => row.oldestDueDate ? formatDate(row.oldestDueDate) : <span className="text-ink-3">—</span>,
   },
   {
     key: "days_overdue",

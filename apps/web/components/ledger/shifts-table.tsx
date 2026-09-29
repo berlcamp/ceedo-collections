@@ -7,6 +7,7 @@ import type { DataColumn } from "@/components/data-table/types";
 import { Money } from "@/components/ledger/money";
 import { Mark, QuietMark } from "@/components/ui/mark";
 import { formatVariance, type ShiftClass, type ShiftRow } from "@/lib/ledger/shift-class";
+import { formatDate } from "@/lib/format/date";
 
 function badge(klass: ShiftClass): ReactNode {
   switch (klass) {
@@ -43,7 +44,7 @@ const columns: DataColumn<ShiftRow>[] = [
   },
   { key: "collector", label: "Collector", sortValue: (row) => row.collectorName, facet: (row) => row.collectorName, render: (row) => row.collectorName },
   { key: "device", label: "Device", sortValue: (row) => row.deviceLabel, facet: (row) => row.deviceLabel, render: (row) => row.deviceLabel },
-  { key: "business_date", label: "Business date", nowrap: true, sortValue: (row) => row.businessDate, render: (row) => row.businessDate },
+  { key: "business_date", label: "Business date", nowrap: true, sortValue: (row) => row.businessDate, render: (row) => formatDate(row.businessDate) },
   {
     key: "system_count",
     label: "System count",

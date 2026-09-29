@@ -6,6 +6,7 @@ import { CondoneDialog } from "@/components/ledger/condone-dialog";
 import { Money } from "@/components/ledger/money";
 import { Mark } from "@/components/ui/mark";
 import type { SubsidiaryLedgerEntry } from "@/lib/ledger/queries";
+import { formatDate } from "@/lib/format/date";
 
 /**
  * Takes `leaseId` and `canCondone` rather than being a module-level constant: the condone
@@ -13,7 +14,7 @@ import type { SubsidiaryLedgerEntry } from "@/lib/ledger/queries";
  */
 function columns(leaseId: string, canCondone: boolean): DataColumn<SubsidiaryLedgerEntry>[] {
   return [
-    { key: "date", label: "Date", nowrap: true, sortValue: (row) => row.entryDate, render: (row) => row.entryDate },
+    { key: "date", label: "Date", nowrap: true, sortValue: (row) => row.entryDate, render: (row) => formatDate(row.entryDate) },
     {
       key: "detail",
       label: "Entry",

@@ -5,6 +5,7 @@ import type { DataColumn } from "@/components/data-table/types";
 import { Money } from "@/components/ledger/money";
 import type { RemittanceRow } from "@/lib/remittances/queries";
 import { CancelRemittanceDialog, VerifyButton } from "./row-actions";
+import { formatDate } from "@/lib/format/date";
 
 const STATE_LABEL = { recorded: "Awaiting verification", verified: "Verified", cancelled: "Cancelled" };
 
@@ -19,7 +20,7 @@ export function RemittancesTable({
   canCancel: boolean;
 }) {
   const columns: DataColumn<RemittanceRow>[] = [
-    { key: "date", label: "Deposited", nowrap: true, sortValue: (r) => r.depositedAt, render: (r) => r.depositedAt },
+    { key: "date", label: "Deposited", nowrap: true, sortValue: (r) => r.depositedAt, render: (r) => formatDate(r.depositedAt) },
     { key: "collector", label: "Collector", sortValue: (r) => r.collectorName, render: (r) => r.collectorName },
     {
       key: "slip",
@@ -38,7 +39,7 @@ export function RemittancesTable({
       render: (r) => (
         <span className="text-xs">
           {r.shiftCount} shift{r.shiftCount === 1 ? "" : "s"}
-          <span className="block text-ink-3">{r.dates.join(", ")}</span>
+          <span className="block text-ink-3">{r.dates.map(formatDate).join(", ")}</span>
         </span>
       ),
     },

@@ -7,6 +7,7 @@ import { CancelDialog, UndoCancelDialog } from "@/components/ledger/cancel-dialo
 import { Money } from "@/components/ledger/money";
 import { Mark, QuietMark } from "@/components/ui/mark";
 import type { CollectionRow } from "@/lib/ledger/queries";
+import { formatDate } from "@/lib/format/date";
 
 function columns(canCancel: boolean): DataColumn<CollectionRow>[] {
   return [
@@ -21,7 +22,7 @@ function columns(canCancel: boolean): DataColumn<CollectionRow>[] {
         </span>
       ),
     },
-    { key: "date", label: "Collected", nowrap: true, sortValue: (row) => row.businessDate, render: (row) => row.businessDate },
+    { key: "date", label: "Collected", nowrap: true, sortValue: (row) => row.businessDate, render: (row) => formatDate(row.businessDate) },
     { key: "collector", label: "Collector", sortValue: (row) => row.collectorName, render: (row) => row.collectorName },
     { key: "stall_or_payer", label: "Stall / Payer", sortValue: (row) => row.stallOrPayer, render: (row) => row.stallOrPayer },
     {

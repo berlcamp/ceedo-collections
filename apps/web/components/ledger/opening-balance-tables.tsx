@@ -4,6 +4,7 @@ import { DataTable } from "@/components/data-table/data-table";
 import type { DataColumn } from "@/components/data-table/types";
 import { Money } from "@/components/ledger/money";
 import type { OpeningBalanceLease, RecordedOpeningBalance } from "@/lib/ledger/queries";
+import { formatDate } from "@/lib/format/date";
 
 const pendingColumns: DataColumn<OpeningBalanceLease>[] = [
   { key: "stall", label: "Stall", sortValue: (row) => row.stallNo, render: (row) => row.stallNo },
@@ -27,7 +28,7 @@ const recordedColumns: DataColumn<RecordedOpeningBalance>[] = [
     label: "Oldest unpaid date",
     nowrap: true,
     sortValue: (row) => row.oldestUnpaidDate,
-    render: (row) => row.oldestUnpaidDate,
+    render: (row) => formatDate(row.oldestUnpaidDate),
   },
 ];
 
