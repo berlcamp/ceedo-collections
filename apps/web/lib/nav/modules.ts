@@ -37,6 +37,7 @@ const SECTIONS: { heading: string; modules: ModuleSpec[] }[] = [
           { href: "/ledger/collections", label: "Receipts" },
           { href: "/ledger/shifts", label: "Shifts" },
           { href: "/ledger/remittances", label: "Remittances" },
+          { href: "/ledger/shortages", label: "Shortages" },
           { href: "/ledger/exceptions", label: "Exceptions" },
         ],
       },

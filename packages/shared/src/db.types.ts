@@ -1530,6 +1530,83 @@ export type Database = {
         }
         Relationships: []
       }
+      variance_settlements: {
+        Row: {
+          amount: number
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          id: string
+          received_at: string
+          recorded_at: string
+          recorded_by: string
+          reference: string
+          row_version: number
+          shift_id: string
+          verified_at: string | null
+          verified_by: string | null
+        }
+        Insert: {
+          amount: number
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          id?: string
+          received_at: string
+          recorded_at?: string
+          recorded_by: string
+          reference: string
+          row_version?: number
+          shift_id: string
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Update: {
+          amount?: number
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          id?: string
+          received_at?: string
+          recorded_at?: string
+          recorded_by?: string
+          reference?: string
+          row_version?: number
+          shift_id?: string
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "variance_settlements_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "variance_settlements_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "variance_settlements_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "variance_settlements_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       accrual_health: {
@@ -1760,6 +1837,10 @@ export type Database = {
         Args: { p_reason: string; p_remittance_id: string }
         Returns: undefined
       }
+      cancel_variance_settlement: {
+        Args: { p_reason: string; p_settlement_id: string }
+        Returns: undefined
+      }
       claim_my_invite: { Args: never; Returns: boolean }
       clear_all_data: { Args: never; Returns: number }
       close_shift: {
@@ -1842,6 +1923,15 @@ export type Database = {
         Args: { p_collector: string; p_device_id: string; p_payload: Json }
         Returns: Json
       }
+      record_variance_settlement: {
+        Args: {
+          p_amount: number
+          p_received_at: string
+          p_reference: string
+          p_shift_id: string
+        }
+        Returns: string
+      }
       reinstate_collection: {
         Args: { p_collection_id: string; p_reason: string }
         Returns: string
@@ -1896,6 +1986,10 @@ export type Database = {
       }
       verify_remittance: {
         Args: { p_remittance_id: string }
+        Returns: undefined
+      }
+      verify_variance_settlement: {
+        Args: { p_settlement_id: string }
         Returns: undefined
       }
     }

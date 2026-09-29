@@ -58,4 +58,9 @@ export interface ShiftRow {
   systemTotal: Centavos | null;
   declaredTotal: Centavos | null;
   variance: Centavos | null;
+  /**
+   * What is still owed on a short shift after verified repayments (migration
+   * 20260929000058). Null when the shift was not short.
+   */
+  stillOwed: Centavos | null;
 }

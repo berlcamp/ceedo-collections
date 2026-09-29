@@ -1,6 +1,8 @@
 import { fromCentavos, fromPesos } from "@ceedo/shared";
 import { getServerClient } from "@/lib/supabase/server";
 import { getPendingShifts, getRemittances } from "@/lib/remittances/queries";
+import { settlementsByShift } from "@/lib/shortages/by-shift";
+import { tally as shortageTally } from "@/lib/shortages/tally";
 import { accountFor, showRange } from "../accountability";
 import { booklets, consumption, deposits, feeTypeNames, manilaDate, receipts, staffNameMap } from "../data";
 import { longMonth, monthBounds, type ReportParams } from "../params";
@@ -270,7 +272,7 @@ export async function buildExceptions(p: ReportParams): Promise<Report> {
       ),
     supabase
       .from("shifts")
-      .select("collector_id, business_date, variance, status")
+      .select("id, collector_id, business_date, variance, status")
       .gte("business_date", from)
       .lte("business_date", to)
       .in("status", ["closed", "closed_unsynced", "remitted"]),
@@ -309,13 +311,24 @@ export async function buildExceptions(p: ReportParams): Promise<Report> {
     bySupervisor.set(id, t);
   }
 
-  const variance = new Map<string, { shifts: number; off: number; short: number; over: number }>();
+  // Repayments are counted against the month of the SHIFT they settle, whenever they were
+  // paid, so "Total short" and "Still owed" on one row describe the same shifts.
+  const repaid = await settlementsByShift(
+    (shifts ?? []).filter((s) => Number(s.variance ?? 0) < 0).map((s) => s.id),
+  );
+  const variance = new Map<
+    string,
+    { shifts: number; off: number; short: number; over: number; owed: number }
+  >();
   for (const s of shifts ?? []) {
     const v = fromPesos(Number(s.variance ?? 0));
-    const t = variance.get(s.collector_id) ?? { shifts: 0, off: 0, short: 0, over: 0 };
+    const t = variance.get(s.collector_id) ?? { shifts: 0, off: 0, short: 0, over: 0, owed: 0 };
     t.shifts += 1;
     if (v !== 0) t.off += 1;
-    if (v < 0) t.short += v;
+    if (v < 0) {
+      t.short += v;
+      t.owed += shortageTally(v, repaid.get(s.id) ?? []).outstanding;
+    }
     if (v > 0) t.over += v;
     variance.set(s.collector_id, t);
   }
@@ -353,6 +366,7 @@ export async function buildExceptions(p: ReportParams): Promise<Report> {
           { key: "shifts", label: "Shifts closed", kind: "int", total: true },
           { key: "off", label: "With a variance", kind: "int", total: true },
           { key: "short", label: "Total short", kind: "money", total: true },
+          { key: "owed", label: "Short, still owed", kind: "money", total: true },
           { key: "over", label: "Total over", kind: "money", total: true },
         ],
         rows: [...variance].map(([id, t]) => ({
@@ -360,11 +374,15 @@ export async function buildExceptions(p: ReportParams): Promise<Report> {
           shifts: t.shifts,
           off: t.off,
           short: fromCentavos(t.short),
+          owed: fromCentavos(t.owed),
           over: fromCentavos(t.over),
         })),
         empty: "No shifts were closed this month.",
       },
     ],
-    notes: ["Exceptions are counted in the month they were first raised; resolutions in the month they were resolved."],
+    notes: [
+      "Exceptions are counted in the month they were first raised; resolutions in the month they were resolved.",
+      "Short, still owed: the shortage less repayments accounting has verified, as of today. The variance itself is never changed.",
+    ],
   };
 }

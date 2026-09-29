@@ -92,7 +92,18 @@ const columns: DataColumn<ShiftRow>[] = [
             : row.variance > 0
               ? "font-semibold text-amber"
               : "text-ink-3";
-      return <span className={className}>{text}</span>;
+      // The variance never changes once a shortage is paid back; what is still owed on it
+      // sits underneath, so a settled shortage does not read as an open one.
+      return (
+        <span className={className}>
+          {text}
+          {row.stillOwed !== null ? (
+            <span className="block text-xs font-normal text-ink-3">
+              {row.stillOwed === 0 ? "Paid back" : `${format(row.stillOwed)} still owed`}
+            </span>
+          ) : null}
+        </span>
+      );
     },
   },
 ];

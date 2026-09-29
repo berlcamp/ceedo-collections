@@ -1,6 +1,8 @@
 import { fromPesos } from "@ceedo/shared";
 import { classifyShift, type ShiftClass, type ShiftRow } from "./shift-class";
 import { ledgerClient } from "./queries";
+import { settlementsByShift } from "../shortages/by-shift";
+import { tally } from "../shortages/tally";
 
 // Re-exported so every existing importer (and lib/ledger/shifts.test.ts) keeps working
 // against this module unchanged; the definitions now live in the client-safe file.
@@ -33,6 +35,9 @@ export async function getShifts(): Promise<ShiftRow[]> {
   if (error) throw new Error(error.message);
 
   const today = new Date().toISOString().slice(0, 10);
+  const settlements = await settlementsByShift(
+    (data ?? []).filter((row) => Number(row.variance ?? 0) < 0).map((row) => row.id),
+  );
 
   const rows: ShiftRow[] = (data ?? []).map((row) => ({
     id: row.id,
@@ -45,6 +50,10 @@ export async function getShifts(): Promise<ShiftRow[]> {
     systemTotal: row.system_total === null ? null : fromPesos(Number(row.system_total)),
     declaredTotal: row.declared_total === null ? null : fromPesos(Number(row.declared_total)),
     variance: row.variance === null ? null : fromPesos(Number(row.variance)),
+    stillOwed:
+      row.variance === null || Number(row.variance) >= 0
+        ? null
+        : tally(fromPesos(Number(row.variance)), settlements.get(row.id) ?? []).outstanding,
   }));
 
   return rows.sort((a, b) => {
