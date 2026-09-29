@@ -20,8 +20,10 @@ const SUPERVISOR_UP = ["supervisor", "admin"] as const;
 const BACK_OFFICE = ["supervisor", "accounting", "admin"] as const;
 
 // zod 4.6.5: `z.string().uuid()` and `z.string().email()` are deprecated in favour of the
-// top-level `z.uuid()` / `z.email()`.
-const uuid = z.uuid();
+// top-level forms. z.guid(), not z.uuid(): Postgres accepts any 8-4-4-4-12 hex value as a
+// uuid, and the test data's ids (md5(...)::uuid) carry no RFC version bits, which z.uuid()
+// refuses with "Invalid UUID".
+const uuid = z.guid();
 const email = z.email();
 const name = z.string().min(1, "Required");
 const optionalText = z.string().min(1).nullable();

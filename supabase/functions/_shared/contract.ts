@@ -55,7 +55,9 @@ export type PushReason = (typeof PUSH_REASONS)[number];
  *                    carrying one is either a confused client or a hostile one.
  */
 
-const uuid = z.string().uuid();
+// z.guid(), not z.uuid(): Postgres accepts any 8-4-4-4-12 hex value as a uuid, and the
+// test data's ids (md5(...)::uuid) carry no RFC version bits, which z.uuid() refuses.
+const uuid = z.guid();
 
 /**
  * numeric(14,2) on the wire — TWO shapes, and conflating them is what broke this schema.

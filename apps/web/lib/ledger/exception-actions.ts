@@ -26,7 +26,7 @@ const PERMISSION_DENIED = rpcFailure("You do not have permission to resolve exce
 const reason = z.string().trim().min(1, "A written reason is required");
 
 const correctSchema = z.object({
-  exceptionId: z.string().uuid(),
+  exceptionId: z.guid(),
   orNo: z.coerce.number().int().positive(),
   reason,
 });
@@ -65,7 +65,7 @@ export async function correctException(formData: FormData): Promise<SaveResult> 
 }
 
 const idAndReasonSchema = z.object({
-  exceptionId: z.string().uuid(),
+  exceptionId: z.guid(),
   reason,
 });
 

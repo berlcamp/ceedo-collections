@@ -21,7 +21,7 @@ function rpcFailure(message: string): SaveResult {
 const CREDENTIAL_DENIED = rpcFailure("Only an administrator may manage device credentials.");
 const PIN_DENIED = rpcFailure("Only an administrator may set a collector PIN.");
 
-const deviceIdSchema = z.uuid();
+const deviceIdSchema = z.guid();
 
 export type IssueCredentialResult = SaveResult & {
   credentialId?: string;
@@ -87,7 +87,7 @@ export async function revokeCredential(formData: FormData): Promise<SaveResult> 
 }
 
 const setPinSchema = z.object({
-  collectorId: z.uuid(),
+  collectorId: z.guid(),
   // The database validates this again (migration 20260918000027's own regex check) --
   // checking here first means the supervisor sees the rule in the form, not as a Postgres
   // error.

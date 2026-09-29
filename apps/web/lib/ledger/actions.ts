@@ -27,7 +27,7 @@ function rpcFailure(message: string): SaveResult {
 const PERMISSION_DENIED = rpcFailure("You do not have permission to change this.");
 
 const cancelSchema = z.object({
-  collectionId: z.string().uuid(),
+  collectionId: z.guid(),
   // The database refuses a blank reason too (§11.3); checking here as well means the
   // cashier sees the rule in the form rather than as a Postgres error.
   reason: z.string().trim().min(1, "A written reason is required"),
@@ -81,8 +81,8 @@ export async function reinstateCollection(formData: FormData): Promise<SaveResul
 }
 
 const condoneSchema = z.object({
-  chargeId: z.string().uuid(),
-  leaseId: z.string().uuid(),
+  chargeId: z.guid(),
+  leaseId: z.guid(),
   amount: z.coerce.number().positive("Condoned amount must be a positive amount"),
   authorityRef: z.string().trim().min(1, "The authorising ordinance is required"),
   reason: z.string().trim().min(1, "A reason is required"),
@@ -137,7 +137,7 @@ export async function recordOpeningBalance(formData: FormData): Promise<SaveResu
   const cutoverDate = await getCutoverDate();
 
   const openingBalanceSchema = z.object({
-    leaseId: z.string().uuid(),
+    leaseId: z.guid(),
     amount: z.coerce.number().positive("Opening balance must be a positive amount"),
     oldestUnpaidDate: z
       .string()

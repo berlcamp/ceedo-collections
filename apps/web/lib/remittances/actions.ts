@@ -21,7 +21,7 @@ const recordSchema = z.object({
   bank: z.string().trim().min(1, "Enter the bank"),
   amount: z.coerce.number().positive("The amount must be more than zero"),
   depositedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter the deposit date"),
-  shiftIds: z.array(z.string().uuid()).min(1, "Tick the shifts this deposit covers"),
+  shiftIds: z.array(z.guid()).min(1, "Tick the shifts this deposit covers"),
 });
 
 export async function recordRemittance(formData: FormData): Promise<SaveResult> {
