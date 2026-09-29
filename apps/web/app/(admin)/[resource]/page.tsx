@@ -4,6 +4,10 @@ import { notFound } from "next/navigation";
 import { buttonClass } from "@/components/ui/button";
 import { AddCollectorDialog } from "@/components/staff/add-collector-dialog";
 import { AssignFacilitiesDialog } from "@/components/collection-areas/assign-facilities-dialog";
+import {
+  CollectionAreasTable,
+  type CollectorAreasRow,
+} from "@/components/collection-areas/collection-areas-table";
 import { ResourceFormDialog, type ResourceFormSpec } from "@/components/admin/resource-form-dialog";
 import { ResourceTable } from "@/components/admin/resource-table";
 import { DeviceCredentialPanel } from "@/components/devices/device-credential-panel";
@@ -105,8 +109,36 @@ export default async function ResourcePage({
         })
       : undefined;
 
-  // Collection areas are created facility by facility from one dialog (several ticked at
-  // once), not the generic one-row form: see AssignFacilitiesDialog.
+  // Collection areas are set a collector at a time from one dialog (several facilities
+  // ticked at once), not the generic one-row form, and listed one row per collector.
+  // Inactive areas are history: removing a collector deactivates rows rather than deleting
+  // them (see removeCollectorAreas), so they are left out here.
+  const areaRows: CollectorAreasRow[] | null =
+    config.key === "collector-assignments"
+      ? (() => {
+          const byCollector = new Map<string, CollectorAreasRow>();
+          for (const row of (rows ?? []) as unknown as {
+            collector_id: string;
+            active: boolean;
+            app_users: { full_name: string } | null;
+            facilities: { name: string } | null;
+          }[]) {
+            if (!row.active) continue;
+            const entry = byCollector.get(row.collector_id) ?? {
+              collectorId: row.collector_id,
+              collectorName: row.app_users?.full_name ?? "—",
+              facilities: [],
+            };
+            const facility = row.facilities?.name ?? "—";
+            if (!entry.facilities.includes(facility)) entry.facilities.push(facility);
+            byCollector.set(row.collector_id, entry);
+          }
+          return [...byCollector.values()]
+            .map((entry) => ({ ...entry, facilities: entry.facilities.sort() }))
+            .sort((a, b) => a.collectorName.localeCompare(b.collectorName));
+        })()
+      : null;
+
   const assignFacilities =
     config.key === "collector-assignments" && canWrite
       ? await (async () => {
@@ -211,6 +243,8 @@ export default async function ResourcePage({
             These records could not be loaded. You may not have access to them.
             {error.code ? ` (${error.code})` : null}
           </p>
+        ) : areaRows ? (
+          <CollectionAreasTable rows={areaRows} empty={config.empty} assign={assignFacilities} />
         ) : (
           <ResourceTable
             columns={config.columns}

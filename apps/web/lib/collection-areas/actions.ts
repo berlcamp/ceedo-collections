@@ -79,3 +79,31 @@ export async function setCollectorFacilities(
   revalidatePath("/collector-assignments");
   return { ok: true, id: collector };
 }
+
+/**
+ * Removes a collector from every facility: their active collection areas are deactivated.
+ *
+ * Deactivated, never deleted. A tablet learns of a change only through a row whose
+ * row_version moved (sync_pull, migration 20260929000055), so a deleted row would stay
+ * active on every tablet that had already pulled it. Deactivated rows are hidden from the
+ * Collection areas list; the history stays in the table.
+ */
+export async function removeCollectorAreas(collectorId: string): Promise<SaveResult> {
+  const staff = await requireStaff();
+  if (!isAdmin(staff.role)) {
+    return { ok: false, fieldErrors: {}, formError: "Only an administrator may remove collection areas." };
+  }
+  const parsed = z.guid().safeParse(collectorId);
+  if (!parsed.success) return { ok: false, fieldErrors: {}, formError: "Choose a collector." };
+
+  const supabase = await getServerClient();
+  const { error } = await supabase
+    .from("collector_assignments")
+    .update({ active: false })
+    .eq("collector_id", parsed.data)
+    .eq("active", true);
+  if (error) return toSaveResult(parsed, error);
+
+  revalidatePath("/collector-assignments");
+  return { ok: true, id: parsed.data };
+}
