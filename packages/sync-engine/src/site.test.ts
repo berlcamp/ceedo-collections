@@ -1,10 +1,10 @@
 import Database from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
 import { betterSqliteDriver } from "./testing/better-sqlite-driver";
-import { deviceSite, feeChoices, payerPrompt } from "./site";
+import { collectorSite, feeChoices, payerPrompt } from "./site";
 import type { SqliteDriver } from "./driver";
 
-describe("the device's site and its fees", () => {
+describe("the collector's site and its fees", () => {
   let db: Database.Database;
   let driver: SqliteDriver;
 
@@ -13,6 +13,9 @@ describe("the device's site and its fees", () => {
     db.exec(`
       create table facilities (id text primary key, name text, type text, active integer,
                                row_version integer);
+      create table collector_assignments (id text primary key, collector_id text,
+                                          facility_id text, section_id text, active integer);
+      insert into facilities values ('f1', 'IBJT', 'terminal', 1, 5), ('f2', 'CPM', 'market', 1, 6);
       create table fee_types (id text primary key, name text, accrues integer, active integer,
                               facility_type text);
       create table rates (id text primary key, fee_type_id text, rate_class text);
@@ -30,19 +33,26 @@ describe("the device's site and its fees", () => {
     driver = betterSqliteDriver(db);
   });
 
-  it("has no site before the first sync", async () => {
-    expect(await deviceSite(driver)).toBeNull();
+  it("has no site for a collector with no collection area", async () => {
+    expect(await collectorSite(driver, "c1")).toBeNull();
   });
 
-  it("reads the one facility the pull sent", async () => {
-    db.exec("insert into facilities values ('f1', 'IBJT', 'terminal', 1, 5)");
-    expect(await deviceSite(driver)).toEqual({ name: "IBJT", type: "terminal" });
+  it("reads the site from the collector's collection area, not the tablet", async () => {
+    db.exec(`insert into collector_assignments values ('a1', 'c1', 'f1', null, 1),
+                                                      ('a2', 'c1', 'f2', null, 0)`);
+    expect(await collectorSite(driver, "c1")).toEqual({ name: "IBJT", type: "terminal" });
   });
 
-  it("has no single site on a tablet assigned to all facilities", async () => {
-    db.exec(`insert into facilities values ('f1', 'IBJT', 'terminal', 1, 5),
-                                           ('f2', 'CPM', 'market', 1, 6)`);
-    expect(await deviceSite(driver)).toBeNull();
+  it("reads one site for several sections of the same facility", async () => {
+    db.exec(`insert into collector_assignments values ('a1', 'c1', 'f2', 's1', 1),
+                                                      ('a2', 'c1', 'f2', 's2', 1)`);
+    expect(await collectorSite(driver, "c1")).toEqual({ name: "CPM", type: "market" });
+  });
+
+  it("has no single site for a collector whose areas span two facilities", async () => {
+    db.exec(`insert into collector_assignments values ('a1', 'c1', 'f1', null, 1),
+                                                      ('a2', 'c1', 'f2', null, 1)`);
+    expect(await collectorSite(driver, "c1")).toBeNull();
   });
 
   it("offers the terminal tablet its vehicle classes, not the slaughterhouse's animals", async () => {

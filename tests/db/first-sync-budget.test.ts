@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client as PgClient } from "pg";
 import { authenticatorClient } from "../helpers/authenticator";
-import { POSTGRES_URL, createSyncFixture } from "../helpers/supabase";
+import { POSTGRES_URL, createSyncFixture, isolateCollectionAreas } from "../helpers/supabase";
 
 /**
  * FIRST SYNC IS THE LONGEST QUERY IN THIS SYSTEM, AND IT RUNS UNDER AN 8 SECOND CEILING
@@ -26,6 +26,8 @@ describe("sync_pull first-sync budget", () => {
   let deviceId: string;
   // Held so afterAll can remove this file's fixture from the shared database.
   let leaseId: string;
+  // Reactivates the collection areas beforeAll switched off (see isolateCollectionAreas).
+  let restoreAreas: (() => Promise<void>) | undefined;
 
   beforeAll(async () => {
     fixtures = new PgClient({ connectionString: POSTGRES_URL });
@@ -96,6 +98,10 @@ describe("sync_pull first-sync budget", () => {
       [fx.leaseId, fx.bookletId, fx.collectorId, fx.deviceId, fx.feeTypeId],
     );
 
+    // Every tablet pulls every assigned area (migration 20260929000055), so measure this
+    // fixture's world, not whatever earlier files in the suite left assigned.
+    restoreAreas = await isolateCollectionAreas(fixtures, fx.collectorId);
+
     app = await authenticatorClient();
   }, 120_000);
 
@@ -125,6 +131,7 @@ describe("sync_pull first-sync budget", () => {
     // lease's start date to today.
     //
     // The rows were the symptom; the active back-dated lease was the generator.
+    await restoreAreas?.();
     if (fixtures && leaseId) {
       await fixtures.query(
         "update ceedo_collections.leases set status = 'terminated' where id = $1",

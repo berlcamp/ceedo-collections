@@ -58,7 +58,9 @@ describe("devices and assignments", () => {
     expect(data).toBe(true);
   });
 
-  it("refuses a collector assigned to a different section of the same market", async () => {
+  // Migration 20260929000055: the tablet's own assignment no longer narrows sign-in. Any
+  // active collector with an active collection area may use any active tablet.
+  it("permits a collector assigned to a different section of the same market", async () => {
     const { userId } = await createAppUser({ email: "dev-meat@example.com", role: "collector" });
     await service
       .from("collector_assignments")
@@ -67,7 +69,7 @@ describe("devices and assignments", () => {
       collector: userId,
       device: deviceId,
     });
-    expect(data).toBe(false);
+    expect(data).toBe(true);
   });
 
   it("permits a facility-wide collector on any section device of that facility", async () => {
@@ -171,7 +173,7 @@ describe("devices and assignments", () => {
     expect(data).toBe(true);
   });
 
-  it("refuses a collector and device assigned to different facilities", async () => {
+  it("permits a collector and device assigned to different facilities", async () => {
     const { facilityId: otherFacilityId } = await marketWithSections("DEV-OTHER");
     const { userId } = await createAppUser({ email: "dev-other-fac@example.com", role: "collector" });
     await service
@@ -181,7 +183,7 @@ describe("devices and assignments", () => {
       collector: userId,
       device: deviceId,
     });
-    expect(data).toBe(false);
+    expect(data).toBe(true);
   });
 
   it("permits a collector of any facility on a device assigned to all facilities", async () => {
@@ -218,7 +220,7 @@ describe("devices and assignments", () => {
     expect(error?.message ?? "").toMatch(/device_assignments_section_needs_facility/);
   });
 
-  it("refuses when the device_assignments row is inactive while the device itself is active", async () => {
+  it("permits a device with no active assignment of its own", async () => {
     const { data: device } = await service
       .from("devices")
       .insert({ label: uniqueCode("Tablet-INACT-DA") })
@@ -235,7 +237,7 @@ describe("devices and assignments", () => {
       collector: userId,
       device: device!.id,
     });
-    expect(data).toBe(false);
+    expect(data).toBe(true);
   });
 
   it("refuses when the collector_assignments row is inactive", async () => {

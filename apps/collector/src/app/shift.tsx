@@ -2,12 +2,12 @@ import { useCallback, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import { randomUUID } from "expo-crypto";
 import {
-  deviceSite,
+  collectorSite,
   deviceTotals,
   openShift,
   purgeAcked,
   pushable,
-  type DeviceSite,
+  type CollectorSite,
   type OutboxRow,
 } from "@ceedo/sync-engine";
 import {
@@ -69,7 +69,7 @@ export default function Shift() {
   const [detail, setDetail] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [fresh, setFresh] = useState<Freshness | null>(null);
-  const [site, setSite] = useState<DeviceSite | null>(null);
+  const [site, setSite] = useState<CollectorSite | null>(null);
 
   const load = useCallback(async () => {
     if (!collector) return;
@@ -85,7 +85,7 @@ export default function Shift() {
     setTotals(mine ? await deviceTotals(driver, mine.id) : { count: 0, total: "0.00" });
     setQueued(await pushable(driver));
     setFresh(await freshness(driver, businessDate()));
-    setSite(await deviceSite(driver));
+    setSite(await collectorSite(driver, collector.id));
   }, [collector, driver]);
 
   useFocusEffect(

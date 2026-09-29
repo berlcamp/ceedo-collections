@@ -17,6 +17,7 @@ import {
   createLeaseFixture,
   POSTGRES_URL,
   type CollectionFixture,
+  retireCollectionAreas,
 } from "../helpers/supabase.js";
 
 let db: Client;
@@ -24,6 +25,8 @@ let db: Client;
 beforeAll(async () => {
   db = new Client({ connectionString: POSTGRES_URL });
   await db.connect();
+  // Every tablet pulls every active collection area; start this file from its own.
+  await retireCollectionAreas(db);
 });
 
 afterAll(async () => {

@@ -608,85 +608,11 @@ const configs: ResourceConfig[] = [
     writeRoles: SUPERVISOR_UP,
   },
   {
-    // Determines WHAT DATA SYNCS TO A TABLET. Supervisors may write this (migration 0008
-    // lists device_assignments among the five supervisor-writable tables); the roles here
-    // mirror that policy rather than restating a preference.
-    //
-    // device_assignments_one_active is a unique index on (device_id) where active, so a
-    // device can hold exactly one active assignment. Re-assigning a tablet means clearing
-    // `active` on the current row first; a second active row is refused by the database
-    // with 23505 and the form surfaces that error rather than swallowing it.
-    key: "device-assignments",
-    table: "device_assignments",
-    title: "Tablet assignments",
-    singular: "tablet assignment",
-    empty:
-      "No tablet assignments yet. An assignment says which facility and section a tablet collects for (or all facilities), which is how it knows the right leases to pull down before it goes offline.",
-    schema: z
-      .object({
-        device_id: uuid,
-        facility_id: uuid.nullable(),
-        section_id: uuid.nullable(),
-        active: z.boolean(),
-      })
-      // A null facility means every facility (migration 0053). A section belongs to one
-      // facility, so it cannot narrow that; the database refuses the pair as well.
-      .superRefine((value, ctx) => {
-        if (value.facility_id === null && value.section_id !== null) {
-          ctx.addIssue({
-            code: "custom",
-            path: ["section_id"],
-            message: "Choose a facility first, or leave the section as All sections.",
-          });
-        }
-      }),
-    fields: [
-      { name: "device_id", label: "Tablet", type: "select", optionsFrom: "devices" },
-      {
-        name: "facility_id",
-        label: "Facility",
-        type: "select",
-        optionsFrom: "facilities",
-        optional: true,
-        emptyLabel: "All facilities",
-        help: "All facilities syncs every facility's stalls and collectors to this tablet.",
-      },
-      {
-        name: "section_id",
-        label: "Section",
-        type: "select",
-        optionsFrom: "sections",
-        optional: true,
-        emptyLabel: "All sections",
-        help: "All sections covers the whole facility. A terminal or slaughterhouse has no sections.",
-      },
-      {
-        name: "active",
-        label: "Active",
-        type: "boolean",
-        help: "A tablet may hold only one active assignment. Deactivate the current one before adding another.",
-      },
-    ],
-    columns: [
-      { key: "devices", label: "Tablet" },
-      { key: "facilities", label: "Facility", emptyText: "All facilities" },
-      { key: "sections", label: "Section", emptyText: "All sections" },
-      { key: "active", label: "Status", status: ACTIVE_STATUS },
-    ],
-    // sections is disambiguated: device_assignments carries two foreign keys into it
-    // (the plain section_id FK, and device_assignments_section_in_facility's composite
-    // one), so an unqualified sections(name) is refused by PostgREST at runtime with
-    // PGRST201 ("more than one relationship was found") even though it typechecks fine.
-    select:
-      "id, active, devices(label), facilities(name), sections!device_assignments_section_id_fkey(name)",
-    orderBy: "created_at",
-    optionLabel: "id",
-    readRoles: BACK_OFFICE,
-    writeRoles: SUPERVISOR_UP,
-  },
-  {
-    // Determines WHERE A PERSON MAY COLLECT. Admin-only: migration 0008 does NOT list
-    // collector_assignments, so apply_master_data_policies' admin-only rule stands.
+    // Determines WHERE A PERSON MAY COLLECT, and so what they see on any tablet: every
+    // tablet holds every facility, and the collector's area scopes the fee screen, stall
+    // search and card scan (migration 20260929000055). Tablets have no assignment of their
+    // own any more. Admin-only: migration 0008 does NOT list collector_assignments, so
+    // apply_master_data_policies' admin-only rule stands.
     //
     // A trigger refuses any assignee whose app_users role is not 'collector', so the picker
     // lists collectors only. The trigger still stands behind it for any other writer.
@@ -728,10 +654,9 @@ const configs: ResourceConfig[] = [
       { key: "sections", label: "Section", emptyText: "All sections" },
       { key: "active", label: "Status", status: ACTIVE_STATUS },
     ],
-    // Same disambiguation as device-assignments above: collector_assignments also carries
-    // two foreign keys into sections (section_id, and the composite
-    // collector_assignments_section_in_facility), so an unqualified sections(name) is
-    // refused by PostgREST at runtime with PGRST201.
+    // sections is disambiguated: collector_assignments carries two foreign keys into it
+    // (section_id, and the composite collector_assignments_section_in_facility), so an
+    // unqualified sections(name) is refused by PostgREST at runtime with PGRST201.
     select:
       "id, active, app_users(full_name), facilities(name), sections!collector_assignments_section_id_fkey(name)",
     orderBy: "created_at",

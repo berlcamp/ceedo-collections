@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { PushResult } from "@ceedo/shared";
-import { POSTGRES_URL, createSyncFixture, resetCutover } from "../helpers/supabase";
+import { POSTGRES_URL, createSyncFixture, resetCutover, retireCollectionAreas } from "../helpers/supabase";
 import { GATEWAY_URL, callFunction } from "../helpers/functions";
 
 let db: Client;
@@ -11,6 +11,8 @@ let fx: Awaited<ReturnType<typeof createSyncFixture>>;
 beforeAll(async () => {
   db = new Client({ connectionString: POSTGRES_URL });
   await db.connect();
+  // Every tablet pulls every active collection area; start this file from its own.
+  await retireCollectionAreas(db);
   fx = await createSyncFixture(db);
 });
 

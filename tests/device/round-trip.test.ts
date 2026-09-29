@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client as PgClient } from "pg";
 import { betterSqliteDriver } from "@ceedo/sync-engine/testing";
 import { enqueue, sync, readSyncState, pushable } from "@ceedo/sync-engine";
-import { POSTGRES_URL, createSyncFixture } from "../helpers/supabase";
+import { POSTGRES_URL, createSyncFixture, retireCollectionAreas } from "../helpers/supabase";
 import { callFunction } from "../helpers/functions";
 
 /**
@@ -32,6 +32,8 @@ describe("the device engine, end to end", () => {
   beforeAll(async () => {
     db = new PgClient({ connectionString: POSTGRES_URL });
     await db.connect();
+    // Every tablet pulls every active collection area; start this file from its own.
+    await retireCollectionAreas(db);
     fx = await createSyncFixture(db);
     // The fixture builds a lease; charges are what `run_accrual` writes from it. Without
     // this the pull is legitimately empty of charges and the assertion below would be

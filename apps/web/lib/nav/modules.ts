@@ -86,7 +86,6 @@ const SECTIONS: { heading: string; modules: ModuleSpec[] }[] = [
         label: "Tablets",
         tabs: [
           { resource: "devices" },
-          { resource: "device-assignments" },
           { resource: "collector-assignments" },
         ],
       },

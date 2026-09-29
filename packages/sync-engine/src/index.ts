@@ -28,10 +28,11 @@ export {
 export { leaseLedger, leaseLedgerDetail, ledgerStaleness } from "./ledger";
 export { resolveCard, type CardResolution } from "./card";
 export {
-  deviceSite,
+  collectorSite,
   feeChoices,
   payerPrompt,
-  type DeviceSite,
+  IN_COLLECTOR_AREA,
+  type CollectorSite,
   type FacilityType,
   type FeeChoice,
 } from "./site";

@@ -11,13 +11,14 @@ import {
   type RateRow,
 } from "@ceedo/shared";
 import {
-  deviceSite,
+  collectorSite,
   feeChoices,
   payerPrompt,
-  type DeviceSite,
+  type CollectorSite,
   type DraftLine,
   type FeeChoice,
 } from "@ceedo/sync-engine";
+import { signedIn } from "../auth/session";
 import {
   Action,
   Body,
@@ -74,6 +75,7 @@ import { businessDate, syncNow } from "../sync/device-sync";
 export default function Ambulant() {
   const router = useRouter();
   const driver = deviceDriver();
+  const collector = signedIn();
 
   const [choices, setChoices] = useState<FeeChoice[]>([]);
   const [rates, setRates] = useState<RateRow[]>([]);
@@ -83,16 +85,17 @@ export default function Ambulant() {
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [site, setSite] = useState<DeviceSite | null>(null);
+  const [site, setSite] = useState<CollectorSite | null>(null);
   const [payerRef, setPayerRef] = useState("");
 
   // THROWS. Every caller must say so when it fails -- `useFocusEffect` below and the "Sync
   // now" retry both used to let the rejection vanish, and a collector cannot tell a failed
   // load from a failed sync from a screen that simply has no fee types on it.
   const load = useCallback(async () => {
-    // Only this site's fees (Phase 5): the terminal tablet must not offer the
-    // slaughterhouse's hog rate. See feeChoices for what an unknown site falls back to.
-    const here = await deviceSite(driver);
+    // Only this site's fees (Phase 5): the terminal collector must not be offered the
+    // slaughterhouse's hog rate. The site is the signed-in collector's, since every tablet
+    // holds every facility. See feeChoices for what an unknown site falls back to.
+    const here = collector ? await collectorSite(driver, collector.id) : null;
     setSite(here);
     setChoices(await feeChoices(driver, here?.type ?? null));
     setRates(
@@ -118,7 +121,7 @@ export default function Ambulant() {
         basis: r.basis,
       })),
     );
-  }, [driver]);
+  }, [collector, driver]);
 
   useFocusEffect(
     useCallback(() => {

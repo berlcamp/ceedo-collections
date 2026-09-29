@@ -755,6 +755,57 @@ export async function createSyncFixture(
 }
 
 /**
+ * Deactivates every collection area earlier test files left active. Call it once at the top
+ * of a file that pulls.
+ *
+ * Since migration 20260929000055 a cursor-0 sync_pull carries the leases of every active
+ * collection area, and each sync fixture leaves one behind, so without this a pull drags in
+ * the suite's whole history and runs past vitest's timeout. A file's own fixtures, created
+ * after this call, stay active and in scope. See isolateCollectionAreas for the collector
+ * filter.
+ */
+export async function retireCollectionAreas(db: PgClient): Promise<void> {
+  await db.query(
+    `update ceedo_collections.collector_assignments ca
+        set active = false
+       from ceedo_collections.app_users u
+      where u.id = ca.collector_id and u.role = 'collector' and ca.active`,
+  );
+}
+
+/**
+ * Deactivates every active collection area except `keepCollectorId`'s, and returns a
+ * function that reactivates exactly those rows.
+ *
+ * Since migration 20260929000055 a tablet pulls the leases of EVERY active collection area,
+ * so a cursor-0 pull in this shared database carries every sync fixture any earlier test
+ * left behind. A test that measures the pull (its bytes, its elapsed time) must measure its
+ * own fixture, not the suite's history. Only collectors' rows are touched: the
+ * collector-only guard trigger would refuse an update to a row naming anyone else.
+ */
+export async function isolateCollectionAreas(
+  db: PgClient,
+  keepCollectorId: string,
+): Promise<() => Promise<void>> {
+  const { rows } = await db.query(
+    `update ceedo_collections.collector_assignments ca
+        set active = false
+       from ceedo_collections.app_users u
+      where u.id = ca.collector_id and u.role = 'collector'
+        and ca.active and ca.collector_id <> $1
+     returning ca.id`,
+    [keepCollectorId],
+  );
+  const ids = rows.map((r) => r.id as string);
+  return async () => {
+    await db.query(
+      `update ceedo_collections.collector_assignments set active = true where id = any($1::uuid[])`,
+      [ids],
+    );
+  };
+}
+
+/**
  * Polls pg_stat_activity (over `probe`) until the backend `pid` shows a Lock wait, or
  * throws after `timeoutMs`.
  *

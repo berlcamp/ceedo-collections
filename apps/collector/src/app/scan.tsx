@@ -39,7 +39,8 @@ export default function Scan() {
   async function onScanned(data: string) {
     if (latched.current) return;
     latched.current = true;
-    const result = await resolveCard(driver, data);
+    if (!collector) return;
+    const result = await resolveCard(driver, data, collector.id);
     if (result.kind === "lease") {
       router.push(`/lease/${result.leaseId}`);
       return;
@@ -106,7 +107,9 @@ function explain(result: Exclude<CardResolution, { kind: "lease" }>): string {
     case "not_a_card":
       return "That is not a CEEDO tenant card.";
     case "not_on_tablet":
-      return "This card's lease is not on this tablet. It may belong to another market, or it was added since the last sync. Sync at the office, or search by stall number.";
+      return "This card's lease is not on this tablet. It was probably added since the last sync. Sync at the office, or search by stall number.";
+    case "outside_area":
+      return `Stall ${result.stallNo} is outside your collection area. Ask the office if you should collect there.`;
     case "ended":
       return `The lease on stall ${result.stallNo} has ended. Nothing can be collected on this card.`;
   }

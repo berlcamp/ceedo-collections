@@ -15,13 +15,14 @@ export type SignInBlock =
  *
  * FIVE VALUES RATHER THAN A BOOLEAN, DELIBERATELY. Every one of these refusals looks like
  * "sign-in failed" to a collector standing in a market at 5am, and each needs a different
- * action: sync the tablet, get it assigned to a facility, phone the office for a PIN, wait
+ * action: sync the tablet, get collectors a collection area, phone the office for a PIN, wait
  * for a sync to clear the lock, or find the person whose shift is still open. Collapsing
  * them into one message makes four of the five undiagnosable in the field.
  *
  * `not_assigned` was the fifth, and it was added after a real tablet hit it: an enrolled
- * device that synced cleanly still had no collectors, because `sync_pull` scopes them by
- * the device's facility assignment. Reporting that as `never_synced` denied the one thing
+ * device that synced cleanly still had no collectors, because `sync_pull` sends only
+ * collectors with a collection area (originally: only those in the device's facility,
+ * before migration 20260929000055). Reporting that as `never_synced` denied the one thing
  * the person had just watched succeed and sent them to look at the network.
  *
  * NOTE WHAT THIS DOES NOT DO: it never checks the PIN. Verification is the caller's, and it

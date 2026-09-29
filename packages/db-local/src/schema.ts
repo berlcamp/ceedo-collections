@@ -281,6 +281,18 @@ export const collectors = sqliteTable("collectors", {
   rowVersion: integer("row_version"),
 });
 
+// Where each collector may collect (server collector_assignments, migration
+// 20260929000055). A null section means the whole facility. The signed-in collector's
+// active rows scope the fee screen, the stall search and the card scan (sync-engine site.ts).
+export const collectorAssignments = sqliteTable("collector_assignments", {
+  id: text("id").primaryKey(),
+  collectorId: text("collector_id"),
+  facilityId: text("facility_id"),
+  sectionId: text("section_id"),
+  active: integer("active", { mode: "boolean" }),
+  rowVersion: integer("row_version"),
+});
+
 export const booklets = sqliteTable("booklets", {
   id: text("id").primaryKey(),
   formTypeId: text("form_type_id"),
@@ -416,8 +428,8 @@ export const chargeCondonations = sqliteTable("charge_condonations", {
  */
 export const PULLED_TABLES = [
   "facilities", "sections", "stalls", "tenants", "leases",
-  "fee_types", "rates", "collectors", "booklets", "booklet_assignments",
-  "consumed_serials", "spoiled_forms", "charges", "collections",
+  "fee_types", "rates", "collectors", "collector_assignments", "booklets",
+  "booklet_assignments", "consumed_serials", "spoiled_forms", "charges", "collections",
   "collection_allocations", "collection_cancellations", "collection_reinstatements",
   "charge_condonations",
 ] as const;

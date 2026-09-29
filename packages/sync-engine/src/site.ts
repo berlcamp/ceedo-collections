@@ -2,23 +2,40 @@ import type { SqliteDriver } from "./driver";
 
 export type FacilityType = "market" | "terminal" | "parking" | "slaughterhouse";
 
-export interface DeviceSite {
+export interface CollectorSite {
   name: string;
   type: FacilityType;
 }
 
 /**
- * The facility this tablet works at, or null when there is no single one: before its first
- * sync, or on a tablet assigned to all facilities (migration 0053).
+ * SQL condition: the section aliased `sec` lies in the collection area of the collector
+ * bound to its one `?`. A null section on the assignment covers the whole facility.
  *
- * sync_pull sends the device's assigned facility (§6.1), or every facility for an
- * all-facilities tablet. One live row is the answer, with no assignment table to consult
- * on the device. More than one means the tablet works everywhere, and an unknown site
- * already falls back to the market round and every on-the-spot fee.
+ * Every tablet holds every facility (server migration 20260929000055), so this is what
+ * keeps a collector to their own stalls: the stall search and the card scan both apply it.
  */
-export async function deviceSite(driver: SqliteDriver): Promise<DeviceSite | null> {
+export const IN_COLLECTOR_AREA = `exists (
+  select 1 from collector_assignments ca
+   where ca.collector_id = ? and ca.active = 1
+     and ca.facility_id = sec.facility_id
+     and (ca.section_id is null or ca.section_id = sec.id))`;
+
+/**
+ * The facility the signed-in collector works at, from their collection area. Null when
+ * there is no single one: before the first sync, or a collector whose areas span several
+ * facilities. An unknown site falls back to the market round and every on-the-spot fee.
+ */
+export async function collectorSite(
+  driver: SqliteDriver,
+  collectorId: string,
+): Promise<CollectorSite | null> {
   const rows = await driver.select<{ name: string; type: FacilityType }>(
-    "select name, type from facilities where active = 1 limit 2",
+    `select distinct f.name, f.type
+       from collector_assignments ca
+       join facilities f on f.id = ca.facility_id
+      where ca.collector_id = ? and ca.active = 1 and f.active = 1
+      limit 2`,
+    [collectorId],
   );
   return rows.length === 1 ? rows[0]! : null;
 }
@@ -33,7 +50,7 @@ export interface FeeChoice {
  * The on-the-spot fees this tablet may collect: one entry per fee type and rate class.
  *
  * Non-accruing only: an accruing fee raises charges and belongs on a lease. Scoped to the
- * device's facility type (migration 0045), so the terminal tablet offers bus and jeepney
+ * collector's facility type (migration 0045), so the terminal tablet offers bus and jeepney
  * fees, not the slaughterhouse's hog rate. A fee with no facility type is offered
  * everywhere, and so is everything when the site is not yet known, which keeps an
  * unclassified fee or an unsynced tablet from showing an empty list.

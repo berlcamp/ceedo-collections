@@ -5,6 +5,7 @@ import { Action, Body, Field, List, Note, RackHead, Register, Screen, Slot, Titl
 import { freshness, type Freshness } from "../ui/staleness";
 import { businessDate } from "../sync/device-sync";
 import { deviceDriver } from "../db/driver";
+import { IN_COLLECTOR_AREA } from "@ceedo/sync-engine";
 import { signedIn } from "../auth/session";
 
 interface LeaseHit {
@@ -22,8 +23,8 @@ interface LeaseHit {
  * unreadable card fails on its first morning. Phase 4's QR scan is an accelerator laid
  * over this screen, which must already work.
  *
- * Scoped by construction rather than by a predicate: sync_pull only ever sent this device
- * the leases inside its own assignment, so there is nothing here to filter out.
+ * Scoped to the signed-in collector's collection area (IN_COLLECTOR_AREA): every tablet
+ * holds every facility's leases, so the area is what keeps a collector to their own stalls.
  */
 export default function Leases() {
   const router = useRouter();
@@ -45,15 +46,16 @@ export default function Leases() {
            join tenants t on t.id = l.tenant_id
            left join sections sec on sec.id = s.section_id
           where l.status = 'active'
+            and ${IN_COLLECTOR_AREA}
             and (lower(s.stall_no) like ? or lower(t.full_name) like ?)
           order by s.stall_no
           limit 50`,
-        [term, term],
+        [collector?.id ?? "", term, term],
       );
       setHits(rows);
       setFresh(await freshness(driver, businessDate()));
     },
-    [driver],
+    [collector, driver],
   );
 
   useFocusEffect(

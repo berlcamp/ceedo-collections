@@ -8,6 +8,7 @@ import {
   resetCutover,
   uniqueCode,
   uniqueEmail,
+  retireCollectionAreas,
 } from "../helpers/supabase";
 
 let db: Client;
@@ -15,6 +16,8 @@ let db: Client;
 beforeAll(async () => {
   db = new Client({ connectionString: POSTGRES_URL });
   await db.connect();
+  // Every tablet pulls every active collection area; start this file from its own.
+  await retireCollectionAreas(db);
 });
 
 afterAll(async () => {
@@ -33,6 +36,7 @@ type Pull = {
   fee_types: { id: string }[];
   rates: { id: string }[];
   collectors: { id: string; employee_no: string; pin_hash: string | null }[];
+  collector_assignments: { id: string; collector_id: string; facility_id: string; active: boolean }[];
   booklets: { id: string }[];
   booklet_assignments: { booklet_id: string }[];
   consumed_serials: { booklet_id: string; or_no: number }[];
@@ -52,24 +56,42 @@ async function pull(deviceId: string, cursor = 0): Promise<Pull> {
 }
 
 describe("sync_pull", () => {
-  it("returns the device's own facility and not another's", async () => {
+  // Migration 20260929000055: every tablet carries every facility. Tablets are shared, so
+  // the signed-in collector's collection area scopes what they see, on the device.
+  it("returns every facility, not only the one the tablet was assigned", async () => {
     const mine = await createSyncFixture(db);
     const theirs = await createSyncFixture(db);
 
     const result = await pull(mine.deviceId);
 
     expect(result.facilities.map((f) => f.id)).toContain(mine.facilityId);
-    expect(result.facilities.map((f) => f.id)).not.toContain(theirs.facilityId);
+    expect(result.facilities.map((f) => f.id)).toContain(theirs.facilityId);
   });
 
-  it("returns the device's own leases and not another's", async () => {
+  it("returns every facility's leases", async () => {
     const mine = await createSyncFixture(db);
     const theirs = await createSyncFixture(db);
 
     const result = await pull(mine.deviceId);
 
     expect(result.leases.map((l) => l.id)).toContain(mine.leaseId);
-    expect(result.leases.map((l) => l.id)).not.toContain(theirs.leaseId);
+    expect(result.leases.map((l) => l.id)).toContain(theirs.leaseId);
+  });
+
+  it("returns each collector's collection areas, withdrawn ones as inactive", async () => {
+    const fx = await createSyncFixture(db);
+    const first = await pull(fx.deviceId);
+    const mine = first.collector_assignments.find((a) => a.collector_id === fx.collectorId);
+    expect(mine).toMatchObject({ facility_id: fx.facilityId, active: true });
+
+    await db.query(
+      `update ceedo_collections.collector_assignments set active = false where collector_id = $1`,
+      [fx.collectorId],
+    );
+    const delta = await pull(fx.deviceId, Number(first.cursor));
+    expect(delta.collector_assignments).toContainEqual(
+      expect.objectContaining({ id: mine!.id, active: false }),
+    );
   });
 
   it("returns the current assignment epoch", async () => {
@@ -258,7 +280,7 @@ describe("sync_pull", () => {
     );
   });
 
-  it("returns an empty scope for a device with no active assignment", async () => {
+  it("returns the full scope to a device with no assignment of its own", async () => {
     const fx = await createSyncFixture(db);
     await db.query(
       `update ceedo_collections.device_assignments set active = false where device_id = $1`,
@@ -267,16 +289,11 @@ describe("sync_pull", () => {
 
     const result = await pull(fx.deviceId);
 
-    expect(result.leases).toEqual([]);
-    expect(result.facilities).toEqual([]);
+    expect(result.leases.map((l) => l.id)).toContain(fx.leaseId);
+    expect(result.collectors.map((c) => c.id)).toContain(fx.collectorId);
   });
 
-  it("excludes another facility's collections from the payload", async () => {
-    // A coverage hole found and closed during Task 7's mutation check: deleting the
-    // `collections` key's `join _scope_leases` left `returns the device's own leases and
-    // not another's` still green (it never looks at collections at all), while every
-    // collection in the WHOLE SYSTEM leaked to every device. This is the test that would
-    // have caught it.
+  it("returns another facility's lease collections too", async () => {
     const mine = await createSyncFixture(db);
     const theirs = await createSyncFixture(db);
     await db.query(`select ceedo_collections.run_accrual('2026-10-05'::date)`);
@@ -284,24 +301,16 @@ describe("sync_pull", () => {
 
     const result = await pull(mine.deviceId);
 
-    expect(result.collections.map((c) => c.id)).not.toContain(theirCollectionId);
+    expect(result.collections.map((c) => c.id)).toContain(theirCollectionId);
   });
 
-  it("excludes booklets, booklet_assignments, consumed_serials and spoiled_forms held by a collector in a different section of the same facility", async () => {
-    // Fix round 1: `can_collector_use_device()`'s own predicate checks BOTH facility AND
-    // `(ca.section_id is null or v_section is null or ca.section_id = v_section)`. The
-    // `collectors` subquery above already reproduces both halves; `booklets`,
-    // `booklet_assignments`, `consumed_serials` and `spoiled_forms` originally reproduced
-    // only the facility half -- a real leak on any market with per-section devices, and
-    // one the migration's own header comment (booklets go to "every collector currently
-    // permitted to sign in") explicitly promises not to have.
+  it("sends booklets, booklet_assignments, consumed_serials and spoiled_forms of a collector outside the tablet's old assignment, and drops them when the collector has no area", async () => {
+    // Any tablet may be the one a collector picks up (migration 20260929000055), so their
+    // booklet state goes to every tablet while they hold an active collection area. The
+    // device_assignments row below, naming another section, no longer narrows anything.
     //
-    // createSyncFixture never exercises this: its device_assignments and
-    // collector_assignments rows are both facility-wide (section_id null), so no test
-    // built on it can tell a correct section predicate from a missing one. This test
-    // builds the one shape that can: two sections under one facility, a device scoped to
-    // section A, and a collector -- holding a booklet, a spoiled form and a posted
-    // collection -- scoped to section B.
+    // (Before 20260929000055 this test asserted the opposite: a device scoped to section A
+    // was refused the booklets of a collector scoped to section B.)
     const { rows: facRows } = await db.query(
       `insert into ceedo_collections.facilities (code, name, type)
        values ($1, $2, 'market') returning id`,
@@ -329,8 +338,7 @@ describe("sync_pull", () => {
       [deviceId, facilityId, sectionAId],
     );
 
-    // The collector: scoped to section B only -- can_collector_use_device() would refuse
-    // to let them sign in to the section-A device above.
+    // The collector: scoped to section B only.
     const { userId: collectorId } = await createAppUser({
       email: uniqueEmail("section-b-collector@example.com"),
       role: "collector",
@@ -407,12 +415,27 @@ describe("sync_pull", () => {
 
     const result = await pull(deviceId);
 
-    expect(result.booklets.map((b) => b.id)).not.toContain(bookletId);
-    expect(result.booklet_assignments.map((ba) => ba.booklet_id)).not.toContain(bookletId);
-    expect(result.consumed_serials).not.toContainEqual(
+    expect(result.booklets.map((b) => b.id)).toContain(bookletId);
+    expect(result.booklet_assignments.map((ba) => ba.booklet_id)).toContain(bookletId);
+    expect(result.consumed_serials).toContainEqual(
       expect.objectContaining({ booklet_id: bookletId, or_no: 2 }),
     );
-    expect(result.spoiled_forms.map((sf) => sf.booklet_id)).not.toContain(bookletId);
+    expect(result.spoiled_forms.map((sf) => sf.booklet_id)).toContain(bookletId);
+
+    // Withdraw the collector's area: nothing of theirs is sent on a fresh pull.
+    await db.query(
+      `update ceedo_collections.collector_assignments set active = false where collector_id = $1`,
+      [collectorId],
+    );
+    const without = await pull(deviceId);
+
+    expect(without.collectors.map((c) => c.id)).not.toContain(collectorId);
+    expect(without.booklets.map((b) => b.id)).not.toContain(bookletId);
+    expect(without.booklet_assignments.map((ba) => ba.booklet_id)).not.toContain(bookletId);
+    expect(without.consumed_serials).not.toContainEqual(
+      expect.objectContaining({ booklet_id: bookletId, or_no: 2 }),
+    );
+    expect(without.spoiled_forms.map((sf) => sf.booklet_id)).not.toContain(bookletId);
   });
 
   it("succeeds over the real ceedo_app role-switch path, not just as the postgres superuser `db` uses", async () => {

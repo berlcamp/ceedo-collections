@@ -142,9 +142,15 @@ describe("sync_push — collections", () => {
     expect(rows[0].device_id).not.toBe(other.deviceId);
   });
 
-  it("rejects a collector who may not use this device", async () => {
+  it("rejects a collector with no active collection area", async () => {
+    // Since migration 20260929000055 a collector from any facility may use any tablet; the
+    // one thing that refuses them is having no active collection area.
     const fx = await createSyncFixture(db);
     const stranger = await createSyncFixture(db);
+    await db.query(
+      `update ceedo_collections.collector_assignments set active = false where collector_id = $1`,
+      [stranger.collectorId],
+    );
     await accrue();
 
     const result = await pushOne(fx, [

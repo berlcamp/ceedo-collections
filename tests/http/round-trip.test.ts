@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
-import { POSTGRES_URL, createSyncFixture, resetCutover } from "../helpers/supabase";
+import { POSTGRES_URL, createSyncFixture, resetCutover, retireCollectionAreas } from "../helpers/supabase";
 import { callFunction } from "../helpers/functions";
 
 // Design §1's exit criterion, taken literally: "Phase 3a ships when the full round-trip
@@ -15,6 +15,8 @@ let db: Client;
 beforeAll(async () => {
   db = new Client({ connectionString: POSTGRES_URL });
   await db.connect();
+  // Every tablet pulls every active collection area; start this file from its own.
+  await retireCollectionAreas(db);
 });
 
 afterAll(async () => {

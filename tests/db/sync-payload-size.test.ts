@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
-import { POSTGRES_URL, createSyncFixture, resetCutover } from "../helpers/supabase";
+import {
+  POSTGRES_URL,
+  createSyncFixture,
+  isolateCollectionAreas,
+  resetCutover,
+} from "../helpers/supabase";
 
 let db: Client;
 
@@ -56,11 +61,18 @@ describe("first-sync payload", () => {
     // silent.
     expect(chargeCount).toBeGreaterThan(1000);
 
-    const { rows } = await db.query(
-      `select octet_length(ceedo_collections.sync_pull($1::uuid, 0)::text) as bytes`,
-      [fx.deviceId],
-    );
-    const bytes = Number(rows[0].bytes);
+    // This fixture's lease only: every tablet pulls every assigned area now.
+    const restore = await isolateCollectionAreas(db, fx.collectorId);
+    let bytes: number;
+    try {
+      const { rows } = await db.query(
+        `select octet_length(ceedo_collections.sync_pull($1::uuid, 0)::text) as bytes`,
+        [fx.deviceId],
+      );
+      bytes = Number(rows[0].bytes);
+    } finally {
+      await restore();
+    }
 
     // A fixture with one lease is not a market, and this fixture posts zero collections, so
     // the figure is a LOWER BOUND on a real first-sync payload in two ways at once: one

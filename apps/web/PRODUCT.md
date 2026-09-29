@@ -59,7 +59,7 @@ Official Receipt is the legal record, and this app proves the paper and the cash
 - **Two families of screen**, and they are genuinely different shapes:
   - **Master data** (`app/(admin)/[resource]/`) — 13 registry-driven CRUD resources:
     facilities, sections, stalls, tenants, leases, fee types, rates, accountable form
-    types, OR booklets, tablets, tablet assignments, collection areas, staff invitations,
+    types, OR booklets, tablets, collection areas, staff invitations,
     staff, audit log. Config-driven from `lib/admin/registry.ts`; one page component
     serves all of them.
   - **Ledger** (`app/(admin)/ledger/`) — read-plus-RPC reporting over Postgres views:

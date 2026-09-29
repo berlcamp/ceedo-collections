@@ -44,9 +44,9 @@ const MESSAGES: Record<SignInBlock, string> = {
     "This tablet has not synced yet, so it has no collectors. Connect to the office " +
     "network and sync before the round.",
   not_assigned:
-    "This tablet has synced, but it is not assigned to a market yet — so the sync brought " +
-    "no collectors with it. An administrator assigns the tablet to a facility; then sync " +
-    "again.",
+    "This tablet has synced, but no collector has a collection area yet — so the sync " +
+    "brought no collectors with it. An administrator gives each collector a collection " +
+    "area on the web; then sync again.",
   no_pin:
     "No PIN is set for this collector. An administrator sets it on the web, and it " +
     "reaches this tablet on the next sync.",
@@ -216,7 +216,7 @@ export default function SignIn() {
       {/*
         A SYNC BUTTON HERE IS NOT A CONVENIENCE, IT IS THE WAY OUT OF A DEAD END.
         Collectors reach the device only through the pull. A tablet enrolled before its
-        facility assignment existed has an empty collector list, and every other sync in the
+        collectors had collection areas has an empty collector list, and every other sync in the
         app sits behind the shift screen -- which is behind this one. Without this button
         that tablet can only be recovered by re-enrolling it, which needs a credential that
         is shown once and cannot be read back.
