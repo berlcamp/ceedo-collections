@@ -17,6 +17,7 @@ export interface LeaseDraft {
   leaseId: string;
   feeTypeId: string;
   stallNo: string;
+  sectionName: string | null;
   tenantName: string;
   groups: PeriodGroup[];
   ranks: number[];
@@ -36,6 +37,11 @@ export interface LinesDraft {
 }
 
 export type Draft = LeaseDraft | LinesDraft;
+
+/** The app bar title for a stall: "Stall 12 · Dry Goods", or just the stall without a section. */
+export function stallTitle(stallNo: string, sectionName: string | null): string {
+  return sectionName ? `Stall ${stallNo} · ${sectionName}` : `Stall ${stallNo}`;
+}
 
 let current: Draft | null = null;
 

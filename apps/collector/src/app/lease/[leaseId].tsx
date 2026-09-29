@@ -35,11 +35,13 @@ import {
 import { syncFailure } from "../../ui/failures";
 import { freshness, type Freshness } from "../../ui/staleness";
 import { deviceDriver } from "../../db/driver";
-import { setDraft } from "../../collect/draft";
+import { setDraft, stallTitle } from "../../collect/draft";
+import { longDate } from "../../ui/time";
 import { businessDate, syncNow } from "../../sync/device-sync";
 
 interface Header {
   stall_no: string;
+  section_name: string | null;
   tenant_name: string;
   // `leases` carries no fee_type_id column -- migration 20260917000004_tenants_leases.sql
   // never gave it one, and only `charges` does (20260918000011_ledger_charges.sql). Every
@@ -94,12 +96,13 @@ export default function Lease() {
 
   const load = useCallback(async () => {
     const rows = await driver.select<Header>(
-      `select s.stall_no, t.full_name as tenant_name,
+      `select s.stall_no, sec.name as section_name, t.full_name as tenant_name,
               (select c.fee_type_id from charges c where c.lease_id = l.id limit 1)
                 as fee_type_id
          from leases l
          join stalls s on s.id = l.stall_id
          join tenants t on t.id = l.tenant_id
+         left join sections sec on sec.id = s.section_id
         where l.id = ?`,
       [leaseId],
     );
@@ -189,22 +192,24 @@ export default function Lease() {
     feeTypeId === null && "This lease has no charges on this tablet yet — sync first.",
   );
 
-  const periodRow = (group: (typeof groups)[number]) => {
+  const periodRow = (group: (typeof groups)[number], indent = false) => {
     const on = ranks.includes(group.groupRank);
     return (
         <Slot
           key={group.groupRank}
           onPress={() => tapRow(group.groupRank)}
           selectable
+          compact
+          indent={indent}
           selected={on}
           suppressed={ranks.length > 0 && !on}
           // Two lines by construction rather than by wrapping: one line held
           // "2026-06-01 · due 2026-06-05" beside an amount and broke mid-phrase on a
           // narrow screen, which put "due" on one line and its date on the next.
           left={
-            <View style={{ gap: 2 }}>
-              <Body>{group.periodStart}</Body>
-              <Label>{`Due ${group.dueDate}`}</Label>
+            <View>
+              <Body>{longDate(group.periodStart)}</Body>
+              <Label>{`Due ${longDate(group.dueDate)}`}</Label>
             </View>
           }
           right={format(group.outstanding)}
@@ -216,7 +221,7 @@ export default function Lease() {
     <Screen
       head={
         <RackHead
-          title={header.stall_no}
+          title={stallTitle(header.stall_no, header.section_name)}
           subtitle={header.tenant_name}
           onBack={() => router.back()}
           register={fresh ? <Register state={fresh.state} detail={fresh.short} /> : undefined}
@@ -249,6 +254,7 @@ export default function Lease() {
               leaseId,
               feeTypeId,
               stallNo: header.stall_no,
+              sectionName: header.section_name,
               tenantName: header.tenant_name,
               groups,
               ranks,
@@ -356,11 +362,12 @@ export default function Lease() {
                 */}
                 <Slot
                   onPress={() => toggleMonth(block.month)}
-                  icon={open ? "calendar-minus" : "calendar-plus"}
+                  compact
+                  disclosure={open ? "open" : "closed"}
                   selected={inBlock > 0}
                   suppressed={ranks.length > 0 && inBlock === 0}
                   left={
-                    <View style={{ gap: 2 }}>
+                    <View>
                       <Body>{monthLabel(block.month)}</Body>
                       <Label>
                         {`${block.groups.length} periods`}
@@ -371,7 +378,7 @@ export default function Lease() {
                   }
                   right={format(block.outstanding)}
                 />
-                {open ? block.groups.map((group) => periodRow(group)) : null}
+                {open ? block.groups.map((group) => periodRow(group, true)) : null}
               </Fragment>
             );
           })}

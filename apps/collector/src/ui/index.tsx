@@ -13,6 +13,7 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   Animated,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -119,6 +120,9 @@ export function IconTile({
  */
 const SlotInk = createContext<string | null>(null);
 
+/** A compact row sets the `Body` inside it at the small size. */
+const SlotCompact = createContext(false);
+
 /** Small caps section label. */
 export function Label({
   children,
@@ -134,7 +138,12 @@ export function Label({
 /** Body copy. Every message, every explanation. */
 export function Body({ children, tone }: { children: ReactNode; tone?: string }) {
   const slotInk = useContext(SlotInk);
-  return <Text style={[t.body, { color: tone ?? slotInk ?? color.ink }]}>{children}</Text>;
+  const compact = useContext(SlotCompact);
+  return (
+    <Text style={[compact ? t.small : t.body, { color: tone ?? slotInk ?? color.ink }]}>
+      {children}
+    </Text>
+  );
 }
 
 /** A screen's subject: a stall number, a tenant, a heading. */
@@ -400,6 +409,9 @@ export function Slot({
   blocked = null,
   selectable = false,
   nav = false,
+  compact = false,
+  indent = false,
+  disclosure,
   icon,
   left,
   right,
@@ -411,6 +423,12 @@ export function Slot({
   blocked?: string | null;
   selectable?: boolean;
   nav?: boolean;
+  /** Smaller type and tighter padding, for dense lists such as a lease's periods. */
+  compact?: boolean;
+  /** Stepped in under a disclosure row, so a month's periods read as belonging to it. */
+  indent?: boolean;
+  /** A chevron that opens (`closed`) or closes (`open`) the rows beneath this one. */
+  disclosure?: "open" | "closed";
   icon?: IconName;
   left: ReactNode;
   right?: ReactNode;
@@ -420,63 +438,73 @@ export function Slot({
   const ink = dim ? color.suppressed : color.ink;
   return (
     <SlotInk.Provider value={dim ? color.suppressed : null}>
-      <Pressable
-        onPress={onPress}
-        disabled={!onPress}
-        android_ripple={onPress ? ripple(color.primaryWash) : undefined}
-        accessibilityRole={onPress ? (selectable ? "checkbox" : "button") : undefined}
-        accessibilityState={
-          selectable
-            ? { checked: selected, disabled: blocked !== null }
-            : { selected, disabled: blocked !== null }
-        }
-        style={({ pressed }) => [
-          r.slot,
-          selected && r.slotOn,
-          pressed && onPress && !selected ? r.slotPressed : null,
-        ]}
-      >
-        {selectable ? (
-          <Icon
-            name={selected ? "check-circle" : "checkbox-blank-circle-outline"}
-            tone={selected ? color.primary : color.ruleStrong}
-            size={iconSize.lg - 2}
-          />
-        ) : icon ? (
-          <IconTile
-            name={icon}
-            tone={dim ? color.suppressed : color.primary}
-            wash={dim ? color.sunk : color.primaryWash}
-          />
-        ) : null}
-        <View style={r.slotBody}>
-          <View style={r.slotRow}>
-            <View style={r.slotLeft}>
-              {typeof left === "string" ? (
-                <Text style={[r.slotText, { color: ink }]}>{left}</Text>
-              ) : (
-                left
-              )}
-            </View>
-            {right ? (
-              <View style={r.slotRight}>
-                {typeof right === "string" ? (
-                  <Text style={[r.slotAmount, { color: ink }]}>{right}</Text>
+      <SlotCompact.Provider value={compact}>
+        <Pressable
+          onPress={onPress}
+          disabled={!onPress}
+          android_ripple={onPress ? ripple(color.primaryWash) : undefined}
+          accessibilityRole={onPress ? (selectable ? "checkbox" : "button") : undefined}
+          accessibilityState={
+            selectable
+              ? { checked: selected, disabled: blocked !== null }
+              : { selected, disabled: blocked !== null }
+          }
+          style={({ pressed }) => [
+            r.slot,
+            compact && r.slotCompact,
+            indent && r.slotIndent,
+            selected && r.slotOn,
+            pressed && onPress && !selected ? r.slotPressed : null,
+          ]}
+        >
+          {disclosure ? (
+            <Icon
+              name={disclosure === "open" ? "chevron-down" : "chevron-right"}
+              tone={dim ? color.suppressed : color.primary}
+              size={compact ? iconSize.md : iconSize.lg - 2}
+            />
+          ) : selectable ? (
+            <Icon
+              name={selected ? "check-circle" : "checkbox-blank-circle-outline"}
+              tone={selected ? color.primary : color.ruleStrong}
+              size={compact ? iconSize.md : iconSize.lg - 2}
+            />
+          ) : icon ? (
+            <IconTile
+              name={icon}
+              tone={dim ? color.suppressed : color.primary}
+              wash={dim ? color.sunk : color.primaryWash}
+            />
+          ) : null}
+          <View style={[r.slotBody, compact && r.slotBodyCompact]}>
+            <View style={r.slotRow}>
+              <View style={r.slotLeft}>
+                {typeof left === "string" ? (
+                  <Text style={[r.slotText, compact && r.slotTextCompact, { color: ink }]}>{left}</Text>
                 ) : (
-                  right
+                  left
                 )}
               </View>
+              {right ? (
+                <View style={r.slotRight}>
+                  {typeof right === "string" ? (
+                    <Text style={[r.slotAmount, compact && r.slotAmountCompact, { color: ink }]}>{right}</Text>
+                  ) : (
+                    right
+                  )}
+                </View>
+              ) : null}
+            </View>
+            {under ? <View>{under}</View> : null}
+            {blocked ? (
+              <Text style={[t.small, { color: color.refusal }]} accessibilityLiveRegion="polite">
+                {blocked}
+              </Text>
             ) : null}
           </View>
-          {under ? <View>{under}</View> : null}
-          {blocked ? (
-            <Text style={[t.small, { color: color.refusal }]} accessibilityLiveRegion="polite">
-              {blocked}
-            </Text>
-          ) : null}
-        </View>
-        {nav ? <Icon name="chevron-right" tone={color.suppressed} /> : null}
-      </Pressable>
+          {nav ? <Icon name="chevron-right" tone={color.suppressed} /> : null}
+        </Pressable>
+      </SlotCompact.Provider>
     </SlotInk.Provider>
   );
 }
@@ -682,6 +710,70 @@ export function Action({
         </Text>
       ) : null}
     </View>
+  );
+}
+
+/**
+ * A yes-or-no question asked over the screen before something that cannot be taken back.
+ *
+ * Cancel is the outlined button on the left and only closes; the confirming button carries
+ * the verb, so a collector who reads only the buttons still knows what they are agreeing
+ * to. Android Back and a tap on the scrim both cancel.
+ */
+export function Confirm({
+  visible,
+  title,
+  children,
+  confirmLabel,
+  cancelLabel = "Cancel",
+  icon,
+  onConfirm,
+  onCancel,
+}: {
+  visible: boolean;
+  title: string;
+  children?: ReactNode;
+  confirmLabel: string;
+  cancelLabel?: string;
+  icon?: IconName;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <Pressable style={m.scrim} onPress={onCancel} accessibilityLabel={cancelLabel}>
+        {/* A Pressable, not a View, so a tap on the sheet itself does not reach the scrim. */}
+        <Pressable style={m.sheet} onPress={() => undefined} accessibilityViewIsModal>
+          <Text style={m.title} accessibilityRole="header">
+            {title}
+          </Text>
+          {typeof children === "string" ? (
+            <Text style={[t.body, { color: color.muted }]}>{children}</Text>
+          ) : (
+            children
+          )}
+          <View style={m.buttons}>
+            <Pressable
+              onPress={onCancel}
+              android_ripple={ripple(color.primaryWash)}
+              accessibilityRole="button"
+              style={({ pressed }) => [a.base, m.button, pressed ? a.pressed : null]}
+            >
+              <Text style={[a.label, { color: color.primary }]}>{cancelLabel}</Text>
+            </Pressable>
+            <Pressable
+              onPress={onConfirm}
+              android_ripple={ripple("rgba(255,255,255,0.24)")}
+              accessibilityRole="button"
+              style={({ pressed }) => [k.base, k.filled, m.button, pressed ? k.filledPressed : null]}
+            >
+              {icon ? <Icon name={icon} tone={color.onPrimary} /> : null}
+              <Text style={[k.label, { color: color.onPrimary }]}>{confirmLabel}</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -1011,15 +1103,47 @@ const r = StyleSheet.create({
     gap: space.step - 4,
     backgroundColor: color.card,
   },
+  // Still 40dp tall: a full-width row stays well clear of a mis-tap at that height.
+  slotCompact: { minHeight: 40, paddingHorizontal: space.snug + 2, gap: space.snug },
+  slotIndent: { paddingLeft: space.rift + space.hair },
   slotOn: { backgroundColor: color.primaryWash },
   slotPressed: { backgroundColor: color.sunk },
   slotBody: { flex: 1, paddingVertical: space.snug + 2, gap: space.hair },
+  slotBodyCompact: { paddingVertical: space.tight, gap: 0 },
   slotRow: { flexDirection: "row", alignItems: "center", gap: space.snug },
   slotLeft: { flex: 1, minWidth: 0 },
   slotRight: { alignItems: "flex-end" },
   slotText: { fontFamily: face.text, fontSize: size.body, lineHeight: size.body * 1.35 },
+  slotTextCompact: { fontSize: size.small, lineHeight: size.small * 1.35 },
   slotAmount: { fontFamily: face.bold, fontSize: size.body },
+  slotAmountCompact: { fontSize: size.small },
   rule: { height: 1, backgroundColor: color.rule },
+});
+
+const m = StyleSheet.create({
+  scrim: {
+    flex: 1,
+    backgroundColor: "rgba(15,23,42,0.55)",
+    justifyContent: "center",
+    padding: space.gap,
+  },
+  sheet: {
+    backgroundColor: color.card,
+    borderRadius: radius.card,
+    padding: space.gap,
+    gap: space.step,
+    width: "100%",
+    maxWidth: 480,
+    alignSelf: "center",
+  },
+  title: {
+    fontFamily: face.bold,
+    fontSize: size.title,
+    lineHeight: size.title * 1.25,
+    color: color.ink,
+  },
+  buttons: { flexDirection: "row", gap: space.snug, marginTop: space.tight },
+  button: { flex: 1 },
 });
 
 const k = StyleSheet.create({

@@ -28,3 +28,32 @@ export function clockTime(iso: string | null | undefined): string | null {
     return null;
   }
 }
+
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+/**
+ * A calendar date ("2026-07-25") as a collector reads it: "July 25, 2026".
+ *
+ * Built by hand, not through `Intl`, for the reason `clockTime` gives above -- and because
+ * `new Date("2026-07-25")` is UTC midnight, which a local-time formatter can shift to the
+ * previous day. Anything that is not a plain date comes back unchanged rather than guessed.
+ */
+export function longDate(date: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(date);
+  const month = match ? MONTHS[Number(match[2]) - 1] : undefined;
+  if (!match || !month) return date;
+  return `${month} ${Number(match[3])}, ${match[1]}`;
+}

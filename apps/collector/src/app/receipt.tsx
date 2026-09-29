@@ -14,6 +14,7 @@ import {
   Action,
   Amount,
   Card,
+  Confirm,
   Field,
   Figure,
   Group,
@@ -27,7 +28,7 @@ import {
 } from "../ui";
 import { deviceDriver } from "../db/driver";
 import { signedIn } from "../auth/session";
-import { clearDraft, draft } from "../collect/draft";
+import { clearDraft, draft, stallTitle } from "../collect/draft";
 
 /**
  * The OR number goes in AFTER the money is counted and the paper receipt is written.
@@ -58,6 +59,7 @@ export default function Receipt() {
   const [check, setCheck] = useState<OrEntryResult | null>(null);
   const [acceptedSkip, setAcceptedSkip] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
 
@@ -176,7 +178,11 @@ export default function Receipt() {
     <Screen
       head={
         <RackHead
-          title={pending.kind === "lease" ? pending.stallNo : "On-the-spot fee"}
+          title={
+            pending.kind === "lease"
+              ? stallTitle(pending.stallNo, pending.sectionName)
+              : "On-the-spot fee"
+          }
           subtitle={
             pending.kind === "lease"
               ? pending.tenantName
@@ -194,59 +200,75 @@ export default function Receipt() {
           blocked={blocked}
           busy={busy}
           busyLabel="Recording"
-          onPress={async () => {
-            if (!check?.ok || orNo === null) return;
-            setBusy(true);
-            setError(null);
-            setErrorDetail(null);
-            try {
-              const shifts = await driver.select<{ id: string }>(
-                "select id from local_shifts where collector_id = ? and status = 'open' order by opened_at desc",
-                [collector.id],
-              );
-              const shiftId = shifts[0]?.id;
-              if (!shiftId) {
-                setError("This shift is no longer open. Open one from the shift screen.");
-                return;
-              }
-
-              await commitReceipt(
-                driver,
-                {
-                  id: randomUUID(),
-                  orNo,
-                  bookletId: check.bookletId,
-                  collectorId: collector.id,
-                  shiftId,
-                  collectedAt: new Date().toISOString(),
-                  feeTypeId: pending.feeTypeId,
-                  leaseId: pending.kind === "lease" ? pending.leaseId : null,
-                  grossAmount: pending.grossAmount,
-                  ranks: pending.kind === "lease" ? pending.ranks : [],
-                  allocations: pending.kind === "lease" ? pending.allocations : [],
-                  lines: pending.kind === "lines" ? pending.lines : [],
-                  payerRef: pending.kind === "lines" ? pending.payerRef : null,
-                  notes: null,
-                },
-                pending.kind === "lines" ? pending.lines.map(() => randomUUID()) : [],
-              );
-
-              clearDraft();
-              router.replace("/shift");
-            } catch (caught) {
-              // Nothing was written -- commitReceipt is one transaction. Saying so matters:
-              // the collector needs to know whether to write another paper receipt.
-              setError(
-                "Not recorded, and nothing was saved. Write the paper receipt again on a new form, or try once more.",
-              );
-              setErrorDetail(String(caught));
-            } finally {
-              setBusy(false);
-            }
-          }}
+          onPress={() => setConfirming(true)}
         />
       }
     >
+      <Confirm
+        visible={confirming}
+        title="Record this receipt?"
+        confirmLabel="Record"
+        icon="content-save-check-outline"
+        onCancel={() => setConfirming(false)}
+        onConfirm={async () => {
+        setConfirming(false);
+        if (!check?.ok || orNo === null) return;
+        setBusy(true);
+        setError(null);
+        setErrorDetail(null);
+        try {
+          const shifts = await driver.select<{ id: string }>(
+            "select id from local_shifts where collector_id = ? and status = 'open' order by opened_at desc",
+            [collector.id],
+          );
+          const shiftId = shifts[0]?.id;
+          if (!shiftId) {
+            setError("This shift is no longer open. Open one from the shift screen.");
+            return;
+          }
+
+          await commitReceipt(
+            driver,
+            {
+              id: randomUUID(),
+              orNo,
+              bookletId: check.bookletId,
+              collectorId: collector.id,
+              shiftId,
+              collectedAt: new Date().toISOString(),
+              feeTypeId: pending.feeTypeId,
+              leaseId: pending.kind === "lease" ? pending.leaseId : null,
+              grossAmount: pending.grossAmount,
+              ranks: pending.kind === "lease" ? pending.ranks : [],
+              allocations: pending.kind === "lease" ? pending.allocations : [],
+              lines: pending.kind === "lines" ? pending.lines : [],
+              payerRef: pending.kind === "lines" ? pending.payerRef : null,
+              notes: null,
+            },
+            pending.kind === "lines" ? pending.lines.map(() => randomUUID()) : [],
+          );
+
+          clearDraft();
+          router.replace("/shift");
+        } catch (caught) {
+          // Nothing was written -- commitReceipt is one transaction. Saying so matters:
+          // the collector needs to know whether to write another paper receipt.
+          setError(
+            "Not recorded, and nothing was saved. Write the paper receipt again on a new form, or try once more.",
+          );
+          setErrorDetail(String(caught));
+        } finally {
+          setBusy(false);
+        }
+      }}
+      >
+        {`${format(pending.grossAmount)} on OR ${
+          check?.ok && matchedBooklet && orNo !== null
+            ? formatSerial(matchedBooklet.serialPrefix, orNo)
+            : (orNo ?? "")
+        }. Check both against the paper receipt — once recorded, this tablet cannot change it.`}
+      </Confirm>
+
       {/* The amount leads: it is what the collector has just counted and is about to
           write onto the paper, and this screen exists only because that paper is real. */}
       <Card>
