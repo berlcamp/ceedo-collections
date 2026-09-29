@@ -394,6 +394,12 @@ const configs: ResourceConfig[] = [
     optionLabel: "name",
     readRoles: BACK_OFFICE,
     writeRoles: ADMIN_ONLY,
+    // Refused while rates, charges or receipts name it. A delete re-syncs every tablet
+    // (migration 20260929000056), since a tablet cannot otherwise learn a fee is gone.
+    deletable: {
+      inUse:
+        "This fee type has rates, charges or receipts, so it can't be deleted. Delete its rates first if it was never used, or mark it inactive instead.",
+    },
   },
   {
     key: "rates",
@@ -447,6 +453,12 @@ const configs: ResourceConfig[] = [
     optionLabel: "effective_from",
     readRoles: BACK_OFFICE,
     writeRoles: ADMIN_ONLY,
+    // Nothing references a rate (charges and receipt lines copy the amount), so a delete
+    // always goes through; it re-syncs every tablet (migration 20260929000056) so none
+    // keeps pricing with it. To stop a rate from a date on, end-date it instead.
+    deletable: {
+      inUse: "This rate is in use, so it can't be deleted. Set an effective-to date instead.",
+    },
   },
   {
     key: "form-types",
