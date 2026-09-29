@@ -24,11 +24,12 @@ function columns(canResolve: boolean): DataColumn<ExceptionRow>[] {
       key: "reason",
       label: "Reason",
       sortValue: (row) => row.reasonText,
-      searchValue: (row) => `${row.reasonText} ${row.reasonCode} ${row.status}`,
+      searchValue: (row) => `${row.reasonText} ${row.reasonCode} ${row.detail ?? ""} ${row.status}`,
       facet: (row) => row.reasonText,
       render: (row) => (
         <div className="min-w-[14rem] max-w-[34rem] whitespace-normal">
           <p className="leading-snug">{row.reasonText}</p>
+          {row.detail ? <p className="mt-1 text-xs leading-snug text-ink-3">{row.detail}</p> : null}
           {row.status === "escalated" ? (
             <Mark tone="warn" className="mt-1">
               Escalated

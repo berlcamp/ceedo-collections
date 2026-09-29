@@ -591,6 +591,76 @@ describe("sync_push — shifts", () => {
   });
 });
 
+describe("sync_push — a shift still open on the server", () => {
+  // Production, 2026-09-29: a close the server refused left the shift open there while the
+  // tablet moved on. Its next shift_open was refused, and the receipts of that shift each
+  // broke collections_shift_id_fkey -- three exceptions reading only "server_error".
+  function shiftOpen(fx: Fixture, id: string): Entry {
+    return {
+      type: "shift_open",
+      payload: {
+        id,
+        collector_id: fx.collectorId,
+        business_date: BUSINESS_DATE,
+        opened_at: COLLECTED_AT,
+      },
+    };
+  }
+
+  it("names the shift in the way when a second one tries to open", async () => {
+    const fx = await createSyncFixture(db);
+    const stuck = randomUUID();
+    await push(fx, [shiftOpen(fx, stuck)]);
+
+    const result = await pushOne(fx, [shiftOpen(fx, randomUUID())]);
+
+    // Still server_error: tablets in the field parse `reason` against a closed enum.
+    expect(result).toMatchObject({ status: "rejected", reason: "server_error" });
+    expect(result.detail).toContain(stuck);
+    expect(result.detail).toContain("still open on the server");
+  });
+
+  it("files a receipt whose shift never opened with a detail naming that shift", async () => {
+    const fx = await createSyncFixture(db);
+    await accrue();
+    const missing = randomUUID();
+    const entry = collectionEntry(fx, { shift_id: missing });
+
+    const result = await pushOne(fx, [entry]);
+
+    expect(result).toMatchObject({ status: "rejected", reason: "server_error" });
+    expect(result.detail).toContain(missing);
+    const { rows } = await db.query(
+      `select reason_code, detail from ceedo_collections.sync_exceptions
+        where collection_uuid = $1`,
+      [entry.payload.id],
+    );
+    expect(rows[0].reason_code).toBe("server_error");
+    expect(rows[0].detail).toBe(result.detail);
+  });
+
+  it("refreshes the stored detail on a re-push", async () => {
+    const fx = await createSyncFixture(db);
+    await accrue();
+    const entry = collectionEntry(fx, { or_no: 999998 });
+    await push(fx, [entry]);
+    await db.query(
+      `update ceedo_collections.sync_exceptions set detail = null where collection_uuid = $1`,
+      [entry.payload.id],
+    );
+
+    const result = await pushOne(fx, [entry]);
+
+    const { rows } = await db.query(
+      `select detail, attempts from ceedo_collections.sync_exceptions
+        where collection_uuid = $1`,
+      [entry.payload.id],
+    );
+    expect(rows[0]).toEqual({ detail: result.detail, attempts: 2 });
+    expect(rows[0].detail).toContain("999998");
+  });
+});
+
 describe("sync_push — guards", () => {
   it("raises on an inactive device", async () => {
     const fx = await createSyncFixture(db);

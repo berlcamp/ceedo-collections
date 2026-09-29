@@ -66,6 +66,9 @@ export interface ExceptionRow {
   collectionUuid: string;
   reasonCode: string;
   reasonText: string;
+  /** What the server said on the latest push, e.g. the database error behind a
+   * server_error. Null on rows filed before sync_exceptions carried it. */
+  detail: string | null;
   collectorName: string;
   deviceLabel: string;
   attempts: number;
@@ -85,7 +88,7 @@ export async function getOpenExceptions(): Promise<ExceptionRow[]> {
   const { data, error } = await supabase
     .from("sync_exceptions")
     .select(
-      "id, collection_uuid, reason_code, attempts, first_seen_at, status, payload, collector:app_users!sync_exceptions_collector_id_fkey(full_name), device:devices!sync_exceptions_device_id_fkey(label)",
+      "id, collection_uuid, reason_code, detail, attempts, first_seen_at, status, payload, collector:app_users!sync_exceptions_collector_id_fkey(full_name), device:devices!sync_exceptions_device_id_fkey(label)",
     )
     .neq("status", "resolved")
     // Oldest first. §11.3 surfaces exceptions older than three days to the Treasurer, so
@@ -101,6 +104,7 @@ export async function getOpenExceptions(): Promise<ExceptionRow[]> {
       collectionUuid: row.collection_uuid,
       reasonCode: row.reason_code,
       reasonText: describeReason(row.reason_code),
+      detail: row.detail,
       collectorName: row.collector?.full_name ?? "Unknown collector",
       deviceLabel: row.device?.label ?? "Unknown device",
       attempts: row.attempts,

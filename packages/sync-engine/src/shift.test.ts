@@ -239,6 +239,82 @@ describe("the shift lifecycle", () => {
     expect(entry?.payload).toMatchObject({ device_count: 1, device_total: "200.00" });
   });
 
+  it("leaves the shift OPEN when the server rejects the close", async () => {
+    // Production, 2026-09-29: a refused close was written closed_unsynced here, the server's
+    // shift stayed open, and every later shift on the tablet was refused along with its
+    // receipts. A rejection is an ANSWER, not a missing signal -- the shift is open there.
+    const id = await openShift(driver, {
+      id: randomUUID(),
+      collectorId: "alice",
+      businessDate: "2026-10-05",
+    });
+
+    const outcome = await closeShift(
+      driver,
+      {
+        transport: transportReturning([
+          {
+            index: 0,
+            type: "shift_close",
+            status: "rejected",
+            reason: "server_error",
+            detail: "A closeout must declare the physical cash total",
+          },
+        ]),
+        credentialId: "c",
+        secret: "s",
+        businessDate: "2026-10-05",
+      },
+      { shiftId: id, declaredTotal: "0.00" },
+    );
+
+    expect(outcome).toMatchObject({
+      status: "rejected",
+      detail: "A closeout must declare the physical cash total",
+    });
+    const row = db.prepare("select status from local_shifts where id = ?").get(id);
+    expect(row).toEqual({ status: "open" });
+  });
+
+  it("re-sends a rejected close when the collector tries again", async () => {
+    const id = await openShift(driver, {
+      id: randomUUID(),
+      collectorId: "alice",
+      businessDate: "2026-10-05",
+    });
+    const deps = (transport: Transport) => ({
+      transport,
+      credentialId: "c",
+      secret: "s",
+      businessDate: "2026-10-05",
+    });
+
+    await closeShift(
+      driver,
+      deps(transportReturning([
+        { index: 0, type: "shift_close", status: "rejected", reason: "server_error" },
+      ])),
+      { shiftId: id, declaredTotal: "0.00" },
+    );
+
+    // Before the fix the rejected row was not pushable, so this second attempt read as
+    // "already sent" and closed the shift locally without asking the server at all.
+    let sent: unknown;
+    const accepting: Transport = {
+      async post(_path, body) {
+        sent = body;
+        return {
+          status: 200,
+          body: [{ index: 0, type: "shift_close", status: "closed", system_count: 0, system_total: 0, variance: 0 }],
+        };
+      },
+    };
+    const outcome = await closeShift(driver, deps(accepting), { shiftId: id, declaredTotal: "0.00" });
+
+    expect(sent).toMatchObject({ entries: [{ type: "shift_close" }] });
+    expect(outcome.status).toBe("closed");
+  });
+
   it("writes closed_unsynced with no signal, and still queues the push", async () => {
     /**
      * Parent §3: "Blocking a collector over bad signal is unworkable." This is the entire

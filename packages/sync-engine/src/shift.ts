@@ -40,6 +40,16 @@ export type CloseOutcome =
       systemTotal: string;
     }
   | {
+      /**
+       * The server ANSWERED and refused the close. Not closed_unsynced: the shift is still
+       * open there, and a tablet that moved on regardless had its next shift refused too,
+       * taking every receipt of that shift with it. Stays open here until a retry lands.
+       */
+      status: "rejected";
+      reason: string | null;
+      detail: string | null;
+    }
+  | {
       status: "closed_unsynced";
       declaredTotal: string;
       deviceCount: number;
@@ -171,17 +181,22 @@ export async function closeShift(
   const totals = await deviceTotals(driver, input.shiftId);
   const entryId = closeEntryId(input.shiftId);
 
-  await enqueue(driver, {
-    id: entryId,
-    type: "shift_close",
-    payload: {
-      id: input.shiftId,
-      declared_total: input.declaredTotal,
-      device_count: totals.count,
-      device_total: totals.total,
-    },
-    collectorId,
-  });
+  const payload = {
+    id: input.shiftId,
+    declared_total: input.declaredTotal,
+    device_count: totals.count,
+    device_total: totals.total,
+  };
+
+  await enqueue(driver, { id: entryId, type: "shift_close", payload, collectorId });
+  // `enqueue` leaves an existing row alone, so a close the server already REFUSED would stay
+  // refused -- and unpushable -- forever, and the lookup below would read that as "already
+  // sent". Only a rejected row is re-armed; a pending or in-flight one is still on its way.
+  await driver.execute(
+    `update outbox set state = 'pending', payload = ?, reason_code = null, retryable = null
+      where id = ? and state = 'rejected'`,
+    [JSON.stringify(payload), entryId],
+  );
 
   const offline = async (detail: string): Promise<CloseOutcome> => {
     // Closed HERE, pending THERE. The shift stops blocking the next sign-in (spec E10 tests
@@ -266,9 +281,14 @@ export async function closeShift(
     };
   }
 
-  // `rejected`, or anything else this device does not know how to read. The entry has
-  // already been settled by applyResults; locally the shift closes unsynced so the collector
-  // is not held at the screen, and the outbox carries the reason.
+  if (result.status === "rejected") {
+    // Settled as rejected by applyResults; nothing local is rewritten. See CloseOutcome.
+    return { status: "rejected", reason: result.reason ?? null, detail: result.detail ?? null };
+  }
+
+  // Anything else this device does not know how to read. The entry has already been
+  // settled by applyResults; locally the shift closes unsynced so the collector is not held
+  // at the screen, and the outbox carries the reason.
   return offline(`The server answered ${result.status}${result.reason ? ` (${result.reason})` : ""}.`);
 }
 

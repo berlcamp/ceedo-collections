@@ -117,7 +117,7 @@ export default function Closeout() {
         />
       }
       shelf={
-        outcome ? (
+        outcome && outcome.status !== "rejected" ? (
           <Punch label="Back to the shift" icon="arrow-left" onPress={() => router.replace("/shift")} />
         ) : (
           <Punch
@@ -154,7 +154,7 @@ export default function Closeout() {
         onChangeText={setDeclared}
         placeholder="0.00"
         keyboardType="decimal-pad"
-        editable={!outcome}
+        editable={!outcome || outcome.status === "rejected"}
       />
       <Rift h={8} />
       <Body>Count the cash first. Do not copy the figure above.</Body>
@@ -185,6 +185,21 @@ export default function Closeout() {
               <Body>
                 Nothing was written. A supervisor has to reconcile the difference before
                 this shift can close — it is a records problem, not a cash one.
+              </Body>
+            </Group>
+          </Statement>
+        </>
+      ) : null}
+
+      {outcome?.status === "rejected" ? (
+        <>
+          <Rift />
+          <Statement tone="refusal" detail={outcome.detail}>
+            <Group gap={10}>
+              <Title>The server refused this closeout. The shift is still open.</Title>
+              <Body>
+                Do not hand the tablet over. Tell a supervisor — the next shift on this
+                tablet cannot start until this one closes on the server.
               </Body>
             </Group>
           </Statement>

@@ -1429,6 +1429,7 @@ export type Database = {
           attempts: number
           collection_uuid: string
           collector_id: string
+          detail: string | null
           device_id: string
           first_seen_at: string
           id: string
@@ -1446,6 +1447,7 @@ export type Database = {
           attempts?: number
           collection_uuid: string
           collector_id: string
+          detail?: string | null
           device_id: string
           first_seen_at?: string
           id?: string
@@ -1463,6 +1465,7 @@ export type Database = {
           attempts?: number
           collection_uuid?: string
           collector_id?: string
+          detail?: string | null
           device_id?: string
           first_seen_at?: string
           id?: string
