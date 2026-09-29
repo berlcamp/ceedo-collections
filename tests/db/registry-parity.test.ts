@@ -49,7 +49,7 @@ describe("admin registry select expressions resolve against the live schema", ()
     const { error } = await serviceClient()
       .from("collector_assignments")
       .select(
-        "id, active, app_users(full_name), facilities(name), sections!collector_assignments_section_id_fkey(name)",
+        "id, collector_id, facility_id, active, app_users(full_name), facilities(name), sections!collector_assignments_section_id_fkey(name)",
       )
       .limit(1);
     expect(error).toBeNull();

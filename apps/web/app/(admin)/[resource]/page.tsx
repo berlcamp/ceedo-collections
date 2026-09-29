@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { buttonClass } from "@/components/ui/button";
 import { AddCollectorDialog } from "@/components/staff/add-collector-dialog";
+import { AssignFacilitiesDialog } from "@/components/collection-areas/assign-facilities-dialog";
 import { ResourceFormDialog, type ResourceFormSpec } from "@/components/admin/resource-form-dialog";
 import { ResourceTable } from "@/components/admin/resource-table";
 import { DeviceCredentialPanel } from "@/components/devices/device-credential-panel";
@@ -104,6 +105,38 @@ export default async function ResourcePage({
         })
       : undefined;
 
+  // Collection areas are created facility by facility from one dialog (several ticked at
+  // once), not the generic one-row form: see AssignFacilitiesDialog.
+  const assignFacilities =
+    config.key === "collector-assignments" && canWrite
+      ? await (async () => {
+          const [{ data: collectors }, { data: facilities }] = await Promise.all([
+            supabase
+              .from("app_users")
+              .select("id, full_name")
+              .eq("role", "collector")
+              .eq("status", "active")
+              .order("full_name"),
+            supabase.from("facilities").select("id, name").eq("active", true).order("name"),
+          ]);
+          const current: Record<string, string[]> = {};
+          for (const row of (rows ?? []) as unknown as {
+            collector_id: string;
+            facility_id: string;
+            active: boolean;
+          }[]) {
+            if (!row.active) continue;
+            const held = (current[row.collector_id] ??= []);
+            if (!held.includes(row.facility_id)) held.push(row.facility_id);
+          }
+          return {
+            collectors: (collectors ?? []).map((c) => ({ id: c.id, name: c.full_name })),
+            facilities: (facilities ?? []).map((f) => ({ id: f.id, name: f.name })),
+            current,
+          };
+        })()
+      : null;
+
   const spec: ResourceFormSpec = {
     resourceKey: config.key,
     singular: config.singular,
@@ -123,6 +156,8 @@ export default async function ResourcePage({
         actions={
           canWrite && config.writeMode !== "edit" ? (
             <ResourceFormDialog spec={spec} />
+          ) : assignFacilities ? (
+            <AssignFacilitiesDialog {...assignFacilities} />
           ) : config.key === "users" && isAdmin(staff.role) ? (
             // Staff has no generic "New" form: a web user only comes into being through a
             // Google sign-in. Collectors are added directly (they use tablets only, with a

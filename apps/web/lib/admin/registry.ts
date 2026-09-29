@@ -621,11 +621,14 @@ const configs: ResourceConfig[] = [
     title: "Collection areas",
     singular: "collection area",
     empty:
-      "No collection areas yet. A collection area is the facility and section a collector is responsible for. Until a collector has one, they have nothing to collect and their round will come up empty.",
+      "No collection areas yet. A collection area is a facility a collector is responsible for. Until a collector has one, they have nothing to collect and their round will come up empty.",
+    // New areas come from "Assign facilities" (AssignFacilitiesDialog), which ticks several
+    // facilities at once and covers every section of each; edit mode keeps the row form for
+    // moving or deactivating one area.
+    writeMode: "edit",
     schema: z.object({
       collector_id: uuid,
       facility_id: uuid,
-      section_id: uuid.nullable(),
       active: z.boolean(),
     }),
     fields: [
@@ -637,15 +640,6 @@ const configs: ResourceConfig[] = [
         optionsWhere: { role: "collector" },
       },
       { name: "facility_id", label: "Facility", type: "select", optionsFrom: "facilities" },
-      {
-        name: "section_id",
-        label: "Section",
-        type: "select",
-        optionsFrom: "sections",
-        optional: true,
-        emptyLabel: "All sections",
-        help: "All sections covers the whole facility.",
-      },
       { name: "active", label: "Active", type: "boolean" },
     ],
     columns: [
@@ -658,7 +652,7 @@ const configs: ResourceConfig[] = [
     // (section_id, and the composite collector_assignments_section_in_facility), so an
     // unqualified sections(name) is refused by PostgREST at runtime with PGRST201.
     select:
-      "id, active, app_users(full_name), facilities(name), sections!collector_assignments_section_id_fkey(name)",
+      "id, collector_id, facility_id, active, app_users(full_name), facilities(name), sections!collector_assignments_section_id_fkey(name)",
     orderBy: "created_at",
     optionLabel: "id",
     readRoles: BACK_OFFICE,
