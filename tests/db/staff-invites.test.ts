@@ -444,6 +444,23 @@ describe("staff invites", () => {
     expect(remaining).toBeNull();
   });
 
+  it("re-inviting without an employee number keeps the one already recorded", async () => {
+    const email = uniqueEmail("reinvite.keepno@example.com");
+    const employeeNo = uniqueCode("INV");
+    await service.from("staff_invites").insert({ email, employee_no: employeeNo, full_name: "Keeps Number", role: "supervisor" });
+    const userId = await createGoogleAuthUser(email);
+
+    await service.from("staff_invites").insert({ email, full_name: "Keeps Number", role: "accounting" });
+    await setAuthUserProvider(userId, "google");
+
+    const { data: after } = await service
+      .from("app_users")
+      .select("role, employee_no")
+      .eq("id", userId)
+      .single();
+    expect(after).toEqual({ role: "accounting", employee_no: employeeNo });
+  });
+
   it("re-inviting a suspended staff member updates their role but does NOT reactivate them", async () => {
     // The half that must not be convenient. Suspension is a deliberate act, typically over
     // a cash irregularity; a re-invite must never be a back door around it. `status` is

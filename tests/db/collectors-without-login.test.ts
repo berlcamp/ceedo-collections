@@ -40,6 +40,16 @@ describe("create_collector", () => {
     expect(rows[0]).toEqual({ role: "collector", status: "active", logins: 0 });
   });
 
+  it("adds a collector with no employee number", async () => {
+    const { data: id, error } = await admin.rpc("create_collector", { p_full_name: "No Number" });
+    expect(error).toBeNull();
+    const { rows } = await db.query(
+      "select employee_no from ceedo_collections.app_users where id = $1",
+      [id],
+    );
+    expect(rows[0]).toEqual({ employee_no: null });
+  });
+
   it("refuses a duplicate employee number, by name", async () => {
     const no = employeeNo();
     await admin.rpc("create_collector", { p_employee_no: no, p_full_name: "First" });

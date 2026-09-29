@@ -12,7 +12,7 @@ import type { SaveResult } from "@/lib/admin/save-result";
 
 /**
  * A collector is added here directly. They never sign in to the web, only to a tablet with
- * their employee number and PIN, so they need no Google account. Web staff (supervisor,
+ * their name and a PIN, so they need no Google account. Web staff (supervisor,
  * accounting, admin) are invited instead: see the Staff screen's other button.
  */
 export function AddCollectorDialog() {
@@ -47,7 +47,7 @@ export function AddCollectorDialog() {
         busy={busy}
         width="sm"
         title="Add a collector"
-        description="Collectors sign in to tablets with their employee number and a PIN, so they need no Google account. Set the PIN after adding them."
+        description="Collectors sign in to tablets by picking their name and entering a PIN, so they need no Google account. Set the PIN after adding them."
         footer={
           <>
             <DialogClose className={buttonClass("ghost", "md")} disabled={busy}>Cancel</DialogClose>
@@ -58,14 +58,6 @@ export function AddCollectorDialog() {
         }
       >
         <form id="add-collector-form" onSubmit={onSubmit}>
-          <FieldShell
-            id="employeeNo"
-            label="Employee number"
-            help="Shown on the tablet's sign-in list."
-            error={errors.employeeNo}
-          >
-            <TextInput id="employeeNo" name="employeeNo" autoComplete="off" />
-          </FieldShell>
           <FieldShell id="fullName" label="Full name" error={errors.fullName}>
             <TextInput id="fullName" name="fullName" autoComplete="off" />
           </FieldShell>

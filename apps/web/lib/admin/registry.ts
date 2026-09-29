@@ -754,13 +754,11 @@ const configs: ResourceConfig[] = [
       "No invitations yet. Register an office email address here before that person signs in with Google. An account that was never invited is refused at the door, however valid the Google sign-in.",
     schema: z.object({
       email,
-      employee_no: name,
       full_name: name,
       role: z.enum(["collector", "supervisor", "accounting", "admin"]),
     }),
     fields: [
       { name: "email", label: "Email", type: "text", help: "The Google account they will sign in with." },
-      { name: "employee_no", label: "Employee number", type: "text" },
       { name: "full_name", label: "Full name", type: "text" },
       {
         name: "role",
@@ -776,12 +774,11 @@ const configs: ResourceConfig[] = [
     ],
     columns: [
       { key: "email", label: "Email" },
-      { key: "employee_no", label: "Employee no." },
       { key: "full_name", label: "Name" },
       { key: "role", label: "Role" },
       { key: "invited_at", label: "Invited" },
     ],
-    select: "id, email, employee_no, full_name, role, invited_at",
+    select: "id, email, full_name, role, invited_at",
     orderBy: "invited_at",
     optionLabel: "full_name",
     // Migration 0009 made staff_invites admin-only reading: a pending invite names an
@@ -799,7 +796,7 @@ const configs: ResourceConfig[] = [
     // Editing an existing row is a different matter and is the only working way to correct
     // a wrong role or suspend a leaver: re-inviting handles the person who signs in again,
     // but an administrator must be able to act on someone who does not. Hence `role` and
-    // `status` only — `id` and `employee_no` are deliberately absent from `fields`, so the
+    // `status` only — `id` is deliberately absent from `fields`, so the
     // engine neither renders nor accepts them.
     key: "users",
     table: "app_users",
@@ -834,12 +831,11 @@ const configs: ResourceConfig[] = [
       },
     ],
     columns: [
-      { key: "employee_no", label: "Employee no." },
       { key: "full_name", label: "Name" },
       { key: "role", label: "Role" },
       { key: "status", label: "Status", status: USER_STATUS },
     ],
-    select: "id, employee_no, full_name, role, status",
+    select: "id, full_name, role, status",
     orderBy: "full_name",
     optionLabel: "full_name",
     readRoles: BACK_OFFICE,

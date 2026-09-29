@@ -47,7 +47,7 @@ export type Database = {
       app_users: {
         Row: {
           created_at: string
-          employee_no: string
+          employee_no: string | null
           full_name: string
           id: string
           pin_hash: string | null
@@ -58,7 +58,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          employee_no: string
+          employee_no?: string | null
           full_name: string
           id?: string
           pin_hash?: string | null
@@ -69,7 +69,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          employee_no?: string
+          employee_no?: string | null
           full_name?: string
           id?: string
           pin_hash?: string | null
@@ -1330,7 +1330,7 @@ export type Database = {
       staff_invites: {
         Row: {
           email: string
-          employee_no: string
+          employee_no: string | null
           full_name: string
           id: string
           invited_at: string
@@ -1340,7 +1340,7 @@ export type Database = {
         }
         Insert: {
           email: string
-          employee_no: string
+          employee_no?: string | null
           full_name: string
           id?: string
           invited_at?: string
@@ -1350,7 +1350,7 @@ export type Database = {
         }
         Update: {
           email?: string
-          employee_no?: string
+          employee_no?: string | null
           full_name?: string
           id?: string
           invited_at?: string
@@ -1782,7 +1782,7 @@ export type Database = {
         Returns: string
       }
       create_collector: {
-        Args: { p_employee_no: string; p_full_name: string }
+        Args: { p_employee_no?: string; p_full_name: string }
         Returns: string
       }
       cutover_date: { Args: never; Returns: string }
