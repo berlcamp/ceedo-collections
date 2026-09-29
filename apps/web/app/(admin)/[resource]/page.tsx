@@ -52,7 +52,7 @@ export default async function ResourcePage({
   // silently empty dropdowns.
   const dynamicOptions: Record<string, SelectOption[]> = {};
   for (const field of config.fields) {
-    if (!field.optionsFrom || dynamicOptions[field.optionsFrom]) continue;
+    if (!field.optionsFrom) continue;
     const source = RESOURCES[field.optionsFrom];
     if (!source) continue;
     // Widened to `string` before the call: `optionLabel` is only known at
@@ -62,8 +62,13 @@ export default async function ResourcePage({
     const optionSelect: string = source.optionText
       ? `id, ${source.optionText.select}`
       : `id, label:${source.optionLabel}`;
-    const { data } = await supabase.from(source.table).select(optionSelect);
-    dynamicOptions[field.optionsFrom] = (data ?? [])
+    let query = supabase.from(source.table).select(optionSelect);
+    for (const [column, value] of Object.entries(field.optionsWhere ?? {})) {
+      query = query.eq(column, value);
+    }
+    const { data } = await query;
+    // Keyed by field, not source: two fields may draw on one source under different filters.
+    dynamicOptions[field.name] = (data ?? [])
       .map((row) => {
         const record = row as unknown as Record<string, unknown>;
         return {

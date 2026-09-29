@@ -15,6 +15,8 @@ export interface FieldConfig {
   options?: SelectOption[];
   /** Names a resource whose rows become the choices, e.g. "facilities". */
   optionsFrom?: string;
+  /** Narrows optionsFrom to rows whose columns equal these values, e.g. { role: "collector" }. */
+  optionsWhere?: Record<string, string>;
   optional?: boolean;
   /**
    * An optional select's choice for "no value", e.g. "All sections". Without it an

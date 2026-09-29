@@ -162,7 +162,7 @@ export function ResourceFormDialog({
               config={field}
               value={target ? target.values[field.name] : undefined}
               error={fieldErrors[field.name]}
-              options={field.optionsFrom ? spec.dynamicOptions[field.optionsFrom] : undefined}
+              options={field.optionsFrom ? spec.dynamicOptions[field.name] : undefined}
               locked={editing && (spec.lockedOnEdit ?? []).includes(field.name)}
             />
           ))}

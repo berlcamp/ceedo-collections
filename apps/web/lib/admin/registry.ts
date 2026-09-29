@@ -548,7 +548,7 @@ const configs: ResourceConfig[] = [
         label: "Collector",
         type: "select",
         optionsFrom: "users",
-        help: "Collectors only. Another role is refused by the database.",
+        optionsWhere: { role: "collector" },
       },
       {
         name: "assigned_at",
@@ -666,9 +666,8 @@ const configs: ResourceConfig[] = [
     // Determines WHERE A PERSON MAY COLLECT. Admin-only: migration 0008 does NOT list
     // collector_assignments, so apply_master_data_policies' admin-only rule stands.
     //
-    // A trigger refuses any assignee whose app_users role is not 'collector'. The picker
-    // cannot filter by role (optionsFrom takes a resource, not a predicate), so a wrong
-    // choice is refused by the database with 23514 and its message is shown as-is.
+    // A trigger refuses any assignee whose app_users role is not 'collector', so the picker
+    // lists collectors only. The trigger still stands behind it for any other writer.
     key: "collector-assignments",
     table: "collector_assignments",
     title: "Collection areas",
@@ -687,7 +686,7 @@ const configs: ResourceConfig[] = [
         label: "Collector",
         type: "select",
         optionsFrom: "users",
-        help: "Collectors only. Another role is refused by the database.",
+        optionsWhere: { role: "collector" },
       },
       { name: "facility_id", label: "Facility", type: "select", optionsFrom: "facilities" },
       {
