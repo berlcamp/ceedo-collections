@@ -72,7 +72,7 @@ export function OpeningBalanceForm({
             }}
             options={leases.map((lease) => ({
               value: lease.leaseId,
-              label: `Stall ${lease.stallNo} — ${lease.tenantName}`,
+              label: `${lease.stallLabel} — ${lease.tenantName}`,
             }))}
           />
         </FieldShell>
