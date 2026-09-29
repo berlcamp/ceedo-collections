@@ -11,7 +11,7 @@ import {
   type RateRow,
 } from "@ceedo/shared";
 import {
-  collectorSite,
+  collectorSites,
   feeChoices,
   payerPrompt,
   type CollectorSite,
@@ -85,19 +85,19 @@ export default function Ambulant() {
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [site, setSite] = useState<CollectorSite | null>(null);
+  const [sites, setSites] = useState<CollectorSite[]>([]);
   const [payerRef, setPayerRef] = useState("");
 
   // THROWS. Every caller must say so when it fails -- `useFocusEffect` below and the "Sync
   // now" retry both used to let the rejection vanish, and a collector cannot tell a failed
   // load from a failed sync from a screen that simply has no fee types on it.
   const load = useCallback(async () => {
-    // Only this site's fees (Phase 5): the terminal collector must not be offered the
-    // slaughterhouse's hog rate. The site is the signed-in collector's, since every tablet
-    // holds every facility. See feeChoices for what an unknown site falls back to.
-    const here = collector ? await collectorSite(driver, collector.id) : null;
-    setSite(here);
-    setChoices(await feeChoices(driver, here?.type ?? null));
+    // Only the fees of the kinds of facility the collector is assigned to (Phase 5): the
+    // terminal collector must not be offered the slaughterhouse's hog rate. The sites are
+    // the signed-in collector's, since every tablet holds every facility.
+    const here = collector ? await collectorSites(driver, collector.id) : [];
+    setSites(here);
+    setChoices(await feeChoices(driver, [...new Set(here.map((site) => site.type))]));
     setRates(
       (
         await driver.select<{
@@ -210,14 +210,19 @@ export default function Ambulant() {
 
   // At a market this screen is the side door (ambulant vendors); at a terminal, parking
   // lot or slaughterhouse it is the whole round.
-  const title = site && site.type !== "market" ? "Collect a fee" : "On-the-spot fee";
+  const types = [...new Set(sites.map((site) => site.type))];
+  const title = sites.length > 0 && !types.includes("market") ? "Collect a fee" : "On-the-spot fee";
+  // The payer prompt fits one kind of site; a collector across kinds gets the plain one.
+  const siteType = types.length === 1 ? types[0]! : null;
 
   return (
     <Screen
       head={
         <RackHead
           title={title}
-          subtitle={lockedFeeName ?? site?.name ?? "No lease, no receivable"}
+          subtitle={
+            lockedFeeName ?? (sites.map((site) => site.name).join(" · ") || "No lease, no receivable")
+          }
           onBack={() => router.back()}
         />
       }
@@ -255,7 +260,10 @@ export default function Ambulant() {
       <View style={{ height: 8 }} />
 
       {choices.length === 0 ? (
-        <Note icon="tag-off-outline">No on-the-spot fees on this tablet yet.</Note>
+        <Note icon="tag-off-outline">
+          No on-the-spot fees for your facilities. The office sets where each fee is collected,
+          then sync.
+        </Note>
       ) : (
         <List>
           {choices.map((choice) => {
@@ -329,11 +337,11 @@ export default function Ambulant() {
       <Rift h={24} />
       {/* Optional (see payerPrompt): recorded as collections.payer_ref when given. */}
       <Field
-        label={`${payerPrompt(site?.type ?? null)} (optional)`}
+        label={`${payerPrompt(siteType)} (optional)`}
         icon="account-outline"
         value={payerRef}
         onChangeText={setPayerRef}
-        autoCapitalize={site?.type === "terminal" || site?.type === "parking" ? "characters" : "words"}
+        autoCapitalize={siteType === "terminal" || siteType === "parking" ? "characters" : "words"}
         autoCorrect={false}
       />
 

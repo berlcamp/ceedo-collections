@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import { randomUUID } from "expo-crypto";
 import {
-  collectorSite,
+  collectorSites,
   deviceTotals,
   openShift,
   purgeAcked,
@@ -69,7 +69,7 @@ export default function Shift() {
   const [detail, setDetail] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [fresh, setFresh] = useState<Freshness | null>(null);
-  const [site, setSite] = useState<CollectorSite | null>(null);
+  const [sites, setSites] = useState<CollectorSite[]>([]);
 
   const load = useCallback(async () => {
     if (!collector) return;
@@ -85,7 +85,7 @@ export default function Shift() {
     setTotals(mine ? await deviceTotals(driver, mine.id) : { count: 0, total: "0.00" });
     setQueued(await pushable(driver));
     setFresh(await freshness(driver, businessDate()));
-    setSite(await collectorSite(driver, collector.id));
+    setSites(await collectorSites(driver, collector.id));
   }, [collector, driver]);
 
   useFocusEffect(
@@ -246,10 +246,10 @@ export default function Shift() {
           <Rift h={10} />
           {/*
             A terminal, parking lot or slaughterhouse has no stalls and no tenants (parent
-            §5.1): its round IS the fee screen. Only a market shows the lease paths. An
-            unknown site (no sync yet) shows the market's, which is what it did before.
+            §5.1): its round IS the fee screen. A collector assigned to any market sees the
+            lease paths. No sites yet (no sync, no area) shows the market's, as before.
           */}
-          {site && site.type !== "market" ? (
+          {sites.length > 0 && !sites.some((site) => site.type === "market") ? (
             <TileGrid>
               <Tile icon="cash-plus" label="Collect a fee" hint="Quantity × rate" onPress={() => router.push("/ambulant")} />
               <Tile icon="file-cancel-outline" label="Spoil a form" hint="A mis-written OR" onPress={() => router.push("/spoil")} />

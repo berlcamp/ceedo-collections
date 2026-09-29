@@ -28,7 +28,7 @@ export {
 export { leaseLedger, leaseLedgerDetail, ledgerStaleness } from "./ledger";
 export { resolveCard, type CardResolution } from "./card";
 export {
-  collectorSite,
+  collectorSites,
   feeChoices,
   payerPrompt,
   IN_COLLECTOR_AREA,

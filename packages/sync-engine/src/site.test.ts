@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
 import { betterSqliteDriver } from "./testing/better-sqlite-driver";
-import { collectorSite, feeChoices, payerPrompt } from "./site";
+import { collectorSites, feeChoices, payerPrompt } from "./site";
 import type { SqliteDriver } from "./driver";
 
 describe("the collector's site and its fees", () => {
@@ -33,43 +33,50 @@ describe("the collector's site and its fees", () => {
     driver = betterSqliteDriver(db);
   });
 
-  it("has no site for a collector with no collection area", async () => {
-    expect(await collectorSite(driver, "c1")).toBeNull();
+  it("has no sites for a collector with no collection area", async () => {
+    expect(await collectorSites(driver, "c1")).toEqual([]);
   });
 
-  it("reads the site from the collector's collection area, not the tablet", async () => {
+  it("reads the sites from the collector's active collection areas, not the tablet", async () => {
     db.exec(`insert into collector_assignments values ('a1', 'c1', 'f1', null, 1),
                                                       ('a2', 'c1', 'f2', null, 0)`);
-    expect(await collectorSite(driver, "c1")).toEqual({ name: "IBJT", type: "terminal" });
+    expect(await collectorSites(driver, "c1")).toEqual([{ name: "IBJT", type: "terminal" }]);
   });
 
   it("reads one site for several sections of the same facility", async () => {
     db.exec(`insert into collector_assignments values ('a1', 'c1', 'f2', 's1', 1),
                                                       ('a2', 'c1', 'f2', 's2', 1)`);
-    expect(await collectorSite(driver, "c1")).toEqual({ name: "CPM", type: "market" });
+    expect(await collectorSites(driver, "c1")).toEqual([{ name: "CPM", type: "market" }]);
   });
 
-  it("has no single site for a collector whose areas span two facilities", async () => {
+  it("reads every site of a collector assigned to several facilities", async () => {
     db.exec(`insert into collector_assignments values ('a1', 'c1', 'f1', null, 1),
                                                       ('a2', 'c1', 'f2', null, 1)`);
-    expect(await collectorSite(driver, "c1")).toBeNull();
+    expect(await collectorSites(driver, "c1")).toEqual([
+      { name: "CPM", type: "market" },
+      { name: "IBJT", type: "terminal" },
+    ]);
   });
 
-  it("offers the terminal tablet its vehicle classes, not the slaughterhouse's animals", async () => {
-    const names = (await feeChoices(driver, "terminal")).map(
+  it("offers a terminal collector its vehicle classes, not the slaughterhouse's animals", async () => {
+    const names = (await feeChoices(driver, ["terminal"])).map(
       (c) => `${c.fee_name}${c.rate_class ? `/${c.rate_class}` : ""}`,
     );
-    expect(names).toEqual(["Terminal fee/bus", "Terminal fee/jeepney", "Unclassified fee"]);
+    expect(names).toEqual(["Terminal fee/bus", "Terminal fee/jeepney"]);
   });
 
-  it("never offers an accruing or inactive fee", async () => {
-    const ids = (await feeChoices(driver, "market")).map((c) => c.fee_type_id);
-    expect(ids).toEqual(["amb", "misc"]);
+  it("offers the fees of every kind of facility the collector is assigned to", async () => {
+    const ids = (await feeChoices(driver, ["market", "terminal"])).map((c) => c.fee_type_id);
+    expect(new Set(ids)).toEqual(new Set(["amb", "term"]));
   });
 
-  it("offers every active on-the-spot fee when the site is not yet known", async () => {
-    const ids = new Set((await feeChoices(driver, null)).map((c) => c.fee_type_id));
-    expect(ids).toEqual(new Set(["amb", "term", "slh", "misc"]));
+  it("never offers an accruing, inactive or unclassified fee", async () => {
+    const ids = (await feeChoices(driver, ["market"])).map((c) => c.fee_type_id);
+    expect(ids).toEqual(["amb"]);
+  });
+
+  it("offers nothing to a collector with no facility", async () => {
+    expect(await feeChoices(driver, [])).toEqual([]);
   });
 });
 
