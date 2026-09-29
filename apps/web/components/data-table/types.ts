@@ -24,6 +24,12 @@ export interface DataColumn<Row> {
   total?: (row: Row) => Centavos | null;
   /** Discrete values become a filter facet in the slip. */
   facet?: (row: Row) => string | null;
+  /**
+   * An ISO date the slip bounds with a date picker: "min" keeps rows on or after the
+   * chosen day, "max" rows on or before it. A row with no date is dropped once a bound
+   * is set, since an open end is never inside a window.
+   */
+  dateBound?: { side: "min" | "max"; value: (row: Row) => string | null };
   /** A fixed width, e.g. "9rem". Left alone the column sizes to its content. */
   width?: string;
   /** Header label that must not wrap. */

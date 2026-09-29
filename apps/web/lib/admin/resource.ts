@@ -41,6 +41,8 @@ export interface ColumnConfig {
    * e.g. names and contact numbers, which the free-text search already covers.
    */
   facet?: false;
+  /** An ISO date column filtered with a date picker instead of chips: see DataColumn.dateBound. */
+  dateBound?: "min" | "max";
 }
 
 export interface ResourceConfig<S extends ZodObject<ZodRawShape> = ZodObject<ZodRawShape>> {

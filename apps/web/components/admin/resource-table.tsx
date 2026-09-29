@@ -114,6 +114,17 @@ export function ResourceTable({
       },
       searchValue: (row) => cellText(row, column),
       ...(column.facet !== false && facetable(rows, column.key) ? { facet: (row: Row) => cellText(row, column) } : {}),
+      ...(column.dateBound
+        ? {
+            dateBound: {
+              side: column.dateBound,
+              value: (row: Row) => {
+                const value = row[column.key];
+                return typeof value === "string" && value ? value.slice(0, 10) : null;
+              },
+            },
+          }
+        : {}),
     }));
 
     if (spec && editRows) {

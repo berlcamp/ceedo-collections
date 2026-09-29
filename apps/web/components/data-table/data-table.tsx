@@ -63,9 +63,12 @@ export function DataTable<Row>({
     const pageNumber = Number(read("page"));
     const dir = read("dir");
     const restoredFacets: Record<string, string[]> = {};
+    const restoredDates: Record<string, string> = {};
     const prefix = `${urlKey}.f.`;
+    const datePrefix = `${urlKey}.d.`;
     for (const [name, value] of searchParams.entries()) {
       if (name.startsWith(prefix) && value) restoredFacets[name.slice(prefix.length)] = value.split("~");
+      if (name.startsWith(datePrefix) && value) restoredDates[name.slice(datePrefix.length)] = value;
     }
     return {
       query: read("q") ?? "",
@@ -74,6 +77,7 @@ export function DataTable<Row>({
       page: Number.isFinite(pageNumber) && pageNumber > 0 ? pageNumber : 1,
       pageSize: PAGE_SIZES.includes(size) ? size : initialPageSize,
       facets: restoredFacets,
+      dates: restoredDates,
     };
     // Deliberately the mount-time value only: this seeds state the user then owns, and
     // re-seeding it on every search-param change would fight their own typing.
@@ -82,6 +86,7 @@ export function DataTable<Row>({
 
   const [query, setQuery] = useState(initial.query);
   const [facets, setFacets] = useState<Record<string, string[]>>(initial.facets);
+  const [dates, setDates] = useState<Record<string, string>>(initial.dates);
   const [sortKey, setSortKey] = useState<string | null>(initial.sortKey);
   const [sortDir, setSortDir] = useState<"asc" | "desc">(initial.sortDir);
   const [page, setPage] = useState(initial.page);
@@ -96,7 +101,7 @@ export function DataTable<Row>({
     const params = new URLSearchParams(window.location.search);
     for (const name of [...params.keys()]) {
       if (name === `${urlKey}.q` || name === `${urlKey}.sort` || name === `${urlKey}.dir` ||
-          name === `${urlKey}.page` || name === `${urlKey}.size` || name.startsWith(`${urlKey}.f.`)) {
+          name === `${urlKey}.page` || name === `${urlKey}.size` || name.startsWith(`${urlKey}.f.`) || name.startsWith(`${urlKey}.d.`)) {
         params.delete(name);
       }
     }
@@ -110,9 +115,12 @@ export function DataTable<Row>({
     for (const [key, values] of Object.entries(facets)) {
       if (values.length > 0) params.set(`${urlKey}.f.${key}`, values.join("~"));
     }
+    for (const [key, value] of Object.entries(dates)) {
+      if (value) params.set(`${urlKey}.d.${key}`, value);
+    }
     const search = params.toString();
     window.history.replaceState(null, "", `${window.location.pathname}${search ? `?${search}` : ""}`);
-  }, [urlKey, query, sortKey, sortDir, page, pageSize, facets, initialPageSize]);
+  }, [urlKey, query, sortKey, sortDir, page, pageSize, facets, dates, initialPageSize]);
 
   // "/" puts the cursor in the slip from anywhere on the screen. A clerk reconciling
   // hundreds of rows should not have to reach for the mouse to narrow them.
@@ -131,6 +139,7 @@ export function DataTable<Row>({
   }, []);
 
   const facetColumns = useMemo(() => columns.filter((column) => column.facet), [columns]);
+  const dateColumns = useMemo(() => columns.filter((column) => column.dateBound), [columns]);
 
   const facetValues = useMemo(() => {
     const map: Record<string, string[]> = {};
@@ -148,8 +157,17 @@ export function DataTable<Row>({
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const active = Object.entries(facets).filter(([, values]) => values.length > 0);
-    if (!needle && active.length === 0) return rows;
+    const bounds = Object.entries(dates).filter(([, value]) => value);
+    if (!needle && active.length === 0 && bounds.length === 0) return rows;
     return rows.filter((row) => {
+      for (const [key, bound] of bounds) {
+        const dateBound = columns.find((candidate) => candidate.key === key)?.dateBound;
+        if (!dateBound) continue;
+        // ISO dates compare correctly as text.
+        const value = dateBound.value(row);
+        if (!value) return false;
+        if (dateBound.side === "min" ? value < bound : value > bound) return false;
+      }
       for (const [key, values] of active) {
         const column = columns.find((candidate) => candidate.key === key);
         const value = column?.facet?.(row) ?? "";
@@ -158,7 +176,7 @@ export function DataTable<Row>({
       if (!needle) return true;
       return columns.some((column) => textOf(column, row).toLowerCase().includes(needle));
     });
-  }, [rows, columns, query, facets]);
+  }, [rows, columns, query, facets, dates]);
 
   const sorted = useMemo(() => {
     if (!sortKey) return filtered;
@@ -196,11 +214,13 @@ export function DataTable<Row>({
   );
 
   const activeFacetCount = Object.values(facets).reduce((carry, values) => carry + values.length, 0);
-  const narrowed = query.trim().length > 0 || activeFacetCount > 0;
+  const activeDateCount = Object.values(dates).filter(Boolean).length;
+  const narrowed = query.trim().length > 0 || activeFacetCount > 0 || activeDateCount > 0;
 
   const clearAll = () => {
     setQuery("");
     setFacets({});
+    setDates({});
     setPage(1);
     setTally((count) => count + 1);
   };
@@ -331,6 +351,28 @@ export function DataTable<Row>({
             </Popover>
           );
         })}
+
+        {dateColumns.map((column) => (
+          <label key={column.key} className="flex items-center gap-1.5 text-xs text-ink-2">
+            <span className="font-medium">{column.label}</span>
+            <input
+              type="date"
+              value={dates[column.key] ?? ""}
+              onChange={(event) => {
+                const value = event.target.value;
+                setDates((current) => ({ ...current, [column.key]: value }));
+                setPage(1);
+                setTally((count) => count + 1);
+              }}
+              aria-label={`${column.label} ${column.dateBound?.side === "min" ? "on or after" : "on or before"}`}
+              className={cn(
+                "h-8 rounded-lg border border-rule-strong bg-tape-raised px-2 text-sm text-ink tabular-nums",
+                "transition-colors duration-150 hover:border-ink-3 focus:border-mark",
+                dates[column.key] && "border-mark",
+              )}
+            />
+          </label>
+        ))}
 
         <div className="ml-auto flex items-center gap-2">
           {narrowed ? (
