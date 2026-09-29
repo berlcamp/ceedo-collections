@@ -3,7 +3,9 @@ import { cookies } from "next/headers";
 import { ChassisRail } from "@/components/shell/chassis-rail";
 import { ModuleTabs } from "@/components/shell/module-tabs";
 import { RAIL_COOKIE } from "@/components/shell/rail-cookie";
+import { isAdmin } from "@ceedo/shared";
 import { navFor } from "@/lib/nav/modules";
+import { getServerClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/supabase/session";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -13,7 +15,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // The rail and the tabs over it, for this role only: a tab over a resource the role
   // cannot read is dropped (lib/nav/modules.ts), so nobody is offered a screen RLS will
   // render empty. Navigation, not access control: the policies are what deny.
-  const sections = navFor(staff.role);
+  // The super-admin allowlist is asked of the database only for an admin, so every other
+  // page load pays nothing for it.
+  const superAdmin = isAdmin(staff.role)
+    ? Boolean((await (await getServerClient()).rpc("is_super_admin")).data)
+    : false;
+  const sections = navFor(staff.role, { superAdmin });
 
   return (
     <TooltipProvider delayDuration={250}>

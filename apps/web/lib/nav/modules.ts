@@ -99,6 +99,23 @@ const SECTIONS: { heading: string; modules: ModuleSpec[] }[] = [
   },
 ];
 
+/**
+ * Only for an administrator on the database's super-admin allowlist (migration 0052). The
+ * allowlist is not a role, so the layout asks the database and passes the answer in.
+ */
+const SUPER_ADMIN_SECTION: NavSection = {
+  heading: "System",
+  modules: [
+    {
+      key: "super-admin",
+      label: "Super admin",
+      href: "/super-admin",
+      tabs: [{ href: "/super-admin", label: "Test data" }],
+      also: [],
+    },
+  ],
+};
+
 /** The resource keys the module map files somewhere; exported for the test that keeps it whole. */
 export const RESOURCE_TABS = SECTIONS.flatMap((section) =>
   section.modules.flatMap((mod) =>
@@ -110,8 +127,8 @@ export const RESOURCE_TABS = SECTIONS.flatMap((section) =>
  * The rail for one role. A tab over a resource the role cannot read is dropped, and a
  * module left with no tabs is dropped with it. Navigation, not access control: RLS denies.
  */
-export function navFor(role: Role): NavSection[] {
-  return SECTIONS.map((section) => ({
+export function navFor(role: Role, options: { superAdmin?: boolean } = {}): NavSection[] {
+  const sections = SECTIONS.map((section) => ({
     heading: section.heading,
     modules: section.modules.flatMap((mod) => {
       const tabs = mod.tabs.flatMap((tab): NavTab[] => {
@@ -125,4 +142,5 @@ export function navFor(role: Role): NavSection[] {
       return first ? [{ key: mod.key, label: mod.label, href: first.href, tabs, also: mod.also ?? [] }] : [];
     }),
   })).filter((section) => section.modules.length > 0);
+  return options.superAdmin ? [...sections, SUPER_ADMIN_SECTION] : sections;
 }

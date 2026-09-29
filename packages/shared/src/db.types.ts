@@ -1406,6 +1406,24 @@ export type Database = {
           },
         ]
       }
+      super_admins: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+        }
+        Relationships: []
+      }
       sync_exceptions: {
         Row: {
           attempts: number
@@ -1743,6 +1761,7 @@ export type Database = {
         Returns: undefined
       }
       claim_my_invite: { Args: never; Returns: boolean }
+      clear_all_data: { Args: never; Returns: number }
       close_shift: {
         Args: {
           p_declared_total: number
@@ -1776,6 +1795,7 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: never; Returns: boolean }
+      is_super_admin: { Args: never; Returns: boolean }
       issue_device_credential: { Args: { p_device_id: string }; Returns: Json }
       lease_periods: {
         Args: {
@@ -1850,6 +1870,7 @@ export type Database = {
         Args: { p_business_date?: string; p_run_id?: string }
         Returns: number
       }
+      seed_test_data: { Args: never; Returns: Json }
       set_collector_pin: {
         Args: { p_collector_id: string; p_pin: string }
         Returns: undefined

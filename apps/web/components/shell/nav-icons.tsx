@@ -3,6 +3,7 @@ import {
   FileSpreadsheet,
   Hourglass,
   LayoutDashboard,
+  ShieldAlert,
   Receipt,
   Store,
   Tablet,
@@ -31,4 +32,5 @@ export const NAV_ICONS: Record<string, LucideIcon> = {
   forms: BookMarked,
   tablets: Tablet,
   staff: UserCog,
+  "super-admin": ShieldAlert,
 };
