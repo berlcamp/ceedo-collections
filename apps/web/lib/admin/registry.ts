@@ -453,11 +453,12 @@ const configs: ResourceConfig[] = [
     optionLabel: "effective_from",
     readRoles: BACK_OFFICE,
     writeRoles: ADMIN_ONLY,
-    // Nothing references a rate (charges and receipt lines copy the amount), so a delete
-    // always goes through; it re-syncs every tablet (migration 20260929000056) so none
-    // keeps pricing with it. To stop a rate from a date on, end-date it instead.
+    // Only a rate that never priced a receipt can go (migration 20260929000057); a delete
+    // re-syncs every tablet (20260929000056) so none keeps pricing with it. To stop a rate
+    // from a date on, end-date it instead.
     deletable: {
-      inUse: "This rate is in use, so it can't be deleted. Set an effective-to date instead.",
+      inUse:
+        "This rate has priced receipts, so it can't be deleted. Set an effective-to date instead, and add the new rate from the next day.",
     },
   },
   {
