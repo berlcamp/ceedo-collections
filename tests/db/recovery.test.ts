@@ -251,3 +251,90 @@ describe("recover_collection", () => {
     expect(error?.message).toMatch(/closed/);
   });
 });
+
+describe("office_close_shift", () => {
+  // record_variance_settlement refuses a received date in the future relative to
+  // business_date() (the real wall clock) and before the shift's own date.
+  // BUSINESS_DATE (2026-10-05) is itself in the future relative to that clock, so the one
+  // test here that settles a shortage uses a date safely in the past instead.
+  const CLOSE_DATE = "2026-09-20";
+  const SETTLE_RECEIVED_AT = "2026-09-25";
+
+  const close = (shiftId: string, declared: string, client = admin) =>
+    client.rpc("office_close_shift", { p_shift_id: shiftId, p_declared_total: declared, p_reason: REASON });
+
+  it("refuses anyone but an admin", async () => {
+    const fx = await createCollectionFixture(db);
+    const { data: shiftId } = await recoveryShift(admin, fx);
+    const { error } = await close(shiftId as string, "0", supervisor);
+    expect(error?.message).toMatch(/Only an administrator/);
+  });
+
+  it("closes on the server's totals, counting tablet and recovered receipts but not cancelled ones", async () => {
+    const fx = await createCollectionFixture(db);
+    await db.query(`select ceedo_collections.run_accrual($1::date)`, [CLOSE_DATE]);
+    const { data: shiftId } = await recoveryShift(admin, fx, CLOSE_DATE);
+    const rate = Number(fx.perHeadRate);
+    const cashReceipt = (or_no: number, quantity: number) => ({
+      or_no, booklet_id: fx.bookletId, collected_at: `${CLOSE_DATE}T02:00:00+00:00`,
+      fee_type_id: fx.perHeadFeeTypeId, lease_id: null, payer_ref: "Walk-in", allocations: [],
+      lines: [{ fee_type_id: fx.perHeadFeeTypeId, rate_class: "hog", quantity }],
+    });
+    // A "tablet" receipt: posted directly with the shift, no recovery row.
+    const tablet = await db.query(`select ceedo_collections.post_collection($1::jsonb) as r`, [
+      JSON.stringify({ ...cashReceipt(1700, 2), id: randomUUID(), collector_id: fx.collectorId,
+                       device_id: fx.deviceId, shift_id: shiftId }),
+    ]);
+    expect(tablet.rows[0].r.status).toBe("accepted");
+    const kept = await admin.rpc("recover_collection", {
+      p_shift_id: shiftId, p_receipt: cashReceipt(1701, 1), p_stub_total: rate.toFixed(2), p_reason: REASON,
+    });
+    const cancelled = await admin.rpc("recover_collection", {
+      p_shift_id: shiftId, p_receipt: cashReceipt(1702, 5), p_stub_total: (5 * rate).toFixed(2), p_reason: REASON,
+    });
+    expect(kept.error).toBeNull();
+    expect(cancelled.error).toBeNull();
+    // Cancel through the real RPC so standing_cancellations sees it. cancel_collection
+    // (migration 0023) allows a supervisor or an administrator; admin is used here since
+    // this whole describe block is otherwise admin-only.
+    const cancel = await admin.rpc("cancel_collection", { p_collection_id: cancelled.data, p_reason: "Wrong stub" });
+    expect(cancel.error).toBeNull();
+
+    const system = (3 * rate).toFixed(2);
+    const declared = (3 * rate - 10).toFixed(2);
+    const { data, error } = await close(shiftId as string, declared);
+    expect(error).toBeNull();
+    expect(data).toMatchObject({ status: "closed", system_count: 2 });
+    expect(Number(data.system_total)).toBe(Number(system));
+    expect(Number(data.variance)).toBe(-10);
+
+    // Short, so it enters the existing settlement flow unchanged.
+    const settle = await supervisor.rpc("record_variance_settlement", {
+      p_shift_id: shiftId, p_amount: 10, p_reference: "OR-123", p_received_at: SETTLE_RECEIVED_AT,
+    });
+    expect(settle.error).toBeNull();
+
+    const audit = await db.query(
+      `select count(*)::int as n from ceedo_collections.audit_log
+        where action = 'office_close_shift' and entity_id = $1`, [shiftId],
+    );
+    expect(audit.rows[0].n).toBe(1);
+  });
+
+  it("refuses a shift that is not open", async () => {
+    const fx = await createCollectionFixture(db);
+    const { data: shiftId } = await recoveryShift(admin, fx);
+    await close(shiftId as string, "0");
+    const { error } = await close(shiftId as string, "0");
+    expect(error?.message).toMatch(/not open/);
+  });
+
+  it("refuses without a declared cash figure", async () => {
+    const fx = await createCollectionFixture(db);
+    const { data: shiftId } = await recoveryShift(admin, fx);
+    const { error } = await admin.rpc("office_close_shift", {
+      p_shift_id: shiftId, p_declared_total: null, p_reason: REASON,
+    });
+    expect(error?.message).toMatch(/cash/);
+  });
+});

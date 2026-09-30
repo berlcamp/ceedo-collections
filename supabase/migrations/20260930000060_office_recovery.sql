@@ -239,3 +239,68 @@ $$;
 revoke execute on function ceedo_collections.recovery_refusal(jsonb) from public;
 revoke execute on function ceedo_collections.recover_collection(uuid, jsonb, numeric, text) from public;
 grant execute on function ceedo_collections.recover_collection(uuid, jsonb, numeric, text) to authenticated;
+
+-- ---------------------------------------------------------------------------------------
+
+-- Closes a shift from the office. Written for recovery, and also the missing action
+-- migration 0059 names ("a supervisor must close it") for any shift a tablet can no longer
+-- close. The totals are the server's own, computed exactly as close_shift computes them;
+-- there are no device figures to compare, so there is no `mismatch`. A short variance
+-- enters the settlement flow (0058) like any other.
+create or replace function ceedo_collections.office_close_shift(
+  p_shift_id       uuid,
+  p_declared_total numeric,
+  p_reason         text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ceedo_collections, pg_temp
+as $$
+declare
+  v_shift        ceedo_collections.shifts;
+  v_system_count integer;
+  v_system_total numeric(14,2);
+  v_pg_role      text := coalesce(nullif(current_setting('role', true), 'none'), session_user);
+begin
+  perform ceedo_collections.assert_recovery_admin(p_reason);
+  if p_declared_total is null or p_declared_total < 0 then
+    raise exception 'Enter the cash that was handed over for this shift';
+  end if;
+
+  select * into v_shift from ceedo_collections.shifts where id = p_shift_id for update;
+  if not found then
+    raise exception 'No such shift';
+  end if;
+  if v_shift.status <> 'open' then
+    raise exception 'That shift is not open (it is %)', v_shift.status;
+  end if;
+
+  -- Same scope and exclusion as close_shift (migration 0051).
+  select count(*), coalesce(sum(c.gross_amount), 0)
+    into v_system_count, v_system_total
+    from ceedo_collections.collections c
+   where c.shift_id = p_shift_id
+     and not exists (select 1 from ceedo_collections.standing_cancellations cc
+                      where cc.collection_id = c.id);
+
+  update ceedo_collections.shifts
+     set status = 'closed', closed_at = now(), declared_total = p_declared_total,
+         system_total = v_system_total, system_count = v_system_count,
+         variance = p_declared_total - v_system_total
+   where id = p_shift_id;
+
+  insert into ceedo_collections.audit_log
+    (actor_id, pg_role, action, entity, entity_id, before, after)
+  values (auth.uid(), v_pg_role, 'office_close_shift', 'shifts', p_shift_id, to_jsonb(v_shift),
+          jsonb_build_object('reason', trim(p_reason), 'declared_total', p_declared_total,
+                             'system_total', v_system_total, 'system_count', v_system_count));
+
+  return jsonb_build_object('status', 'closed', 'system_count', v_system_count,
+                            'system_total', v_system_total,
+                            'variance', p_declared_total - v_system_total);
+end;
+$$;
+
+revoke execute on function ceedo_collections.office_close_shift(uuid, numeric, text) from public;
+grant execute on function ceedo_collections.office_close_shift(uuid, numeric, text) to authenticated;
