@@ -148,6 +148,79 @@ describe("the outbox", () => {
   });
 });
 
+describe("a shift close is a barrier", () => {
+  // Production, 2026-09-29: a close refused by the server while the tablet had already
+  // moved on. When the old close and the next shift go up together, a refused close takes
+  // the next shift_open -- and every receipt of that shift -- down with it.
+  let db: Database.Database;
+  let driver: SqliteDriver;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    db.exec(SCHEMA);
+    driver = betterSqliteDriver(db);
+  });
+
+  async function offlineDay(): Promise<void> {
+    await enqueue(driver, { id: "open1", type: "shift_open", payload: {}, collectorId: "a" });
+    await enqueue(driver, { id: "r1", type: "collection", payload: {}, collectorId: "a" });
+    await enqueue(driver, { id: "open1#close", type: "shift_close", payload: {}, collectorId: "a" });
+    await enqueue(driver, { id: "open2", type: "shift_open", payload: {}, collectorId: "b" });
+    await enqueue(driver, { id: "r2", type: "collection", payload: {}, collectorId: "b" });
+  }
+
+  it("holds back everything queued after a close until that close is settled", async () => {
+    await offlineDay();
+
+    expect((await pushable(driver)).map((r) => r.id)).toEqual(["open1", "r1", "open1#close"]);
+  });
+
+  it("releases what it held once the close is acked", async () => {
+    await offlineDay();
+    const first = await pushable(driver);
+    await applyResults(driver, first, [
+      { index: 0, type: "shift_open", status: "accepted" },
+      { index: 1, type: "collection", status: "accepted" },
+      { index: 2, type: "shift_close", status: "closed" },
+    ]);
+
+    expect((await pushable(driver)).map((r) => r.id)).toEqual(["open2", "r2"]);
+  });
+
+  it("keeps holding while the close answers mismatch", async () => {
+    await offlineDay();
+    const first = await pushable(driver);
+    await applyResults(driver, first, [
+      { index: 0, type: "shift_open", status: "accepted" },
+      { index: 1, type: "collection", status: "accepted" },
+      { index: 2, type: "shift_close", status: "mismatch" },
+    ]);
+
+    expect((await pushable(driver)).map((r) => r.id)).toEqual(["open1#close"]);
+  });
+
+  it("re-sends a close the server refused, and keeps holding behind it", async () => {
+    // A refused close is not a receipt a supervisor corrects: it settles only when the
+    // server's shift is put right, and the tablet can only learn that by asking again.
+    await offlineDay();
+    const first = await pushable(driver);
+    await applyResults(driver, first, [
+      { index: 0, type: "shift_open", status: "accepted" },
+      { index: 1, type: "collection", status: "accepted" },
+      { index: 2, type: "shift_close", status: "rejected", reason: "server_error" },
+    ]);
+
+    expect((await pushable(driver)).map((r) => r.id)).toEqual(["open1#close"]);
+  });
+
+  it("does not re-send a close quarantined for its own shape", async () => {
+    await enqueue(driver, { id: "x#close", type: "shift_close", payload: {}, collectorId: "a" });
+    db.exec(`update outbox set state = 'rejected', reason_code = 'invalid_payload'`);
+
+    expect(await pushable(driver)).toEqual([]);
+  });
+});
+
 describe("retention", () => {
   let db: Database.Database;
   let driver: SqliteDriver;

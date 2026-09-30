@@ -8,10 +8,11 @@ export type SignInBlock =
   | "no_pin"
   | "never_synced"
   | "not_assigned"
-  | "other_shift_open";
+  | "other_shift_open"
+  | "close_refused";
 
 /**
- * Whether this collector may sign in on this tablet, and if not, WHICH of four reasons.
+ * Whether this collector may sign in on this tablet, and if not, WHICH reason.
  *
  * FIVE VALUES RATHER THAN A BOOLEAN, DELIBERATELY. Every one of these refusals looks like
  * "sign-in failed" to a collector standing in a market at 5am, and each needs a different
@@ -66,6 +67,25 @@ export async function canSignIn(
   );
   const other = open.find((s) => s.collector_id !== collectorId);
   if (other) return { ok: false, reason: "other_shift_open" };
+
+  // A closeout the server has ANSWERED and not accepted -- refused, or a records mismatch --
+  // for a shift this tablet has already let go of (closed_unsynced). Its shift is still open
+  // there, so the next shift this tablet opens would be refused, and its receipts with it.
+  // One not yet sent at all does not block: handing over without signal is what
+  // closed_unsynced exists for. Nor does one whose shift is still OPEN here -- its own
+  // collector must be able to come back and retry, and `other_shift_open` above already
+  // stops everyone else. The close is re-sent every sync (see outbox.ts), and this lifts as
+  // soon as one is accepted.
+  const refused = await driver.select<{ id: string }>(
+    `select o.id from outbox o
+      where o.type = 'shift_close'
+        and (o.state = 'rejected'
+             or (o.state <> 'acked' and json_extract(o.last_result, '$.status') = 'mismatch'))
+        and not exists (select 1 from local_shifts s
+                         where s.id = json_extract(o.payload, '$.id') and s.status = 'open')
+      limit 1`,
+  );
+  if (refused.length > 0) return { ok: false, reason: "close_refused" };
 
   return { ok: true };
 }

@@ -57,6 +57,19 @@ export async function enqueue(
  * ORDER IS `seq`, NOT `created_at`. Two entries written in the same millisecond have the
  * same timestamp, and a shift_open that sorts after its own collections fails their foreign
  * key.
+ *
+ * A SHIFT CLOSE IS A BARRIER. The push stops after the first unsettled shift_close, and
+ * nothing queued behind it goes up until the server has accepted it. A tablet closed out
+ * offline hands over and opens the next shift; if the old close and the new shift_open went
+ * up together and the close was refused, the server's old shift would stay open,
+ * shifts_one_open_per_device would refuse the new one, and every receipt of the new shift
+ * would be filed as an exception (production, 2026-09-29). Held back, they wait on the
+ * device instead, and go up once the old shift is put right.
+ *
+ * A REFUSED CLOSE IS RE-SENT. Unlike a refused receipt, which a supervisor corrects on the
+ * web, a refused close settles only when the server's shift is put right -- and the tablet
+ * can only learn that by asking again (`already_closed` settles it). One quarantined for its
+ * own shape (`invalid_payload`) is not: no server change can make it pass.
  */
 export async function pushable(driver: SqliteDriver): Promise<OutboxRow[]> {
   const rows = await driver.select<{
@@ -71,10 +84,15 @@ export async function pushable(driver: SqliteDriver): Promise<OutboxRow[]> {
     `select id, type, payload, collector_id, state, attempts, seq
        from outbox
       where state in ('pending', 'in_flight')
+         or (type = 'shift_close' and state = 'rejected'
+             and coalesce(reason_code, '') <> 'invalid_payload')
       order by seq asc`,
   );
 
-  return rows.map((row) => ({
+  const barrier = rows.findIndex((row) => row.type === "shift_close");
+  const batch = barrier === -1 ? rows : rows.slice(0, barrier + 1);
+
+  return batch.map((row) => ({
     id: row.id,
     type: row.type,
     payload: JSON.parse(row.payload) as unknown,

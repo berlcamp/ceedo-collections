@@ -315,6 +315,27 @@ describe("the shift lifecycle", () => {
     expect(outcome.status).toBe("closed");
   });
 
+  it("does not claim a close was sent when it is held behind an earlier one", async () => {
+    const earlier = await openShift(driver, { id: randomUUID(), collectorId: "bob", businessDate: "2026-10-05" });
+    await closeShift(
+      driver,
+      { transport: OFFLINE, credentialId: "c", secret: "s", businessDate: "2026-10-05" },
+      { shiftId: earlier, declaredTotal: "0.00" },
+    );
+    const id = await openShift(driver, { id: randomUUID(), collectorId: "alice", businessDate: "2026-10-05" });
+
+    const outcome = await closeShift(
+      driver,
+      { transport: OFFLINE, credentialId: "c", secret: "s", businessDate: "2026-10-05" },
+      { shiftId: id, declaredTotal: "0.00" },
+    );
+
+    expect(outcome).toMatchObject({
+      status: "closed_unsynced",
+      detail: "An earlier closeout on this tablet has not been accepted yet.",
+    });
+  });
+
   it("writes closed_unsynced with no signal, and still queues the push", async () => {
     /**
      * Parent §3: "Blocking a collector over bad signal is unworkable." This is the entire

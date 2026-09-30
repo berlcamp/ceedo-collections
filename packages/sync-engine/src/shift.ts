@@ -219,6 +219,14 @@ export async function closeShift(
 
   const rows = (await pushable(driver)).filter((row) => row.id === entryId);
   if (rows.length === 0) {
+    const own = await driver.select<{ state: string }>("select state from outbox where id = ?", [
+      entryId,
+    ]);
+    if (own[0]?.state === "pending") {
+      // Queued behind an earlier closeout the server has not accepted (outbox.ts: a close is
+      // a barrier). It goes up, with this shift's receipts, once that one is put right.
+      return offline("An earlier closeout on this tablet has not been accepted yet.");
+    }
     // Already acked by an earlier attempt: the server has this closeout and the local row
     // simply has not caught up.
     return offline("This closeout was already sent.");

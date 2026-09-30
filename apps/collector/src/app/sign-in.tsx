@@ -54,6 +54,10 @@ const MESSAGES: Record<SignInBlock, string> = {
   other_shift_open:
     "Another collector's shift is still open on this tablet. Close it out first — " +
     "that works without signal.",
+  close_refused:
+    "The server did not accept an earlier closeout from this tablet, so that shift is " +
+    "still open on the server. A supervisor has to reconcile it; sync again afterwards " +
+    "and sign-in opens.",
 };
 
 const MAX_PIN_FAILURES = 5;

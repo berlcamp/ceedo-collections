@@ -31,6 +31,8 @@ export class SyncError extends Error {
   }
 }
 
+const MAX_PUSH_ROUNDS = 10;
+
 /**
  * One sync: decide whether a full re-sync is due, pull, apply, then push the outbox.
  *
@@ -82,12 +84,50 @@ export async function sync(deps: SyncDeps): Promise<SyncOutcome> {
     await applyPull(driver, envelope);
   }
 
-  // VALIDATE BEFORE PUSHING, and quarantine what can never pass.
-  //
-  // Found on the tablet: one entry whose payload could not satisfy the shared contract made
-  // the Edge Function answer `400 invalid_body` for the whole body, and spec E11 correctly
-  // re-pushed the same body on every subsequent sync. A permanent deadlock behind an entry
-  // that could never succeed. See quarantine.test.ts for the full account.
+  // ONE PUSH PER SHIFT BOUNDARY. `pushable` stops after the first unsettled shift_close
+  // (see outbox.ts), so a tablet that was offline across a handover goes up in rounds: each
+  // accepted close releases what was queued behind it. A close that is not accepted ends
+  // the sync with everything behind it still held on the device. Bounded, so a server that
+  // somehow kept answering `closed` could not hold a collector at the sync screen.
+  let pushed = 0;
+  for (let round = 0; round < MAX_PUSH_ROUNDS; round++) {
+    const batch = await pushRound(driver, transport, credentialId, secret);
+    if (!batch) break;
+    pushed += batch.rows.length;
+
+    const lastIndex = batch.rows.length - 1;
+    const last = batch.results.find((r) => r.index === lastIndex);
+    const closeAccepted =
+      batch.rows[lastIndex]?.type === "shift_close" &&
+      (last?.status === "closed" || last?.status === "already_closed");
+    if (!closeAccepted) break;
+  }
+
+  const final = await readSyncState(driver);
+  return {
+    pulled: true,
+    fullResync,
+    pushed,
+    cursor: final.cursor,
+    epoch: final.epoch,
+  };
+}
+
+/**
+ * One push of whatever `pushable` releases. Null when there is nothing to send.
+ *
+ * VALIDATE BEFORE PUSHING, and quarantine what can never pass.
+ * Found on the tablet: one entry whose payload could not satisfy the shared contract made
+ * the Edge Function answer `400 invalid_body` for the whole body, and spec E11 correctly
+ * re-pushed the same body on every subsequent sync. A permanent deadlock behind an entry
+ * that could never succeed. See quarantine.test.ts for the full account.
+ */
+async function pushRound(
+  driver: SqliteDriver,
+  transport: Transport,
+  credentialId: string,
+  secret: string,
+): Promise<{ rows: OutboxRow[]; results: PushResult[] } | null> {
   const queued = await pushable(driver);
   const rows: OutboxRow[] = [];
   for (const row of queued) {
@@ -106,33 +146,26 @@ export async function sync(deps: SyncDeps): Promise<SyncOutcome> {
     );
   }
 
-  if (rows.length > 0) {
-    await markInFlight(
-      driver,
-      rows.map((r) => r.id),
-    );
-    const pushRes = await transport.post("sync-push", {
-      credential_id: credentialId,
-      secret,
-      entries: rows.map((r) => ({ type: r.type, payload: r.payload })),
-    });
-    if (pushRes.status !== 200) {
-      // The entries stay in_flight. Spec E11: the next sync re-pushes them, because a lost
-      // response is indistinguishable from a lost request and only one of those is safe to
-      // assume. That is safe HERE in a way it was not before the loop above: everything
-      // still in flight has been validated, so a repeat of this body can fail on the
-      // network but not on its own shape.
-      throw new SyncError(`sync-push failed with ${pushRes.status}`, pushRes.status);
-    }
-    await applyResults(driver, rows, PushResult.array().parse(pushRes.body));
-  }
+  if (rows.length === 0) return null;
 
-  const final = await readSyncState(driver);
-  return {
-    pulled: true,
-    fullResync,
-    pushed: rows.length,
-    cursor: final.cursor,
-    epoch: final.epoch,
-  };
+  await markInFlight(
+    driver,
+    rows.map((r) => r.id),
+  );
+  const pushRes = await transport.post("sync-push", {
+    credential_id: credentialId,
+    secret,
+    entries: rows.map((r) => ({ type: r.type, payload: r.payload })),
+  });
+  if (pushRes.status !== 200) {
+    // The entries stay in_flight. Spec E11: the next sync re-pushes them, because a lost
+    // response is indistinguishable from a lost request and only one of those is safe to
+    // assume. That is safe HERE in a way it was not before the loop above: everything
+    // still in flight has been validated, so a repeat of this body can fail on the
+    // network but not on its own shape.
+    throw new SyncError(`sync-push failed with ${pushRes.status}`, pushRes.status);
+  }
+  const results = PushResult.array().parse(pushRes.body);
+  await applyResults(driver, rows, results);
+  return { rows, results };
 }

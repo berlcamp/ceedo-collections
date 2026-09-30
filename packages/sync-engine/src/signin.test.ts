@@ -21,6 +21,12 @@ const SCHEMA = `
   create table pin_attempts (
     collector_id text primary key, failures integer not null default 0, locked_at text
   );
+  create table outbox (
+    id text primary key, type text not null, payload text not null,
+    collector_id text not null, created_at text not null,
+    state text not null default 'pending', attempts integer not null default 0,
+    reason_code text, retryable integer, last_result text, seq integer not null
+  );
 `;
 
 describe("canSignIn", () => {
@@ -37,6 +43,54 @@ describe("canSignIn", () => {
              ('carol', 'E-3', 'Carol', null,                            'active');
     `);
     driver = betterSqliteDriver(db);
+  });
+
+  describe("after the server has refused an earlier closeout", () => {
+    // Production, 2026-09-29: a shift closed on the tablet but refused by the server stays
+    // open THERE, and the next shift on this tablet is refused along with its receipts.
+    function closeEntry(state: string, lastResult: unknown): void {
+      db.prepare(
+        `insert into outbox (id, type, payload, collector_id, created_at, state, last_result, seq)
+         values ('s1#close', 'shift_close', '{}', 'bob', '2026-10-05', ?, ?, 1)`,
+      ).run(state, JSON.stringify(lastResult));
+    }
+
+    it("blocks sign-in on a mismatch", async () => {
+      closeEntry("pending", { status: "mismatch" });
+      expect(await canSignIn(driver, "alice")).toEqual({ ok: false, reason: "close_refused" });
+    });
+
+    it("blocks sign-in on a rejection", async () => {
+      closeEntry("rejected", { status: "rejected", reason: "server_error" });
+      expect(await canSignIn(driver, "alice")).toEqual({ ok: false, reason: "close_refused" });
+    });
+
+    it("does NOT block on a close that simply has not been sent yet", async () => {
+      // No signal at closeout is the case closed_unsynced exists for (parent §3).
+      db.prepare(
+        `insert into outbox (id, type, payload, collector_id, created_at, state, seq)
+         values ('s1#close', 'shift_close', '{}', 'bob', '2026-10-05', 'pending', 1)`,
+      ).run();
+      expect(await canSignIn(driver, "alice")).toEqual({ ok: true });
+    });
+
+    it("lets the shift's own collector back in while that shift is still open here", async () => {
+      // An ONLINE mismatch or refusal leaves the shift open on the tablet (shift.ts); its
+      // collector has to be able to sign back in and retry the closeout.
+      db.exec(`insert into local_shifts (id, collector_id, status) values ('s1', 'bob', 'open')`);
+      db.prepare(
+        `insert into outbox (id, type, payload, collector_id, created_at, state, last_result, seq)
+         values ('s1#close', 'shift_close', '{"id":"s1"}', 'bob', '2026-10-05', 'pending', ?, 1)`,
+      ).run(JSON.stringify({ status: "mismatch" }));
+
+      expect(await canSignIn(driver, "bob")).toEqual({ ok: true });
+      expect(await canSignIn(driver, "alice")).toEqual({ ok: false, reason: "other_shift_open" });
+    });
+
+    it("lifts once the close is acked", async () => {
+      closeEntry("acked", { status: "closed" });
+      expect(await canSignIn(driver, "alice")).toEqual({ ok: true });
+    });
   });
 
   it("permits a synced collector with a PIN and no open shift", async () => {
