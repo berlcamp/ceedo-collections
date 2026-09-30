@@ -27,7 +27,8 @@ import {
 import { syncFailure } from "../ui/failures";
 import { deviceDriver } from "../db/driver";
 import { setSession } from "../auth/session";
-import { syncNow } from "../sync/device-sync";
+import { onSyncSettled, syncNow } from "../sync/device-sync";
+import { SyncHealthNotice } from "../sync/SyncHealthNotice";
 import type { Collector } from "../auth/types";
 
 /**
@@ -112,6 +113,10 @@ export default function SignIn() {
       void load();
     }, [load]),
   );
+
+  // The launch sync (useAutoSync) usually lands while this screen is already up, and it is
+  // the one that brings a new collector's name onto the tablet.
+  useEffect(() => onSyncSettled(() => void load()), [load]);
 
   useEffect(() => {
     setError(null);
@@ -216,6 +221,8 @@ export default function SignIn() {
           <Rift h={16} />
         </>
       ) : null}
+
+      <SyncHealthNotice />
 
       {/*
         A SYNC BUTTON HERE IS NOT A CONVENIENCE, IT IS THE WAY OUT OF A DEAD END.

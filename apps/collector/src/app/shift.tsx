@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import { randomUUID } from "expo-crypto";
 import {
@@ -36,7 +36,8 @@ import { clockTime } from "../ui/time";
 import { freshness, type Freshness } from "../ui/staleness";
 import { deviceDriver } from "../db/driver";
 import { signedIn, signOut } from "../auth/session";
-import { businessDate, syncNow } from "../sync/device-sync";
+import { businessDate, onSyncSettled, syncNow } from "../sync/device-sync";
+import { SyncHealthNotice } from "../sync/SyncHealthNotice";
 
 interface LocalShift {
   id: string;
@@ -95,6 +96,10 @@ export default function Shift() {
       void load();
     }, [load]),
   );
+
+  // An automatic sync can clear the closeout block or age the freshness bar while this
+  // screen is up, and a Close out button still saying "3 entries" after they went is wrong.
+  useEffect(() => onSyncSettled(() => void load()), [load]);
 
   if (!collector) {
     return (
@@ -306,6 +311,8 @@ export default function Shift() {
           <Rift h={12} />
         </>
       ) : null}
+
+      <SyncHealthNotice />
 
       {message ? (
         <>

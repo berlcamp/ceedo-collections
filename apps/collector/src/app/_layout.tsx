@@ -13,6 +13,7 @@ import migrations from "../../drizzle/migrations";
 import { openDeviceDb } from "../db/client";
 import { color } from "../ui/tokens";
 import { useLatestUpdate } from "../updates/useLatestUpdate";
+import { useAutoSync } from "../sync/useAutoSync";
 
 /**
  * A plain stack. No tabs, no theming scaffolding.
@@ -68,6 +69,7 @@ function MigratedRoot() {
         backgroundColor here would draw a second, differently-timed strip over it.
       */}
       <StatusBar style="dark" />
+      <AutoSync />
       <Stack
         screenOptions={{
           headerShown: false,
@@ -76,4 +78,13 @@ function MigratedRoot() {
       />
     </SafeAreaProvider>
   );
+}
+
+/**
+ * A component rather than a hook call in MigratedRoot, because that one returns early while
+ * the schema migrates -- and no sync may touch the database before it has.
+ */
+function AutoSync() {
+  useAutoSync();
+  return null;
 }

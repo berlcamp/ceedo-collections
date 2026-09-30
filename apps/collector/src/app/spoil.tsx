@@ -18,6 +18,7 @@ import {
 } from "../ui";
 import { deviceDriver } from "../db/driver";
 import { signedIn } from "../auth/session";
+import { syncSoon } from "../sync/device-sync";
 
 /**
  * A form written wrong is spoiled and a new one issued. Spec D4 (3b-i), unchanged.
@@ -156,6 +157,7 @@ export default function Spoil() {
                 },
                 collectorId: collector.id,
               });
+              syncSoon();
               router.replace("/shift");
             } catch (caught) {
               setError("Not recorded. Nothing was saved — try again.");

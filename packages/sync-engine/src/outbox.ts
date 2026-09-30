@@ -103,6 +103,28 @@ export async function pushable(driver: SqliteDriver): Promise<OutboxRow[]> {
   }));
 }
 
+/**
+ * How many receipts and spoiled forms exist only on this tablet.
+ *
+ * NOT `pushable().length`. That list stops at the first unsettled close, and it leaves out
+ * an entry quarantined for its own shape -- but both are receipts the server has no row for,
+ * and both are exactly what a cleared app or an uninstall would destroy. This is the count
+ * a collector is warned with, so it answers "what would a wipe lose", not "what goes up next".
+ *
+ * A receipt the SERVER refused is not counted: it sits in sync_exceptions for a supervisor,
+ * and the office already has it. Shift entries are not counted either; they are not money.
+ */
+export async function unsentCount(driver: SqliteDriver): Promise<number> {
+  const rows = await driver.select<{ n: number }>(
+    `select count(*) as n
+       from outbox
+      where type in ('collection', 'spoiled_form')
+        and (state in ('pending', 'in_flight')
+             or (state = 'rejected' and reason_code = 'invalid_payload'))`,
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
 export async function markInFlight(driver: SqliteDriver, ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   await driver.execute(

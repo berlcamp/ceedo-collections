@@ -17,17 +17,31 @@ import type { Transport } from "@ceedo/sync-engine";
 export function httpTransport(config: { apiUrl: string; anonKey: string }): Transport {
   return {
     async post(fn, body) {
-      const res = await fetch(`${config.apiUrl}/functions/v1/${fn}`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          apikey: config.anonKey,
-          Authorization: `Bearer ${config.anonKey}`,
-        },
-        body: JSON.stringify(body),
-      });
-      const text = await res.text();
-      return { status: res.status, body: text ? (JSON.parse(text) as unknown) : null };
+      // A DEADLINE, BECAUSE ONE BAR OF SIGNAL IS NOT "NO SIGNAL". A request on a link that
+      // is up but carrying nothing never fails on its own; it just hangs. That used to hold
+      // one button's spinner. Now that syncs also start on their own and share one run, a
+      // hung request would hold every sync on the tablet, so each request gets 20 seconds.
+      // An abort throws, and the caller reads it as any other failure to reach the office.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      try {
+        const res = await fetch(`${config.apiUrl}/functions/v1/${fn}`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            apikey: config.anonKey,
+            Authorization: `Bearer ${config.anonKey}`,
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+        const text = await res.text();
+        return { status: res.status, body: text ? (JSON.parse(text) as unknown) : null };
+      } finally {
+        clearTimeout(timer);
+      }
     },
   };
 }
+
+const REQUEST_TIMEOUT_MS = 20_000;

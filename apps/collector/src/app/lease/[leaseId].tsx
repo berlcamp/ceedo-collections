@@ -38,6 +38,7 @@ import { deviceDriver } from "../../db/driver";
 import { setDraft, stallTitle } from "../../collect/draft";
 import { longDate } from "../../ui/time";
 import { businessDate, syncNow } from "../../sync/device-sync";
+import { useHoldAutoSync } from "../../sync/useAutoSync";
 
 interface Header {
   stall_no: string;
@@ -79,6 +80,7 @@ interface Header {
 export default function Lease() {
   const { leaseId } = useLocalSearchParams<{ leaseId: string }>();
   const router = useRouter();
+  useHoldAutoSync();
   const driver = deviceDriver();
 
   const [header, setHeader] = useState<Header | null>(null);

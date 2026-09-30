@@ -24,6 +24,7 @@ import migrations from "../../drizzle/migrations";
 import { openDeviceDb } from "../db/client";
 import { saveCredential, type Credential } from "../auth/credential-store";
 import { runSync } from "../sync/device-sync";
+import { useHoldAutoSync } from "../sync/useAutoSync";
 
 /**
  * Spec E6. The credential reaches Keystore-backed storage and nowhere else.
@@ -35,6 +36,9 @@ import { runSync } from "../sync/device-sync";
  */
 export default function Enroll() {
   const router = useRouter();
+  // Enrollment runs its own first sync with the credential it just accepted, outside
+  // syncNow's single flight; the timer must not start a second one alongside it.
+  useHoldAutoSync();
   const db = openDeviceDb();
   // The schema must exist before the first sync writes into it, and enrollment is the
   // earliest moment a tablet touches the database at all.

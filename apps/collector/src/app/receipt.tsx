@@ -29,6 +29,8 @@ import {
 import { deviceDriver } from "../db/driver";
 import { signedIn } from "../auth/session";
 import { clearDraft, draft, stallTitle } from "../collect/draft";
+import { syncSoon } from "../sync/device-sync";
+import { useHoldAutoSync } from "../sync/useAutoSync";
 
 /**
  * The OR number goes in AFTER the money is counted and the paper receipt is written.
@@ -48,6 +50,7 @@ import { clearDraft, draft, stallTitle } from "../collect/draft";
  */
 export default function Receipt() {
   const router = useRouter();
+  useHoldAutoSync();
   const driver = deviceDriver();
   const collector = signedIn();
   const pending = draft();
@@ -249,6 +252,9 @@ export default function Receipt() {
           );
 
           clearDraft();
+          // The receipt is safe on the tablet; now try to make it safe at the office too.
+          // Past the hold, which this screen still has until the shift screen takes focus.
+          syncSoon({ even: "paused" });
           router.replace("/shift");
         } catch (caught) {
           // Nothing was written -- commitReceipt is one transaction. Saying so matters:

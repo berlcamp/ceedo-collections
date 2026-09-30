@@ -1,7 +1,15 @@
 import Database from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
 import { betterSqliteDriver } from "./testing/better-sqlite-driver";
-import { enqueue, pushable, applyResults, markInFlight, purgeAcked } from "./outbox";
+import {
+  enqueue,
+  pushable,
+  applyResults,
+  markInFlight,
+  purgeAcked,
+  quarantine,
+  unsentCount,
+} from "./outbox";
 import type { SqliteDriver } from "./driver";
 
 const SCHEMA = `
@@ -263,5 +271,65 @@ describe("retention", () => {
     await purgeAcked(driver, 1);
     const row = db.prepare("select id from outbox where id = 'old-pending'").get();
     expect(row).toEqual({ id: "old-pending" });
+  });
+});
+
+/**
+ * THE COUNT A COLLECTOR IS SHOWN IS "WHAT A WIPE WOULD LOSE", NOT "WHAT THE NEXT PUSH SENDS".
+ *
+ * Every receipt the server has no row for exists only on this tablet. That includes the ones
+ * held behind an unsettled close (pushable() stops at the barrier) and the ones quarantined
+ * for their own shape, which never left the device. A refused receipt the SERVER rejected
+ * is not counted: it is in sync_exceptions, waiting on a supervisor, and a wipe cannot lose it.
+ */
+describe("unsentCount", () => {
+  let db: Database.Database;
+  let driver: SqliteDriver;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    db.exec(SCHEMA);
+    driver = betterSqliteDriver(db);
+  });
+
+  it("is zero for an empty outbox", async () => {
+    expect(await unsentCount(driver)).toBe(0);
+  });
+
+  it("counts pending and in_flight receipts and spoiled forms, not shift entries", async () => {
+    await enqueue(driver, { id: "s1", type: "shift_open", payload: {}, collectorId: "c" });
+    await enqueue(driver, { id: "r1", type: "collection", payload: {}, collectorId: "c" });
+    await enqueue(driver, { id: "r2", type: "collection", payload: {}, collectorId: "c" });
+    await enqueue(driver, { id: "f1", type: "spoiled_form", payload: {}, collectorId: "c" });
+    await enqueue(driver, { id: "c1", type: "shift_close", payload: {}, collectorId: "c" });
+    await markInFlight(driver, ["r2"]);
+
+    expect(await unsentCount(driver)).toBe(3);
+  });
+
+  it("counts receipts held behind an unsettled close", async () => {
+    await enqueue(driver, { id: "c1", type: "shift_close", payload: {}, collectorId: "c" });
+    await enqueue(driver, { id: "r1", type: "collection", payload: {}, collectorId: "c" });
+
+    expect((await pushable(driver)).map((r) => r.id)).toEqual(["c1"]);
+    expect(await unsentCount(driver)).toBe(1);
+  });
+
+  it("counts a quarantined receipt, which never reached the server", async () => {
+    await enqueue(driver, { id: "r1", type: "collection", payload: {}, collectorId: "c" });
+    await quarantine(driver, "r1", { issues: [] });
+
+    expect(await unsentCount(driver)).toBe(1);
+  });
+
+  it("does not count acked receipts or ones the server refused", async () => {
+    await enqueue(driver, { id: "r1", type: "collection", payload: {}, collectorId: "c" });
+    await enqueue(driver, { id: "r2", type: "collection", payload: {}, collectorId: "c" });
+    db.prepare("update outbox set state = 'acked' where id = 'r1'").run();
+    db.prepare(
+      "update outbox set state = 'rejected', reason_code = 'or_already_used' where id = 'r2'",
+    ).run();
+
+    expect(await unsentCount(driver)).toBe(0);
   });
 });

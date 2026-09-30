@@ -1,5 +1,5 @@
 import { drizzle } from "drizzle-orm/expo-sqlite";
-import { sync, type SyncOutcome } from "@ceedo/sync-engine";
+import { singleFlight, sync, type SyncOutcome } from "@ceedo/sync-engine";
 import { deviceDriver } from "../db/driver";
 import { httpTransport } from "./transport";
 import { apiConfig } from "./config";
@@ -39,11 +39,83 @@ export class NotEnrolledError extends Error {
  * Every screen goes through here rather than assembling `sync()`'s dependencies itself, so
  * there is one place that knows which credential is current and one place that decides what
  * "today" means.
+ *
+ * ONE RUN AT A TIME (singleFlight). A "Sync now" tapped while an automatic sync is going
+ * joins it and hears its outcome, instead of pushing the same outbox rows a second time.
  */
-export async function syncNow(): Promise<SyncOutcome> {
-  const credential = await loadCredential();
-  if (!credential) throw new NotEnrolledError();
-  return runSync(credential.credentialId, credential.secret);
+export const syncNow: () => Promise<SyncOutcome> = singleFlight(async () => {
+  try {
+    const credential = await loadCredential();
+    if (!credential) throw new NotEnrolledError();
+    const outcome = await runSync(credential.credentialId, credential.secret);
+    settled({ ok: true });
+    return outcome;
+  } catch (error) {
+    settled({ ok: false, error });
+    throw error;
+  }
+});
+
+/**
+ * How the last sync ended, whoever started it.
+ *
+ * THE SCREENS LISTEN RATHER THAN ASK. A sync can now start without the screen that is
+ * showing (the timer, the app returning to the foreground), and a count of unsent receipts
+ * that only refreshed after its own screen's button would go stale in front of the
+ * collector it exists to warn.
+ */
+export type SyncSettled = { ok: true } | { ok: false; error: unknown };
+
+const listeners = new Set<(result: SyncSettled) => void>();
+let last: SyncSettled | null = null;
+
+function settled(result: SyncSettled): void {
+  last = result;
+  for (const listener of listeners) listener(result);
+}
+
+/** Subscribes to every sync's ending. Returns the unsubscribe. */
+export function onSyncSettled(listener: (result: SyncSettled) => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/** The last sync's ending in this process, or null before the first. */
+export function lastSync(): SyncSettled | null {
+  return last;
+}
+
+/**
+ * THE ENTRY SCREENS HOLD THE AUTOMATIC SYNC OFF WHILE THEY ARE OPEN. A sync pulls as well as
+ * pushes, and a pull can move the balances and period groups a collector is part-way through
+ * choosing on the lease screen. The server would catch it (`stale_allocations`), but only
+ * after the vendor has been told a figure. So the timer and the foreground trigger wait, and
+ * the screen asks for its own sync once the receipt is saved (`syncSoon({ even: "paused" })`).
+ *
+ * A COUNT, NOT A FLAG, so two screens on the stack cannot release each other's hold.
+ */
+let holds = 0;
+
+export function holdAutoSync(): () => void {
+  holds++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    holds--;
+  };
+}
+
+/**
+ * A sync nobody is waiting on: the timer, the foreground, the moment after a receipt is
+ * saved. Failures are silent -- no signal is the normal state of a market round, and the
+ * screens hear about it through `onSyncSettled` like any other ending.
+ */
+export function syncSoon(options: { even?: "paused" } = {}): void {
+  if (holds > 0 && options.even !== "paused") return;
+  syncNow().catch(() => {
+    // Deliberately silent -- see above.
+  });
 }
 
 /**

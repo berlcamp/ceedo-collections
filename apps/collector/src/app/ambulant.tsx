@@ -42,6 +42,7 @@ import { syncFailure } from "../ui/failures";
 import { deviceDriver } from "../db/driver";
 import { setDraft } from "../collect/draft";
 import { businessDate, syncNow } from "../sync/device-sync";
+import { useHoldAutoSync } from "../sync/useAutoSync";
 
 /**
  * On-the-spot fees: quantity x rate, no lease and no receivable. Parent §2's ambulant /
@@ -74,6 +75,7 @@ import { businessDate, syncNow } from "../sync/device-sync";
  */
 export default function Ambulant() {
   const router = useRouter();
+  useHoldAutoSync();
   const driver = deviceDriver();
   const collector = signedIn();
 

@@ -8,9 +8,11 @@ export {
   applyResults,
   quarantine,
   purgeAcked,
+  unsentCount,
   type OutboxRow,
 } from "./outbox";
 export { sync, SyncError, type SyncDeps, type SyncOutcome } from "./sync";
+export { singleFlight } from "./single-flight";
 export {
   openShift,
   deviceTotals,
