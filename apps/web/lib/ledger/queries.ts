@@ -50,7 +50,7 @@ const IN_CHUNK = 200;
  * Deliberately sequential: these are secondary lookups behind a page render, and firing
  * an unbounded number of them at once would trade one failure mode for another.
  */
-async function selectByIds<Row>(
+export async function selectByIds<Row>(
   ids: string[],
   query: (chunk: string[]) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>,
 ): Promise<Row[]> {

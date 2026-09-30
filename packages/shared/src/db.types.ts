@@ -494,6 +494,42 @@ export type Database = {
           },
         ]
       }
+      collection_recoveries: {
+        Row: {
+          collection_id: string
+          reason: string
+          recorded_at: string
+          recorded_by: string
+        }
+        Insert: {
+          collection_id: string
+          reason: string
+          recorded_at?: string
+          recorded_by: string
+        }
+        Update: {
+          collection_id?: string
+          reason?: string
+          recorded_at?: string
+          recorded_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collection_recoveries_collection_id_fkey"
+            columns: ["collection_id"]
+            isOneToOne: true
+            referencedRelation: "collections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_recoveries_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       collection_reinstatements: {
         Row: {
           cancellation_id: string
@@ -1822,6 +1858,7 @@ export type Database = {
         Args: { p_reason: string }
         Returns: undefined
       }
+      assert_recovery_admin: { Args: { p_reason: string }; Returns: undefined }
       attach_audit: { Args: { table_name: string }; Returns: undefined }
       authenticate_device: {
         Args: { p_credential_id: string; p_secret: string }
@@ -1897,6 +1934,10 @@ export type Database = {
         }[]
       }
       next_row_version: { Args: never; Returns: number }
+      office_close_shift: {
+        Args: { p_declared_total: number; p_reason: string; p_shift_id: string }
+        Returns: Json
+      }
       open_shift: {
         Args: { p_collector: string; p_device_id: string; p_payload: Json }
         Returns: Json
@@ -1932,6 +1973,25 @@ export type Database = {
           p_received_at: string
           p_reference: string
           p_shift_id: string
+        }
+        Returns: string
+      }
+      recover_collection: {
+        Args: {
+          p_reason: string
+          p_receipt: Json
+          p_shift_id: string
+          p_stub_total: number
+        }
+        Returns: string
+      }
+      recovery_refusal: { Args: { p_result: Json }; Returns: string }
+      recovery_shift: {
+        Args: {
+          p_business_date: string
+          p_collector_id: string
+          p_device_id: string
+          p_reason: string
         }
         Returns: string
       }
