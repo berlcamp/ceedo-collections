@@ -25,6 +25,9 @@ const SCHEMA = `
     state text not null default 'pending', attempts integer not null default 0,
     reason_code text, retryable integer, last_result text, seq integer not null
   );
+  create table pin_attempts (
+    collector_id text primary key, failures integer not null default 0, locked_at text
+  );
 `;
 
 const ALICE = randomUUID();

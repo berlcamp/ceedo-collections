@@ -103,6 +103,13 @@ export async function sync(deps: SyncDeps): Promise<SyncOutcome> {
     if (!closeAccepted) break;
   }
 
+  // PARENT §11.5: "five failed attempts lock the device until it next syncs". Nothing did
+  // until now -- only a correct PIN cleared the count, and a locked collector cannot enter
+  // one, so a lock outlived every sync and only wiping the tablet lifted it. Here, after a
+  // pull AND a push have both answered: the office has just heard from this tablet, and a
+  // PIN the office reset on the web has just arrived with the pull.
+  await driver.execute("delete from pin_attempts");
+
   const final = await readSyncState(driver);
   return {
     pulled: true,
