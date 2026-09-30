@@ -109,3 +109,133 @@ $$;
 revoke execute on function ceedo_collections.assert_recovery_admin(text) from public;
 revoke execute on function ceedo_collections.recovery_shift(uuid, uuid, date, text) from public;
 grant execute on function ceedo_collections.recovery_shift(uuid, uuid, date, text) to authenticated;
+
+-- ---------------------------------------------------------------------------------------
+
+-- attach_audit()'s generic trigger (migration 0010) reads a row's identity from an `id`
+-- column: every other audited table carries one, even alongside a unique FK to the thing
+-- it is about (collection_cancellations, collection_reinstatements). collection_recoveries
+-- does not -- its primary key IS collection_id, by design (a receipt is office-encoded at
+-- most once) -- so the generic trigger finds no `id` key and logs every row here with
+-- entity_id null. A dedicated trigger records the collection's own id instead, which is
+-- what an operator searching the audit log for a receipt actually asks for.
+drop trigger collection_recoveries_audit on ceedo_collections.collection_recoveries;
+
+create or replace function ceedo_collections.write_collection_recovery_audit()
+returns trigger
+language plpgsql
+security definer
+set search_path = ceedo_collections, pg_temp
+as $$
+declare
+  v_pg_role text := coalesce(nullif(current_setting('role', true), 'none'), session_user);
+  v_row_id  uuid := case tg_op when 'DELETE' then old.collection_id else new.collection_id end;
+begin
+  insert into ceedo_collections.audit_log
+    (actor_id, pg_role, action, entity, entity_id, before, after)
+  values (
+    auth.uid(), v_pg_role, lower(tg_op), 'collection_recoveries', v_row_id,
+    case when tg_op in ('UPDATE', 'DELETE') then to_jsonb(old) end,
+    case when tg_op in ('INSERT', 'UPDATE') then to_jsonb(new) end
+  );
+  return case tg_op when 'DELETE' then old else new end;
+exception
+  -- Same rule as write_audit(): a secondary, observational effect must never abort the
+  -- recovery it is attached to.
+  when others then
+    raise warning 'write_collection_recovery_audit failed for % on collection_recoveries: %',
+      tg_op, sqlerrm;
+    return case tg_op when 'DELETE' then old else new end;
+end;
+$$;
+
+create trigger collection_recoveries_audit
+  after insert or update or delete on ceedo_collections.collection_recoveries
+  for each row execute function ceedo_collections.write_collection_recovery_audit();
+
+-- ---------------------------------------------------------------------------------------
+
+-- post_collection's reason codes, as sentences for the admin holding the stub.
+create or replace function ceedo_collections.recovery_refusal(p_result jsonb)
+returns text
+language sql
+immutable
+set search_path = ceedo_collections, pg_temp
+as $$
+  select case p_result ->> 'reason'
+    when 'booklet_not_assigned'  then 'That booklet was not held by this collector on that day'
+    when 'or_out_of_range'       then 'That serial is outside the booklet''s range'
+    when 'or_already_used'       then 'That serial has already been used (it may have synced before the tablet was wiped)'
+    when 'or_spoiled'            then 'That serial was recorded as spoiled'
+    when 'no_parts'              then 'Tick at least one month, or add a fee line'
+    when 'lease_not_found'       then 'No such lease'
+    when 'allocation_not_prefix' then 'The months ticked are not the oldest unpaid ones. Enter the receipt that paid the earlier month first'
+    when 'rate_not_found'        then 'No rate is in effect for that fee on that date'
+    when 'stale_allocations'     then 'The unpaid months changed while this was saving. Try again'
+    else 'The receipt was refused (' || coalesce(p_result ->> 'reason', p_result ->> 'status') || ')'
+  end;
+$$;
+
+create or replace function ceedo_collections.recover_collection(
+  p_shift_id   uuid,
+  p_receipt    jsonb,
+  p_stub_total numeric,
+  p_reason     text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ceedo_collections, pg_temp
+as $$
+declare
+  v_shift  ceedo_collections.shifts;
+  v_result jsonb;
+  v_id     uuid := gen_random_uuid();
+  v_gross  numeric(14,2);
+begin
+  perform ceedo_collections.assert_recovery_admin(p_reason);
+
+  select * into v_shift from ceedo_collections.shifts where id = p_shift_id for update;
+  if not found then
+    raise exception 'No such shift';
+  end if;
+  -- A closed shift's system_total and variance are frozen (close_shift), and a shortage may
+  -- already be settled against them. A receipt added now would be counted by nothing.
+  if v_shift.status <> 'open' then
+    raise exception 'That shift is already closed. Its totals are frozen; a receipt cannot be added to it';
+  end if;
+  if ((p_receipt ->> 'collected_at')::timestamptz at time zone 'Asia/Manila')::date
+     is distinct from v_shift.business_date then
+    raise exception 'The receipt must be dated %, the shift''s day',
+      to_char(v_shift.business_date, 'Mon DD, YYYY');
+  end if;
+
+  -- Which receipt, which collector, which tablet, which shift are facts of the recovery,
+  -- not claims on the stub: applied AFTER the admin's input so none of them can be
+  -- overridden. The same rule resolve_exception_corrected applies.
+  v_result := ceedo_collections.post_collection(
+    p_receipt || jsonb_build_object('id', v_id,
+                                    'collector_id', v_shift.collector_id,
+                                    'device_id', v_shift.device_id,
+                                    'shift_id', v_shift.id));
+  if v_result ->> 'status' <> 'accepted' then
+    raise exception '%', ceedo_collections.recovery_refusal(v_result);
+  end if;
+
+  -- The stub is a cross-check, never the amount. A raise here rolls back the collection,
+  -- its allocations and its lines with it.
+  select gross_amount into v_gross from ceedo_collections.collections where id = v_id;
+  if p_stub_total is null or p_stub_total <> v_gross then
+    raise exception 'The stub says ₱%; what was ticked comes to ₱%. Check the months or quantities',
+      to_char(coalesce(p_stub_total, 0), 'FM999,999,990.00'), to_char(v_gross, 'FM999,999,990.00');
+  end if;
+
+  insert into ceedo_collections.collection_recoveries (collection_id, reason, recorded_by)
+  values (v_id, trim(p_reason), auth.uid());
+  return v_id;
+end;
+$$;
+
+revoke execute on function ceedo_collections.recovery_refusal(jsonb) from public;
+revoke execute on function ceedo_collections.recover_collection(uuid, jsonb, numeric, text) from public;
+grant execute on function ceedo_collections.recover_collection(uuid, jsonb, numeric, text) to authenticated;

@@ -113,3 +113,141 @@ describe("recovery_shift", () => {
     expect(error?.message).toMatch(/reason/);
   });
 });
+
+describe("recover_collection", () => {
+  let orNo = 1500;
+  const COLLECTED_AT = `${BUSINESS_DATE}T02:00:00+00:00`; // 10:00 Manila
+
+  async function unpaid(leaseId: string) {
+    const { rows } = await db.query(
+      `select group_rank, outstanding::text from ceedo_collections.unpaid_period_groups($1)`,
+      [leaseId],
+    );
+    return rows as { group_rank: number; outstanding: string }[];
+  }
+
+  async function setup() {
+    const fx = await createCollectionFixture(db);
+    await db.query(`select ceedo_collections.run_accrual($1::date)`, [BUSINESS_DATE]);
+    const { data: shiftId } = await recoveryShift(admin, fx);
+    return { fx, shiftId: shiftId as string };
+  }
+
+  function leaseReceipt(fx: CollectionFixture, ranks: number[], extra: object = {}) {
+    return {
+      or_no: orNo++, booklet_id: fx.bookletId, collected_at: COLLECTED_AT,
+      fee_type_id: fx.feeTypeId, lease_id: fx.leaseId,
+      allocations: ranks.map((group_rank) => ({ group_rank })), lines: [], ...extra,
+    };
+  }
+
+  const recover = (shiftId: string, receipt: object, stubTotal: string | number, client = admin) =>
+    client.rpc("recover_collection", {
+      p_shift_id: shiftId, p_receipt: receipt, p_stub_total: stubTotal, p_reason: REASON,
+    });
+
+  it("refuses anyone but an admin", async () => {
+    const { fx, shiftId } = await setup();
+    const { error } = await recover(shiftId, leaseReceipt(fx, [1]), 0, supervisor);
+    expect(error?.message).toMatch(/Only an administrator/);
+  });
+
+  it("posts a lease receipt into the shift, marked office-encoded", async () => {
+    const { fx, shiftId } = await setup();
+    const [first] = await unpaid(fx.leaseId);
+    const { data: id, error } = await recover(shiftId, leaseReceipt(fx, [1]), first.outstanding);
+    expect(error).toBeNull();
+    const { rows } = await db.query(
+      `select c.shift_id, c.collector_id, c.device_id, c.posted_by, c.gross_amount::text as gross,
+              r.reason, r.recorded_by
+         from ceedo_collections.collections c
+         join ceedo_collections.collection_recoveries r on r.collection_id = c.id
+        where c.id = $1`,
+      [id],
+    );
+    expect(rows[0]).toEqual({
+      shift_id: shiftId, collector_id: fx.collectorId, device_id: fx.deviceId,
+      posted_by: adminId, gross: first.outstanding, reason: REASON, recorded_by: adminId,
+    });
+    const audit = await db.query(
+      `select count(*)::int as n from ceedo_collections.audit_log
+        where entity = 'collection_recoveries' and entity_id = $1`,
+      [id],
+    );
+    expect(audit.rows[0].n).toBe(1);
+  });
+
+  it("posts a cash-fee receipt priced by the day's rate", async () => {
+    const { fx, shiftId } = await setup();
+    const expected = (3 * Number(fx.perHeadRate)).toFixed(2);
+    const { error } = await recover(shiftId, {
+      or_no: orNo++, booklet_id: fx.bookletId, collected_at: COLLECTED_AT,
+      fee_type_id: fx.perHeadFeeTypeId, lease_id: null, payer_ref: "Walk-in",
+      allocations: [], lines: [{ fee_type_id: fx.perHeadFeeTypeId, rate_class: "hog", quantity: 3 }],
+    }, expected);
+    expect(error).toBeNull();
+  });
+
+  it("takes id, collector, tablet and shift from the shift, never from the receipt", async () => {
+    const { fx, shiftId } = await setup();
+    const [first] = await unpaid(fx.leaseId);
+    const other = await createCollectionFixture(db);
+    const smuggled = randomUUID();
+    const { data: id, error } = await recover(shiftId, leaseReceipt(fx, [1], {
+      id: smuggled, collector_id: other.collectorId, device_id: other.deviceId, shift_id: randomUUID(),
+    }), first.outstanding);
+    expect(error).toBeNull();
+    expect(id).not.toBe(smuggled);
+    const { rows } = await db.query(
+      `select shift_id, collector_id, device_id from ceedo_collections.collections where id = $1`, [id],
+    );
+    expect(rows[0]).toEqual({ shift_id: shiftId, collector_id: fx.collectorId, device_id: fx.deviceId });
+  });
+
+  it("refuses a stub total that disagrees, and leaves nothing behind", async () => {
+    const { fx, shiftId } = await setup();
+    const receipt = leaseReceipt(fx, [1]);
+    const { error } = await recover(shiftId, receipt, "1.00");
+    expect(error?.message).toMatch(/The stub says ₱1\.00/);
+    const { rows } = await db.query(
+      `select count(*)::int as n from ceedo_collections.collections
+        where booklet_id = $1 and or_no = $2`,
+      [fx.bookletId, receipt.or_no],
+    );
+    expect(rows[0].n).toBe(0);
+  });
+
+  it("names the problem when a later month is entered first, then accepts the earlier stub", async () => {
+    const { fx, shiftId } = await setup();
+    const groups = await unpaid(fx.leaseId);
+    expect(groups.length).toBeGreaterThanOrEqual(2);
+    const later = await recover(shiftId, leaseReceipt(fx, [2]), groups[1].outstanding);
+    expect(later.error?.message).toMatch(/oldest unpaid/);
+    const earlier = await recover(shiftId, leaseReceipt(fx, [1]), groups[0].outstanding);
+    expect(earlier.error).toBeNull();
+  });
+
+  it("refuses a serial already used, e.g. one the tablet synced before the wipe", async () => {
+    const { fx, shiftId } = await setup();
+    const groups = await unpaid(fx.leaseId);
+    const receipt = leaseReceipt(fx, [1]);
+    await recover(shiftId, receipt, groups[0].outstanding);
+    const again = await recover(shiftId, { ...receipt, allocations: [{ group_rank: 1 }] }, groups[1].outstanding);
+    expect(again.error?.message).toMatch(/already been used/);
+  });
+
+  it("refuses a receipt dated off the shift's day", async () => {
+    const { fx, shiftId } = await setup();
+    const { error } = await recover(shiftId, leaseReceipt(fx, [1], {
+      collected_at: "2026-10-04T02:00:00+00:00",
+    }), "0");
+    expect(error?.message).toMatch(/must be dated/);
+  });
+
+  it("refuses a closed shift", async () => {
+    const { fx, shiftId } = await setup();
+    await db.query(`update ceedo_collections.shifts set status = 'closed' where id = $1`, [shiftId]);
+    const { error } = await recover(shiftId, leaseReceipt(fx, [1]), "0");
+    expect(error?.message).toMatch(/closed/);
+  });
+});
