@@ -216,10 +216,12 @@ export default async function ResourcePage({
         */}
         {config.key === "devices" && isAdmin(staff.role) && !error ? (
           <DeviceCredentialPanel
-            devices={(rows ?? []).map((row) => {
-              const record = row as unknown as { id: string; label: string };
-              return { id: record.id, label: record.label };
-            })}
+            // An inactive tablet's credential is refused by authenticate_device(), so a
+            // credential issued for one would enrol a tablet that can never sync.
+            devices={(rows ?? [])
+              .map((row) => row as unknown as { id: string; label: string; active: boolean })
+              .filter((record) => record.active)
+              .map((record) => ({ id: record.id, label: record.label }))}
           />
         ) : null}
         {config.key === "users" && isAdmin(staff.role) && !error ? (

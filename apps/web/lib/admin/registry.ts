@@ -606,7 +606,7 @@ const configs: ResourceConfig[] = [
     schema: z.object({ label: name, active: z.boolean() }),
     fields: [
       { name: "label", label: "Label", type: "text", help: "e.g. Tablet 01. Tablets are shared between collectors." },
-      { name: "active", label: "Active", type: "boolean", help: "Deactivating refuses this tablet's uploads." },
+      { name: "active", label: "Active", type: "boolean", help: "Deactivating cuts this tablet off from the office: it can still record offline, but nothing uploads or downloads until it is reactivated." },
     ],
     columns: [
       { key: "label", label: "Tablet" },
