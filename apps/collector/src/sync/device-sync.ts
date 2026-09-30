@@ -1,5 +1,5 @@
 import { drizzle } from "drizzle-orm/expo-sqlite";
-import { singleFlight, sync, type SyncOutcome } from "@ceedo/sync-engine";
+import { liftPinLocks, singleFlight, sync, type SyncOutcome } from "@ceedo/sync-engine";
 import { deviceDriver } from "../db/driver";
 import { httpTransport } from "./transport";
 import { apiConfig } from "./config";
@@ -43,7 +43,7 @@ export class NotEnrolledError extends Error {
  * ONE RUN AT A TIME (singleFlight). A "Sync now" tapped while an automatic sync is going
  * joins it and hears its outcome, instead of pushing the same outbox rows a second time.
  */
-export const syncNow: () => Promise<SyncOutcome> = singleFlight(async () => {
+const syncShared: () => Promise<SyncOutcome> = singleFlight(async () => {
   try {
     const credential = await loadCredential();
     if (!credential) throw new NotEnrolledError();
@@ -55,6 +55,20 @@ export const syncNow: () => Promise<SyncOutcome> = singleFlight(async () => {
     throw error;
   }
 });
+
+/**
+ * The sync behind every "Sync now" button: the shared run, then the PIN lock lifted.
+ *
+ * ONLY HERE, NEVER IN syncSoon. Parent §11.5 locks a tablet "until it next syncs", and with
+ * the timer syncing every two minutes an automatic lift would make five wrong PINs cost a
+ * guesser two minutes. A collector locked out asks the office, the office resets the PIN,
+ * and a person taps Sync now.
+ */
+export async function syncNow(): Promise<SyncOutcome> {
+  const outcome = await syncShared();
+  await liftPinLocks(deviceDriver());
+  return outcome;
+}
 
 /**
  * How the last sync ended, whoever started it.
@@ -113,7 +127,7 @@ export function holdAutoSync(): () => void {
  */
 export function syncSoon(options: { even?: "paused" } = {}): void {
   if (holds > 0 && options.even !== "paused") return;
-  syncNow().catch(() => {
+  syncShared().catch(() => {
     // Deliberately silent -- see above.
   });
 }

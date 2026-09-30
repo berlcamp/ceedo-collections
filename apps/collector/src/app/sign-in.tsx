@@ -51,7 +51,7 @@ const MESSAGES: Record<SignInBlock, string> = {
   no_pin:
     "No PIN is set for this collector. An administrator sets it on the web, and it " +
     "reaches this tablet on the next sync.",
-  locked: "Locked after five incorrect PINs. This clears on the next successful sync.",
+  locked: "Locked after five incorrect PINs. Tap Sync now with signal to unlock.",
   other_shift_open:
     "Another collector's shift is still open on this tablet. Close it out first — " +
     "that works without signal.",

@@ -124,3 +124,13 @@ export async function clearPinFailures(
 ): Promise<void> {
   await driver.execute("delete from pin_attempts where collector_id = ?", [collectorId]);
 }
+
+/**
+ * Parent §11.5: "five failed attempts lock the device until it next syncs" -- read as a sync
+ * a PERSON asked for. The collector app calls this after a "Sync now" succeeds: the office has
+ * just heard from the tablet, and a PIN reset on the web has just arrived with the pull. The
+ * automatic sync must not, or the lock would expire on its own every two minutes.
+ */
+export async function liftPinLocks(driver: SqliteDriver): Promise<void> {
+  await driver.execute("delete from pin_attempts");
+}

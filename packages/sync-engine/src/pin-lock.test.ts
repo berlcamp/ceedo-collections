@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
 import { betterSqliteDriver } from "./testing/better-sqlite-driver";
-import { canSignIn, recordPinFailure } from "./signin";
+import { canSignIn, liftPinLocks, recordPinFailure } from "./signin";
 import { sync } from "./sync";
 import type { SqliteDriver, Transport } from "./driver";
 
@@ -9,6 +9,10 @@ import type { SqliteDriver, Transport } from "./driver";
  * Parent §11.5: "five failed attempts lock the device until it next syncs". Production,
  * 2026-09-30: a collector locked out stayed locked through every sync, because only a
  * correct PIN cleared the count -- and a locked collector cannot enter one.
+ *
+ * BUT ONLY A SYNC SOMEONE ASKED FOR. The tablet now also syncs on its own every two minutes;
+ * if that lifted the lock, five wrong PINs would cost a guesser two minutes of waiting. So
+ * sync() leaves the lock alone and the collector app lifts it after a "Sync now" succeeds.
  */
 const SCHEMA = `
   create table sync_state (
@@ -54,17 +58,17 @@ describe("the PIN lock", () => {
   const run = (transport: Transport) =>
     sync({ driver, transport, credentialId: "c", secret: "s", businessDate: "2026-10-05" });
 
-  it("is lifted by a successful sync", async () => {
-    expect(await canSignIn(driver, "alice")).toEqual({ ok: false, reason: "locked" });
-
+  it("holds through a sync on its own, even a successful one", async () => {
     await run(pulling(200));
 
-    expect(await canSignIn(driver, "alice")).toEqual({ ok: true });
+    expect(await canSignIn(driver, "alice")).toEqual({ ok: false, reason: "locked" });
   });
 
-  it("holds through a sync the office refused", async () => {
-    await expect(run(pulling(401))).rejects.toThrow();
-
+  it("is lifted by liftPinLocks", async () => {
     expect(await canSignIn(driver, "alice")).toEqual({ ok: false, reason: "locked" });
+
+    await liftPinLocks(driver);
+
+    expect(await canSignIn(driver, "alice")).toEqual({ ok: true });
   });
 });

@@ -27,6 +27,7 @@ export {
   canSignIn,
   recordPinFailure,
   clearPinFailures,
+  liftPinLocks,
   type SignInBlock,
 } from "./signin";
 export { leaseLedger, leaseLedgerDetail, ledgerStaleness } from "./ledger";
