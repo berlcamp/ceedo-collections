@@ -68,8 +68,8 @@ carries the reason.
 - If none exists and the device has no other open shift, inserts one (`opened_at` =
   business date 00:00 Asia/Manila, status `open`) and returns it.
 - Refuses:
-  - a **closed or remitted** shift for that collector/device/date ("That shift is already
-    closed. Its totals are frozen; a receipt cannot be added to it.");
+  - a closed shift is never reopened; if none is open, a new one is created even when a
+    closed shift exists that day (a second, lost shift);
   - the device holding an open shift for a **different** collector or date (names it);
   - an inactive device or a collector without the `collector` role.
 - Writes an `audit_log` row (`action 'recovery_shift'`, with the reason) when it creates a
