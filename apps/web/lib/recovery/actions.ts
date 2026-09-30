@@ -1,13 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { z } from "zod";
 import { fromPesos, isAdmin, type Centavos, type Database } from "@ceedo/shared";
 import { toSaveResult, type SaveResult } from "@/lib/admin/save-result";
 import { requireStaff } from "@/lib/supabase/session";
 import { ledgerClient } from "@/lib/ledger/queries";
 import { getLeaseFeeType } from "./queries";
 import { tickedRanks } from "./months";
+import { closeSchema, openSchema, receiptSchema } from "./schemas";
 
 /**
  * `recover_collection`'s own `p_receipt` type is the generated `Json` union, which a plain
@@ -45,16 +45,6 @@ function refresh(): void {
   revalidatePath("/ledger/collections");
 }
 
-const reason = z.string().trim().min(1, "Write why these receipts are being recovered");
-const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter the date");
-
-const openSchema = z.object({
-  collectorId: z.guid("Choose the collector"),
-  deviceId: z.guid("Choose the tablet"),
-  businessDate: dateOnly,
-  reason,
-});
-
 /** Step 1: `recovery_shift` -- finds the collector's open shift for that tablet and day, or
  * opens a new one. Returns its id, which the page then carries into step 2. */
 export async function openRecoveryShift(formData: FormData): Promise<SaveResult> {
@@ -81,29 +71,6 @@ export async function openRecoveryShift(formData: FormData): Promise<SaveResult>
   refresh();
   return { ok: true, id: data };
 }
-
-const receiptSchema = z.object({
-  shiftId: z.guid(),
-  reason,
-  bookletId: z.guid("Choose the booklet"),
-  orNo: z.coerce.number().int().positive("Enter the serial on the stub"),
-  businessDate: dateOnly,
-  // Stubs rarely carry a time; blank is allowed and defaulted below.
-  time: z
-    .string()
-    .regex(/^\d{2}:\d{2}$/, "Enter a valid time")
-    .optional()
-    .or(z.literal("")),
-  kind: z.enum(["lease", "cash"]),
-  leaseId: z.string().optional(),
-  // Comma-separated group ranks, e.g. "1,2" -- see tickedRanks() in ./months.
-  months: z.string().optional(),
-  feeTypeId: z.string().optional(),
-  rateClass: z.string().optional(),
-  quantity: z.coerce.number().int().positive().optional(),
-  payerRef: z.string().trim().optional(),
-  stubTotal: z.coerce.number().nonnegative("Enter the total on the stub"),
-});
 
 /**
  * Step 2: re-enters one receipt through `recover_collection`, which itself runs it through
@@ -200,12 +167,6 @@ export async function recoverReceipt(formData: FormData): Promise<SaveResult> {
   refresh();
   return { ok: true, id: data };
 }
-
-const closeSchema = z.object({
-  shiftId: z.guid(),
-  reason,
-  declaredTotal: z.coerce.number().nonnegative("Enter the cash handed over"),
-});
 
 /**
  * Step 3: `office_close_shift`. The required "this tablet's data was lost" checkbox is
