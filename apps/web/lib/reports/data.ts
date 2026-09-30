@@ -1,6 +1,7 @@
 import { fromPesos, type Centavos } from "@ceedo/shared";
 import { getServerClient } from "@/lib/supabase/server";
 import type { BookletInput, Consumption } from "./accountability";
+import type { OpenException } from "./open-exceptions";
 
 /**
  * Reads for the report builders. Every list is read in pages: PostgREST returns at most
@@ -218,4 +219,25 @@ export async function deposits(from: string, to: string, collectorId?: string | 
     on: r.deposited_at,
     verified: r.verified_at !== null,
   }));
+}
+
+/** Every unresolved sync exception, as the report screen's warning scopes them. */
+export async function openExceptions(): Promise<OpenException[]> {
+  const supabase = await getServerClient();
+  const rows = await allPages((from, to) =>
+    supabase
+      .from("sync_exceptions")
+      .select("id, collector_id, payload")
+      .neq("status", "resolved")
+      .order("id")
+      .range(from, to),
+  );
+  return rows.map((row) => {
+    const payload = (row.payload ?? {}) as Record<string, unknown>;
+    return {
+      collectorId: row.collector_id,
+      collectedAt: typeof payload["collected_at"] === "string" ? payload["collected_at"] : null,
+      leaseId: typeof payload["lease_id"] === "string" ? payload["lease_id"] : null,
+    };
+  });
 }
