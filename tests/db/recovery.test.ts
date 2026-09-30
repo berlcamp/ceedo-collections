@@ -155,6 +155,7 @@ describe("recover_collection", () => {
   it("posts a lease receipt into the shift, marked office-encoded", async () => {
     const { fx, shiftId } = await setup();
     const [first] = await unpaid(fx.leaseId);
+    if (!first) throw new Error("expected an unpaid period group");
     const { data: id, error } = await recover(shiftId, leaseReceipt(fx, [1]), first.outstanding);
     expect(error).toBeNull();
     const { rows } = await db.query(
@@ -191,6 +192,7 @@ describe("recover_collection", () => {
   it("takes id, collector, tablet and shift from the shift, never from the receipt", async () => {
     const { fx, shiftId } = await setup();
     const [first] = await unpaid(fx.leaseId);
+    if (!first) throw new Error("expected an unpaid period group");
     const other = await createCollectionFixture(db);
     const smuggled = randomUUID();
     const { data: id, error } = await recover(shiftId, leaseReceipt(fx, [1], {
@@ -221,18 +223,24 @@ describe("recover_collection", () => {
     const { fx, shiftId } = await setup();
     const groups = await unpaid(fx.leaseId);
     expect(groups.length).toBeGreaterThanOrEqual(2);
-    const later = await recover(shiftId, leaseReceipt(fx, [2]), groups[1].outstanding);
+    const [firstGroup, secondGroup] = groups;
+    if (!firstGroup || !secondGroup) throw new Error("expected at least two unpaid period groups");
+    const later = await recover(shiftId, leaseReceipt(fx, [2]), secondGroup.outstanding);
     expect(later.error?.message).toMatch(/oldest unpaid/);
-    const earlier = await recover(shiftId, leaseReceipt(fx, [1]), groups[0].outstanding);
+    const earlier = await recover(shiftId, leaseReceipt(fx, [1]), firstGroup.outstanding);
     expect(earlier.error).toBeNull();
   });
 
   it("refuses a serial already used, e.g. one the tablet synced before the wipe", async () => {
     const { fx, shiftId } = await setup();
     const groups = await unpaid(fx.leaseId);
+    expect(groups.length).toBeGreaterThanOrEqual(2);
+    const [firstGroup, secondGroup] = groups;
+    if (!firstGroup || !secondGroup) throw new Error("expected at least two unpaid period groups");
     const receipt = leaseReceipt(fx, [1]);
-    await recover(shiftId, receipt, groups[0].outstanding);
-    const again = await recover(shiftId, { ...receipt, allocations: [{ group_rank: 1 }] }, groups[1].outstanding);
+    const firstRecover = await recover(shiftId, receipt, firstGroup.outstanding);
+    expect(firstRecover.error).toBeNull();
+    const again = await recover(shiftId, { ...receipt, allocations: [{ group_rank: 1 }] }, secondGroup.outstanding);
     expect(again.error?.message).toMatch(/already been used/);
   });
 
