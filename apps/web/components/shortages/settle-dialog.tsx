@@ -17,7 +17,15 @@ import type { SaveResult } from "@/lib/admin/save-result";
  * starts at everything still owed and not already awaiting verification; less is a part
  * payment, and more is refused by the database.
  */
-export function SettleDialog({ row, today }: { row: ShortageRow; today: string }) {
+export function SettleDialog({
+  row,
+  today,
+  trigger = "Record payment",
+}: {
+  row: ShortageRow;
+  today: string;
+  trigger?: string;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState<SaveResult | null>(null);
@@ -42,7 +50,7 @@ export function SettleDialog({ row, today }: { row: ShortageRow; today: string }
         if (!next) setResult(null);
       }}
     >
-      <DialogTrigger className={buttonClass("secondary", "sm")}>Record payment</DialogTrigger>
+      <DialogTrigger className={buttonClass("secondary", "sm")}>{trigger}</DialogTrigger>
       <DialogContent
         busy={busy}
         width="sm"

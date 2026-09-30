@@ -8,6 +8,8 @@ import { Money } from "@/components/ledger/money";
 import { Mark, QuietMark } from "@/components/ui/mark";
 import { formatVariance, type ShiftClass, type ShiftRow } from "@/lib/ledger/shift-class";
 import { formatDate } from "@/lib/format/date";
+import type { ShortageRow } from "@/lib/shortages/queries";
+import { SettleDialog } from "@/components/shortages/settle-dialog";
 
 function badge(klass: ShiftClass): ReactNode {
   switch (klass) {
@@ -32,86 +34,117 @@ const KLASS_LABEL: Record<ShiftClass, string> = {
   closed: "Closed",
 };
 
-const columns: DataColumn<ShiftRow>[] = [
-  {
-    key: "status",
-    label: "Status",
-    nowrap: true,
-    sortValue: (row) => KLASS_LABEL[row.klass],
-    searchValue: (row) => KLASS_LABEL[row.klass],
-    facet: (row) => KLASS_LABEL[row.klass],
-    render: (row) => badge(row.klass),
-  },
-  { key: "collector", label: "Collector", sortValue: (row) => row.collectorName, facet: (row) => row.collectorName, render: (row) => row.collectorName },
-  { key: "device", label: "Device", sortValue: (row) => row.deviceLabel, facet: (row) => row.deviceLabel, render: (row) => row.deviceLabel },
-  { key: "business_date", label: "Business date", nowrap: true, sortValue: (row) => row.businessDate, render: (row) => formatDate(row.businessDate) },
-  {
-    key: "system_count",
-    label: "System count",
-    align: "right",
-    nowrap: true,
-    sortValue: (row) => row.systemCount,
-    render: (row) => row.systemCount ?? <span className="text-ink-3">—</span>,
-  },
-  // Deliberately not summed into the close, unlike `variance` below: a shift still open
-  // contributes a system total with no declaration to set against it, so a column sum here
-  // and a column sum under "Declared total" differ by more than any real discrepancy. A
-  // proof that invites a wrong subtraction is worse than no proof.
-  {
-    key: "system_total",
-    label: "System total",
-    align: "right",
-    nowrap: true,
-    sortValue: (row) => row.systemTotal,
-    render: (row) => (row.systemTotal === null ? <span className="text-ink-3">—</span> : <Money amount={row.systemTotal} />),
-  },
-  {
-    key: "declared_total",
-    label: "Declared total",
-    align: "right",
-    nowrap: true,
-    sortValue: (row) => row.declaredTotal,
-    render: (row) => (row.declaredTotal === null ? <span className="text-ink-3">—</span> : <Money amount={row.declaredTotal} />),
-  },
-  {
-    key: "variance",
-    label: "Variance",
-    align: "right",
-    nowrap: true,
-    sortValue: (row) => row.variance,
-    total: (row) => row.variance,
-    render: (row) => {
-      const text = formatVariance(row.variance);
-      // Signed, so a short drawer reads differently from an over -- a supervisor scanning
-      // this column should not have to read every figure to know which is which.
-      const className =
-        row.variance === null
-          ? "text-ink-3"
-          : row.variance < 0
-            ? "font-semibold text-ribbon"
-            : row.variance > 0
-              ? "font-semibold text-amber"
-              : "text-ink-3";
-      // The variance never changes once a shortage is paid back; what is still owed on it
-      // sits underneath, so a settled shortage does not read as an open one.
-      return (
-        <span className={className}>
-          {text}
-          {row.stillOwed !== null ? (
-            <span className="block text-xs font-normal text-ink-3">
-              {row.stillOwed === 0 ? "Paid back" : `${format(row.stillOwed)} still owed`}
-            </span>
-          ) : null}
-        </span>
-      );
+/**
+ * `shortages` is keyed by shift id and passed only to a role that may record a payment
+ * (supervisor, admin); for anyone else it is null and the Settle column renders nothing.
+ */
+function columns(
+  shortages: Map<string, ShortageRow> | null,
+  today: string,
+): DataColumn<ShiftRow>[] {
+  return [
+    {
+      key: "status",
+      label: "Status",
+      nowrap: true,
+      sortValue: (row) => KLASS_LABEL[row.klass],
+      searchValue: (row) => KLASS_LABEL[row.klass],
+      facet: (row) => KLASS_LABEL[row.klass],
+      render: (row) => badge(row.klass),
     },
-  },
-];
+    { key: "collector", label: "Collector", sortValue: (row) => row.collectorName, facet: (row) => row.collectorName, render: (row) => row.collectorName },
+    { key: "device", label: "Device", sortValue: (row) => row.deviceLabel, facet: (row) => row.deviceLabel, render: (row) => row.deviceLabel },
+    { key: "business_date", label: "Business date", nowrap: true, sortValue: (row) => row.businessDate, render: (row) => formatDate(row.businessDate) },
+    {
+      key: "system_count",
+      label: "System count",
+      align: "right",
+      nowrap: true,
+      sortValue: (row) => row.systemCount,
+      render: (row) => row.systemCount ?? <span className="text-ink-3">—</span>,
+    },
+    // Deliberately not summed into the close, unlike `variance` below: a shift still open
+    // contributes a system total with no declaration to set against it, so a column sum here
+    // and a column sum under "Declared total" differ by more than any real discrepancy. A
+    // proof that invites a wrong subtraction is worse than no proof.
+    {
+      key: "system_total",
+      label: "System total",
+      align: "right",
+      nowrap: true,
+      sortValue: (row) => row.systemTotal,
+      render: (row) => (row.systemTotal === null ? <span className="text-ink-3">—</span> : <Money amount={row.systemTotal} />),
+    },
+    {
+      key: "declared_total",
+      label: "Declared total",
+      align: "right",
+      nowrap: true,
+      sortValue: (row) => row.declaredTotal,
+      render: (row) => (row.declaredTotal === null ? <span className="text-ink-3">—</span> : <Money amount={row.declaredTotal} />),
+    },
+    {
+      key: "variance",
+      label: "Variance",
+      align: "right",
+      nowrap: true,
+      sortValue: (row) => row.variance,
+      total: (row) => row.variance,
+      render: (row) => {
+        const text = formatVariance(row.variance);
+        // Signed, so a short drawer reads differently from an over -- a supervisor scanning
+        // this column should not have to read every figure to know which is which.
+        const className =
+          row.variance === null
+            ? "text-ink-3"
+            : row.variance < 0
+              ? "font-semibold text-ribbon"
+              : row.variance > 0
+                ? "font-semibold text-amber"
+                : "text-ink-3";
+        // The variance never changes once a shortage is paid back; what is still owed on it
+        // sits underneath, so a settled shortage does not read as an open one.
+        return (
+          <span className={className}>
+            {text}
+            {row.stillOwed !== null ? (
+              <span className="block text-xs font-normal text-ink-3">
+                {row.stillOwed === 0 ? "Paid back" : `${format(row.stillOwed)} still owed`}
+              </span>
+            ) : null}
+          </span>
+        );
+      },
+    },
+    {
+      key: "settle",
+      label: "",
+      align: "right",
+      // The same dialog as the Shortages screen: a supervisor records the payment here, and
+      // accounting still verifies it there before it reduces what is owed.
+      render: (row) => {
+        const shortage = shortages?.get(row.id);
+        return shortage && shortage.room > 0 ? (
+          <SettleDialog row={shortage} today={today} trigger="Settle" />
+        ) : null;
+      },
+    },
+  ];
+}
 
-export function ShiftsTable({ rows }: { rows: ShiftRow[] }) {
+export function ShiftsTable({
+  rows,
+  shortages,
+  today,
+}: {
+  rows: ShiftRow[];
+  shortages: ShortageRow[] | null;
+  today: string;
+}) {
+  const byShift = shortages ? new Map(shortages.map((s) => [s.shiftId, s])) : null;
   return (
     <DataTable
-      columns={columns}
+      columns={columns(byShift, today)}
       rows={rows}
       rowKey={(row) => row.id}
       urlKey="shifts"
