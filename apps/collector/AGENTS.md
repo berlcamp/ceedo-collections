@@ -51,5 +51,7 @@ pnpm ota:production --message "..."   # every collector's tablet
 - **`drizzle/` migrations ride the OTA** and run on the next launch, against tablets that may
   hold receipts not yet synced. Ship them to `preview` and verify on a test tablet before
   production.
-- A tablet downloads an update on launch and applies it on the launch after, so a collector
-  may need to close and reopen the app twice.
+- A cold start checks for an update and, if one downloads within 8s, reloads into it
+  before the database is touched (`src/updates/useLatestUpdate.ts`). A slower download
+  finishes in the background and applies on the next launch. Tablets that have not yet
+  received that hook still need two restarts to pick it up.

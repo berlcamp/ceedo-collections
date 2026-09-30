@@ -12,6 +12,7 @@ import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";
 import migrations from "../../drizzle/migrations";
 import { openDeviceDb } from "../db/client";
 import { color } from "../ui/tokens";
+import { useLatestUpdate } from "../updates/useLatestUpdate";
 
 /**
  * A plain stack. No tabs, no theming scaffolding.
@@ -30,6 +31,14 @@ import { color } from "../ui/tokens";
  * The status bar is dark because it sits on the white app bar.
  */
 export default function RootLayout() {
+  // The update gate comes first so that a launch which reloads into a newer bundle does so
+  // before migrating, and the migrations that run are the new bundle's.
+  const upToDate = useLatestUpdate();
+  if (!upToDate) return <View style={{ flex: 1, backgroundColor: color.ground }} />;
+  return <MigratedRoot />;
+}
+
+function MigratedRoot() {
   // THE DEVICE SCHEMA IS MIGRATED HERE, BEFORE ANY SCREEN RENDERS. It used to happen only on
   // the enrol screen, so an already-enrolled tablet never received a new local migration --
   // and the next pull would then either fail or, since applyPull skips unknown columns,
