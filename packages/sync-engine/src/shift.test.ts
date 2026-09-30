@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { betterSqliteDriver } from "./testing/better-sqlite-driver";
-import { openShift, deviceTotals, closeShift } from "./shift";
+import { openShift, deviceTotals, closeShift, closeoutReadiness } from "./shift";
 import { pushable } from "./outbox";
 import type { SqliteDriver, Transport } from "./driver";
 
@@ -391,5 +391,75 @@ describe("the shift lifecycle", () => {
     );
 
     expect(queuedAtPostTime).toContain("shift_close");
+  });
+
+  describe("closeout readiness", () => {
+    const deps = (transport: Transport) => ({
+      transport,
+      credentialId: "c",
+      secret: "s",
+      businessDate: "2026-10-05",
+    });
+    const MISMATCH = transportReturning([
+      { index: 0, type: "shift_close", status: "mismatch", device_count: 1, system_count: 0, system_total: 0 },
+    ]);
+
+    async function openAndAck(collectorId: string): Promise<string> {
+      const id = await openShift(driver, { id: randomUUID(), collectorId, businessDate: "2026-10-05" });
+      db.prepare("update outbox set state = 'acked' where id = ?").run(id);
+      return id;
+    }
+
+    it("does not let a shift's own refused close block its closeout", async () => {
+      // Production, 2026-09-30: a mismatched close stayed pushable, every sync reported it
+      // pushed, and the Shift screen counted it as unsent -- disabling the Close out that
+      // re-sends it.
+      const id = await openAndAck("alice");
+      collect(id, randomUUID(), "200.00");
+      await closeShift(driver, deps(MISMATCH), { shiftId: id, declaredTotal: "200.00" });
+
+      expect(await pushable(driver)).toHaveLength(1);
+      expect(await closeoutReadiness(driver, id)).toEqual({
+        block: null,
+        refused: { status: "mismatch", detail: null },
+      });
+    });
+
+    it("blocks on anything else that has not reached the server", async () => {
+      const id = await openShift(driver, { id: randomUUID(), collectorId: "alice", businessDate: "2026-10-05" });
+      expect((await closeoutReadiness(driver, id)).block).toEqual({ kind: "queued", count: 1 });
+    });
+
+    it("says an earlier closeout is holding the tablet, not that entries are unsent", async () => {
+      const earlier = await openAndAck("bob");
+      await closeShift(
+        driver,
+        deps(transportReturning([{ index: 0, type: "shift_close", status: "rejected", reason: "server_error" }])),
+        { shiftId: earlier, declaredTotal: "0.00" },
+      );
+      const id = await openShift(driver, { id: randomUUID(), collectorId: "alice", businessDate: "2026-10-05" });
+
+      expect((await closeoutReadiness(driver, id)).block).toEqual({ kind: "earlier_close" });
+    });
+
+    it("re-sends the NEW count when closing out again after a mismatch", async () => {
+      const id = await openAndAck("alice");
+      await closeShift(driver, deps(MISMATCH), { shiftId: id, declaredTotal: "100.00" });
+
+      let sent: unknown;
+      const accepting: Transport = {
+        async post(_path, body) {
+          sent = body;
+          return {
+            status: 200,
+            body: [{ index: 0, type: "shift_close", status: "closed", system_count: 0, system_total: 0, variance: 0 }],
+          };
+        },
+      };
+      await closeShift(driver, deps(accepting), { shiftId: id, declaredTotal: "150.00" });
+
+      expect(sent).toMatchObject({ entries: [{ payload: { declared_total: "150.00" } }] });
+      expect((await closeoutReadiness(driver, id)).refused).toBeNull();
+    });
   });
 });

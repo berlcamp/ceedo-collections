@@ -2,13 +2,13 @@ import { useCallback, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import { randomUUID } from "expo-crypto";
 import {
+  closeoutReadiness,
   collectorSites,
   deviceTotals,
   openShift,
   purgeAcked,
-  pushable,
+  type CloseoutReadiness,
   type CollectorSite,
-  type OutboxRow,
 } from "@ceedo/sync-engine";
 import {
   Action,
@@ -63,7 +63,7 @@ export default function Shift() {
 
   const [shift, setShift] = useState<LocalShift | null>(null);
   const [totals, setTotals] = useState({ count: 0, total: "0.00" });
-  const [queued, setQueued] = useState<OutboxRow[]>([]);
+  const [readiness, setReadiness] = useState<CloseoutReadiness>({ block: null, refused: null });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
@@ -83,7 +83,9 @@ export default function Shift() {
     const mine = rows[0] ?? null;
     setShift(mine);
     setTotals(mine ? await deviceTotals(driver, mine.id) : { count: 0, total: "0.00" });
-    setQueued(await pushable(driver));
+    setReadiness(
+      mine ? await closeoutReadiness(driver, mine.id) : { block: null, refused: null },
+    );
     setFresh(await freshness(driver, businessDate()));
     setSites(await collectorSites(driver, collector.id));
   }, [collector, driver]);
@@ -108,8 +110,16 @@ export default function Shift() {
   // §6.5 step 1: "force sync; outbox must reach zero pending". Enforced here rather than
   // assumed, because a closeout pushed while receipts are still queued compares the
   // device's figures against a server that has not seen them yet -- and answers `mismatch`
-  // for a shift that is in fact perfectly balanced.
-  const stillQueued = queued.length > 0;
+  // for a shift that is in fact perfectly balanced. The shift's OWN refused close is not
+  // counted (see closeoutReadiness): closing out again is how it is re-sent.
+  const { block, refused } = readiness;
+  const stillQueued = block !== null;
+  const blockedBy =
+    block?.kind === "earlier_close"
+      ? "An earlier closeout on this tablet has not been accepted by the server."
+      : block
+        ? `${block.count} entr${block.count === 1 ? "y has" : "ies have"} not reached the server yet.`
+        : null;
 
   const sync = async () => {
     setBusy(true);
@@ -174,11 +184,7 @@ export default function Shift() {
             // Short, and NOT a repeat of the statement in the body. The body explains the
             // consequence and carries the Sync control; the shelf names what is missing,
             // which is all a reason attached to a dead button owes.
-            blocked={
-              stillQueued
-                ? `${queued.length} entr${queued.length === 1 ? "y has" : "ies have"} not reached the server yet.`
-                : null
-            }
+            blocked={blockedBy}
             onPress={() =>
               router.push({ pathname: "/closeout", params: { shiftId: shift.id } })
             }
@@ -273,11 +279,30 @@ export default function Shift() {
         mid-sentence, so the consequence moves to a single line beside the remedy rather
         than competing with it.
       */}
-      {stillQueued ? (
+      {block?.kind === "queued" ? (
         <>
           <Body tone={color.muted}>
             A closeout sent now would be compared against a server that has not seen these.
           </Body>
+          <Rift h={12} />
+        </>
+      ) : block?.kind === "earlier_close" ? (
+        <>
+          <Body tone={color.muted}>
+            Everything after it waits on this tablet until a supervisor puts it right. Tell
+            the office.
+          </Body>
+          <Rift h={12} />
+        </>
+      ) : null}
+
+      {shift && refused && !block ? (
+        <>
+          <Statement tone="warning" detail={refused.detail}>
+            {refused.status === "mismatch"
+              ? "Your last closeout did not match the server's records. Close out again once a supervisor has reconciled them."
+              : "The server refused your last closeout. Close out again, or tell a supervisor if it is refused again."}
+          </Statement>
           <Rift h={12} />
         </>
       ) : null}

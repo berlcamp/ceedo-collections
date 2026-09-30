@@ -15,6 +15,8 @@ export {
   openShift,
   deviceTotals,
   closeShift,
+  closeoutReadiness,
+  type CloseoutReadiness,
   type ShiftDeps,
   type DeviceTotals,
   type CloseOutcome,

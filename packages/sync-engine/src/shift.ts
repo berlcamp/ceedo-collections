@@ -191,10 +191,13 @@ export async function closeShift(
   await enqueue(driver, { id: entryId, type: "shift_close", payload, collectorId });
   // `enqueue` leaves an existing row alone, so a close the server already REFUSED would stay
   // refused -- and unpushable -- forever, and the lookup below would read that as "already
-  // sent". Only a rejected row is re-armed; a pending or in-flight one is still on its way.
+  // sent". A rejected row is re-armed, and a pending one (a `mismatch` answer leaves it
+  // pending) takes this attempt's payload: the collector has just counted the drawer again,
+  // and re-sending the earlier count would close the shift on a figure nobody declared now.
+  // An in-flight one is left alone; the server may already hold it.
   await driver.execute(
     `update outbox set state = 'pending', payload = ?, reason_code = null, retryable = null
-      where id = ? and state = 'rejected'`,
+      where id = ? and state in ('rejected', 'pending')`,
     [JSON.stringify(payload), entryId],
   );
 
@@ -298,6 +301,59 @@ export async function closeShift(
   // settled by applyResults; locally the shift closes unsynced so the collector is not held
   // at the screen, and the outbox carries the reason.
   return offline(`The server answered ${result.status}${result.reason ? ` (${result.reason})` : ""}.`);
+}
+
+export interface CloseoutReadiness {
+  /**
+   * Why Close out cannot be pressed yet, or null when it can. `queued` counts what has not
+   * reached the server; `earlier_close` is another shift's closeout the server has not
+   * accepted, which holds everything behind it on the device (outbox.ts: a close is a
+   * barrier).
+   */
+  block: { kind: "queued"; count: number } | { kind: "earlier_close" } | null;
+  /** The server's last answer to THIS shift's closeout, when it did not close the shift. */
+  refused: { status: "mismatch" | "rejected"; detail: string | null } | null;
+}
+
+/**
+ * Whether a collector may close out this shift, and what the server said last time.
+ *
+ * THE SHIFT'S OWN CLOSE DOES NOT BLOCK ITS OWN CLOSEOUT. A close answered `mismatch` or
+ * `rejected` stays pushable so a sync can settle it, and the Shift screen counted it among
+ * the entries "not reached the server yet" -- so the one action that re-sends it with a
+ * fresh count was disabled by it, and every sync reported it pushed while the block stayed.
+ */
+export async function closeoutReadiness(
+  driver: SqliteDriver,
+  shiftId: string,
+): Promise<CloseoutReadiness> {
+  const entryId = closeEntryId(shiftId);
+  const others = (await pushable(driver)).filter((row) => row.id !== entryId);
+
+  const block: CloseoutReadiness["block"] = others.some((row) => row.type === "shift_close")
+    ? { kind: "earlier_close" }
+    : others.length > 0
+      ? { kind: "queued", count: others.length }
+      : null;
+
+  const own = await driver.select<{ state: string; last_result: string | null }>(
+    "select state, last_result from outbox where id = ?",
+    [entryId],
+  );
+  let refused: CloseoutReadiness["refused"] = null;
+  const lastResult = own[0]?.state === "acked" ? null : own[0]?.last_result;
+  if (lastResult) {
+    try {
+      const result = JSON.parse(lastResult) as { status?: string; detail?: string; reason?: string };
+      if (result.status === "mismatch" || result.status === "rejected") {
+        refused = { status: result.status, detail: result.detail ?? result.reason ?? null };
+      }
+    } catch {
+      // A quarantine note, not a server answer (outbox.ts `quarantine`).
+    }
+  }
+
+  return { block, refused };
 }
 
 /** Inbound money is a JSON number (see sync-contract.ts's `wireMoney`). */
