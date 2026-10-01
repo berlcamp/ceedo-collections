@@ -61,7 +61,7 @@ there are no payments to show.
 | D4 | Accrual covers "elapsed periods" (§8.1) | Never before the **cutover date** | Taken literally, a stall let in 2023 raises ~1,000 charges that were already paid in cash on paper, and every tenant shows as catastrophically delinquent on day one. |
 | D5 | `charge_type` is `rental \| surcharge` (§5.4) | Adds `opening_balance` | Pre-cutover arrears must enter the ledger as a fact, not as a thousand fabricated period charges. |
 | D6 | Ledger tables grant `SELECT, INSERT` (§12.3) | `authenticated` gets **`SELECT` only** | All writes go through `SECURITY DEFINER` functions, so a compromised admin JWT talking directly to PostgREST cannot write even a bare allocation row. |
-| D7 | — | **No web payment path at all** | Collections are recorded on the collector app only. A second, office-side way to post a receipt would be a second thing to keep correct and the weaker of the two to abuse. |
+| D7 | — | **No web payment path at all** | Collections are recorded on the collector app only. A second, office-side way to post a receipt would be a second thing to keep correct and the weaker of the two to abuse. **Amended 2026-09-30 (office recovery spec).** One exception: an admin may re-enter a receipt whose tablet copy was destroyed before it synced, through `recover_collection`, only into that collector's still-open shift, with a written reason, validated by `post_collection` exactly as a tablet receipt, marked office-encoded, and reconciled against cash by `office_close_shift`. Everyday posting stays on the tablet. |
 
 ### D1/D2 in full — paid state is derived, never stored
 
