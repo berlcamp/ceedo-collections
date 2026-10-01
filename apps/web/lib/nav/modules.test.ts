@@ -21,6 +21,14 @@ describe("nav modules", () => {
     expect(hrefs("accounting")).not.toContain("/staff-invites");
   });
 
+  it("offers Recovery to an admin and nobody else", () => {
+    const hrefs = (role: (typeof WEB_ROLES)[number]) =>
+      navFor(role).flatMap((s) => s.modules.flatMap((m) => m.tabs.map((t) => t.href)));
+    expect(hrefs("admin")).toContain("/ledger/recovery");
+    expect(hrefs("supervisor")).not.toContain("/ledger/recovery");
+    expect(hrefs("accounting")).not.toContain("/ledger/recovery");
+  });
+
   it("gives every web role a non-empty rail whose modules all have a tab", () => {
     for (const role of WEB_ROLES) {
       const sections = navFor(role);
