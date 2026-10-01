@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { fromCentavos, sum } from "@ceedo/shared";
+import { fromCentavos } from "@ceedo/shared";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FieldShell, TextArea, TextInput } from "@/components/ui/field";
@@ -13,6 +13,7 @@ import { useSubmit } from "@/components/ui/use-submit";
 import { closeRecoveredShift } from "@/lib/recovery/actions";
 import { closeNotice } from "@/lib/recovery/close-result";
 import type { RecoveryShift } from "@/lib/recovery/queries";
+import { receiptTotals } from "@/lib/recovery/receipt-totals";
 import type { SaveResult } from "@/lib/admin/save-result";
 
 type CloseOutcome = SaveResult & { variance?: number };
@@ -28,7 +29,9 @@ export function CloseForm({ shift }: { shift: RecoveryShift }) {
   const [result, setResult] = useState<CloseOutcome | null>(null);
   const [confirmLost, setConfirmLost] = useState(false);
 
-  const systemTotal = sum(shift.receipts.map((r) => fromCentavos(r.grossAmount)));
+  // Excludes cancelled receipts, the same exclusion office_close_shift's own query applies
+  // (Task 1) -- this figure must match what the close is actually about to book.
+  const { count: receiptCount, total: systemTotal } = receiptTotals(shift.receipts);
 
   const { pending, onSubmit } = useSubmit(async (formData) => {
     const outcome = await closeRecoveredShift(formData);
@@ -49,7 +52,7 @@ export function CloseForm({ shift }: { shift: RecoveryShift }) {
         <input type="hidden" name="shiftId" value={shift.id} />
 
         <p className="mb-3.5 flex items-baseline justify-between text-sm">
-          <span className="text-ink-2">System total ({shift.receipts.length} receipt{shift.receipts.length === 1 ? "" : "s"})</span>
+          <span className="text-ink-2">System total ({receiptCount} receipt{receiptCount === 1 ? "" : "s"})</span>
           <span className="font-semibold">
             <Money amount={systemTotal} />
           </span>

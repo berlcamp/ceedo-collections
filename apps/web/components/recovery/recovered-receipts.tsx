@@ -1,9 +1,10 @@
-import { fromCentavos, sum } from "@ceedo/shared";
+import { fromCentavos } from "@ceedo/shared";
 import { Money } from "@/components/ledger/money";
 import { Mark } from "@/components/ui/mark";
 import { Notice } from "@/components/ui/panel";
 import { formatDate } from "@/lib/format/date";
 import type { RecoveryShift } from "@/lib/recovery/queries";
+import { receiptTotals } from "@/lib/recovery/receipt-totals";
 import { heardFromAfterManilaMidnight } from "@/lib/recovery/tablet-activity";
 
 /**
@@ -14,10 +15,9 @@ import { heardFromAfterManilaMidnight } from "@/lib/recovery/tablet-activity";
  * sort/filter/URL state is for a list big enough to need it; a shift's receipts are not).
  */
 export function RecoveredReceipts({ shift }: { shift: RecoveryShift }) {
-  // RecoveryReceipt.grossAmount is a plain `number` (queries.ts), already centavos but not
-  // branded -- fromCentavos re-attaches the brand Money/sum both require, same as any other
-  // screen reading a value that crossed a JSON boundary.
-  const total = sum(shift.receipts.map((r) => fromCentavos(r.grossAmount)));
+  // A cancelled receipt stays listed below, marked Cancelled, but counts toward neither
+  // figure here -- the same exclusion office_close_shift's own query applies (Task 1).
+  const { count, total } = receiptTotals(shift.receipts);
 
   return (
     <div className="mb-6">
@@ -48,15 +48,23 @@ export function RecoveredReceipts({ shift }: { shift: RecoveryShift }) {
             ) : (
               shift.receipts.map((r) => (
                 <tr key={r.id} className="border-b border-rule-soft last:border-b-0">
-                  <td className="px-4 py-2 font-mono text-xs text-ink">{r.orNo}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-ink">
+                    <span className={r.cancelled ? "text-ink-3 line-through" : undefined}>{r.orNo}</span>
+                  </td>
                   <td className="px-4 py-2 text-ink">{r.stallOrPayer}</td>
                   <td className="px-4 py-2 text-right">
-                    <Money amount={fromCentavos(r.grossAmount)} />
+                    <Money amount={fromCentavos(r.grossAmount)} muted={r.cancelled} />
                   </td>
                   <td className="px-4 py-2">
-                    <Mark tone={r.officeEncoded ? "office" : "neutral"}>
-                      {r.officeEncoded ? "Office-encoded" : "From tablet"}
-                    </Mark>
+                    <span className="flex items-center gap-1.5">
+                      <Mark tone={r.officeEncoded ? "office" : "neutral"}>
+                        {r.officeEncoded ? "Office-encoded" : "From tablet"}
+                      </Mark>
+                      {/* Task 1: reuses the same cancelled marker style as the collection
+                          browser's Status column (components/ledger/collections-table.tsx),
+                          and the same exclusion -- see receiptTotals(). */}
+                      {r.cancelled ? <Mark tone="alert">Cancelled</Mark> : null}
+                    </span>
                   </td>
                 </tr>
               ))
@@ -66,7 +74,7 @@ export function RecoveredReceipts({ shift }: { shift: RecoveryShift }) {
             <tfoot>
               <tr className="border-t border-rule bg-tape">
                 <td colSpan={2} className="px-4 py-2 text-xs font-semibold text-ink-2">
-                  {shift.receipts.length} receipt{shift.receipts.length === 1 ? "" : "s"}
+                  {count} receipt{count === 1 ? "" : "s"}
                 </td>
                 <td className="px-4 py-2 text-right font-semibold">
                   <Money amount={total} />

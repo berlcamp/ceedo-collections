@@ -44,6 +44,11 @@ export interface RecoveryReceipt {
   grossAmount: number;
   /** Has a `collection_recoveries` row -- came from the office, not the tablet. */
   officeEncoded: boolean;
+  /** Has a `standing_cancellations` row -- voided, the same fact `getCollections` (lib/
+   * ledger/queries.ts) reads for the collection browser. `office_close_shift`'s own query
+   * excludes these from the system count and total (migration 20260930000060), so this
+   * screen must too -- see `receiptTotals()`. */
+  cancelled: boolean;
 }
 
 export interface RecoveryShift {
@@ -89,13 +94,20 @@ export async function getRecoveryShift(shiftId: string): Promise<RecoveryShift |
 
   const ids = (rows ?? []).map((r) => r.id);
   const leaseIds = [...new Set((rows ?? []).map((r) => r.lease_id).filter((id): id is string => id !== null))];
-  const [recovered, leases] = await Promise.all([
+  // Same reasoning and shape as getCollections() in lib/ledger/queries.ts: a receipt
+  // cancelled after being recovered is still fetched and listed here, just marked and
+  // excluded from the totals (receiptTotals()), not hidden.
+  const [recovered, leases, cancellations] = await Promise.all([
     selectByIds(ids, (chunk) =>
       supabase.from("collection_recoveries").select("collection_id").in("collection_id", chunk),
     ),
     selectByIds(leaseIds, (chunk) => supabase.from("leases").select("id, stalls(stall_no)").in("id", chunk)),
+    selectByIds(ids, (chunk) =>
+      supabase.from("standing_cancellations").select("collection_id").in("collection_id", chunk),
+    ),
   ]);
   const officeEncoded = new Set(recovered.map((r) => r.collection_id));
+  const cancelled = new Set(cancellations.map((c) => c.collection_id));
   const stallByLease = new Map(leases.map((l) => [l.id, l.stalls?.stall_no ?? "—"]));
 
   return {
@@ -115,6 +127,7 @@ export async function getRecoveryShift(shiftId: string): Promise<RecoveryShift |
       stallOrPayer: r.lease_id ? (stallByLease.get(r.lease_id) ?? "—") : (r.payer_ref ?? "—"),
       grossAmount: centavos(r.gross_amount),
       officeEncoded: officeEncoded.has(r.id),
+      cancelled: cancelled.has(r.id),
     })),
   };
 }
