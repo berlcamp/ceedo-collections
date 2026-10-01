@@ -1,6 +1,7 @@
 import type { Database } from "@ceedo/shared";
 import { fromPesos, type Centavos } from "@ceedo/shared";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isMissingRelationError } from "./db-errors";
 import { getServerClient } from "../supabase/server";
 
 /**
@@ -73,15 +74,54 @@ export async function selectByIds<Row>(
  * to nothing by Postgres, not refused with an error, so `selectByIds` never throws for that
  * role -- it just returns an empty set, and every caller renders no badge rather than
  * breaking the page.
+ *
+ * Final-review Task 3: the DB migration bundle and the web app are deployed separately, and
+ * the web app can reach production first. Until the bundle that creates
+ * `collection_recoveries` runs, every PostgREST request against it fails with a
+ * missing-relation error -- read as "no recovered receipts exist yet" (empty set), the same
+ * as the RLS case above, so Receipts, Shifts, the subsidiary ledger, RCD and the monthly
+ * reports keep rendering rather than 500ing. Any other error still throws.
  */
 export async function recoveredCollectionIds(
   supabase: SupabaseClient<Database, "ceedo_collections">,
   collectionIds: string[],
 ): Promise<Set<string>> {
-  const rows = await selectByIds(collectionIds, (chunk) =>
-    supabase.from("collection_recoveries").select("collection_id").in("collection_id", chunk),
-  );
-  return new Set(rows.map((r) => r.collection_id));
+  try {
+    const rows = await selectByIds(collectionIds, (chunk) =>
+      supabase.from("collection_recoveries").select("collection_id").in("collection_id", chunk),
+    );
+    return new Set(rows.map((r) => r.collection_id));
+  } catch (error) {
+    if (isMissingRelationError(error as { code?: string })) return new Set();
+    throw error;
+  }
+}
+
+/**
+ * Final-review Task 2: per-shift office-encoded collection ids, queried from the rare side.
+ * `getShifts()` used to fetch `collections.select("id, shift_id").in("shift_id", chunk)` for
+ * up to 200 shifts and intersect that with `recoveredCollectionIds()` in memory -- but a
+ * market's shifts can hold well over 1000 collections between them, and PostgREST's
+ * max_rows (1000, supabase/config.toml) truncates a response past that silently, not with
+ * an error, so the Office-encoded badge could simply undercount with nothing to notice it.
+ * Joining `collection_recoveries` to `collections!inner(shift_id)` and filtering the join
+ * instead bounds the row count by what is actually office-encoded, which is always far
+ * smaller than the shift's full collection list -- the same "query from the rare side"
+ * fix, and the same missing-relation handling, as `recoveredCollectionIds()` above.
+ */
+export async function officeEncodedShiftIds(
+  supabase: SupabaseClient<Database, "ceedo_collections">,
+  shiftIds: string[],
+): Promise<string[]> {
+  try {
+    const rows = await selectByIds(shiftIds, (chunk) =>
+      supabase.from("collection_recoveries").select("collections!inner(shift_id)").in("collections.shift_id", chunk),
+    );
+    return rows.map((r) => r.collections.shift_id).filter((id): id is string => id !== null);
+  } catch (error) {
+    if (isMissingRelationError(error as { code?: string })) return [];
+    throw error;
+  }
 }
 
 /**

@@ -59,33 +59,33 @@ describe("formatVariance", () => {
 });
 
 describe("officeEncodedCounts", () => {
-  it("counts only the recovered collection on a shift of two", () => {
-    // Task 6: a shift with one office-encoded receipt among its two should report
-    // officeEncodedCount: 1, not 2 -- the synced one came from the tablet.
-    const counts = officeEncodedCounts(
-      [
-        { id: "c1", shiftId: "shift-1" },
-        { id: "c2", shiftId: "shift-1" },
-      ],
-      new Set(["c1"]),
-    );
-    expect(counts.get("shift-1")).toBe(1);
+  // Final-review Task 2: getShifts() no longer fetches every collection of up to 200
+  // shifts (PostgREST's max_rows = 1000, supabase/config.toml, silently truncated that).
+  // It now queries collection_recoveries joined to collections!inner(shift_id) -- the rare
+  // side -- so the input here is one shift id per office-encoded collection already found,
+  // not every collection paired with a separately-fetched recovered-id set.
+  it("counts one shift id once per office-encoded collection on it", () => {
+    const counts = officeEncodedCounts(["shift-1", "shift-1"]);
+    expect(counts.get("shift-1")).toBe(2);
   });
 
   it("reports no entry for a shift with nothing recovered", () => {
-    const counts = officeEncodedCounts([{ id: "c1", shiftId: "shift-1" }], new Set());
+    const counts = officeEncodedCounts([]);
     expect(counts.get("shift-1")).toBeUndefined();
   });
 
   it("keeps two shifts' counts separate", () => {
-    const counts = officeEncodedCounts(
-      [
-        { id: "c1", shiftId: "shift-1" },
-        { id: "c2", shiftId: "shift-2" },
-      ],
-      new Set(["c1", "c2"]),
-    );
+    const counts = officeEncodedCounts(["shift-1", "shift-2"]);
     expect(counts.get("shift-1")).toBe(1);
     expect(counts.get("shift-2")).toBe(1);
+  });
+
+  it("ignores a null shift id rather than counting it as its own group", () => {
+    // collections.shift_id is nullable in the generated type (a collection posted before
+    // migration 20260919000043 genuinely has none); defensive, since the inner join this
+    // reads from should never actually produce one.
+    const counts = officeEncodedCounts(["shift-1", null, undefined]);
+    expect(counts.get("shift-1")).toBe(1);
+    expect(counts.size).toBe(1);
   });
 });

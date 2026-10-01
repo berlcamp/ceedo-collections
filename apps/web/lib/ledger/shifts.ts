@@ -1,6 +1,6 @@
 import { fromPesos } from "@ceedo/shared";
 import { classifyShift, officeEncodedCounts, type ShiftClass, type ShiftRow } from "./shift-class";
-import { ledgerClient, recoveredCollectionIds, selectByIds } from "./queries";
+import { ledgerClient, officeEncodedShiftIds } from "./queries";
 import { settlementsByShift } from "../shortages/by-shift";
 import { tally } from "../shortages/tally";
 
@@ -36,23 +36,11 @@ export async function getShifts(): Promise<ShiftRow[]> {
 
   const today = new Date().toISOString().slice(0, 10);
   const shiftIds = (data ?? []).map((row) => row.id);
-  const [settlements, collections] = await Promise.all([
+  const [settlements, recoveredShiftIds] = await Promise.all([
     settlementsByShift((data ?? []).filter((row) => Number(row.variance ?? 0) < 0).map((row) => row.id)),
-    selectByIds(shiftIds, (chunk) =>
-      supabase.from("collections").select("id, shift_id").in("shift_id", chunk),
-    ),
+    officeEncodedShiftIds(supabase, shiftIds),
   ]);
-  const recoveredIds = await recoveredCollectionIds(
-    supabase,
-    collections.map((c) => c.id),
-  );
-  const officeEncoded = officeEncodedCounts(
-    // shift_id is nullable in the generated type (a collection posted before migration
-    // 20260919000043 genuinely has none), but every row here came back from an `.in
-    // ("shift_id", chunk)` filter over this list's own shift ids -- never null in practice.
-    collections.map((c) => ({ id: c.id, shiftId: c.shift_id! })),
-    recoveredIds,
-  );
+  const officeEncoded = officeEncodedCounts(recoveredShiftIds);
 
   const rows: ShiftRow[] = (data ?? []).map((row) => ({
     id: row.id,

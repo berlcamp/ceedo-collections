@@ -70,19 +70,19 @@ export interface ShiftRow {
 }
 
 /**
- * Per-shift count of office-encoded receipts, from the shift's own collections and the
- * set of collection ids that have a `collection_recoveries` row. Pure and DB-free so it can
- * be unit tested without a Postgres mock -- `getShifts()` is the only caller that actually
- * reaches the database, for both inputs.
+ * Per-shift count of office-encoded receipts, from one shift id per `collection_recoveries`
+ * row already matched to one of this screen's shifts (`officeEncodedShiftIds()` in
+ * lib/ledger/queries.ts does that matching -- the join, not a fetch-then-filter in memory,
+ * is what final-review Task 2 fixed: up to 200 shifts' worth of plain `collections` rows
+ * can exceed PostgREST's max_rows = 1000, supabase/config.toml, and silently truncate,
+ * while the office-encoded ones are always far fewer). Pure and DB-free so it can be unit
+ * tested without a Postgres mock.
  */
-export function officeEncodedCounts(
-  collections: { id: string; shiftId: string }[],
-  recoveredIds: ReadonlySet<string>,
-): Map<string, number> {
+export function officeEncodedCounts(shiftIds: ReadonlyArray<string | null | undefined>): Map<string, number> {
   const counts = new Map<string, number>();
-  for (const c of collections) {
-    if (!recoveredIds.has(c.id)) continue;
-    counts.set(c.shiftId, (counts.get(c.shiftId) ?? 0) + 1);
+  for (const id of shiftIds) {
+    if (!id) continue;
+    counts.set(id, (counts.get(id) ?? 0) + 1);
   }
   return counts;
 }
