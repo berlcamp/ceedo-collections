@@ -25,6 +25,14 @@ function columns(leaseId: string, canCondone: boolean): DataColumn<SubsidiaryLed
         <span className={row.cancelled ? "text-ink-3 line-through" : undefined}>
           {row.detail}
           {row.orNo ? <span className="ml-1 font-mono text-xs text-ink-2">OR {row.orNo}</span> : null}
+          {/* Task 6: same `office` tone as the collection browser and the shifts list, next
+              to the OR the same way "Cancelled" sits below -- consistent across every
+              screen that shows a receipt's OR number. */}
+          {row.officeEncoded ? (
+            <span className="ml-2 inline-flex align-middle no-underline">
+              <Mark tone="office">Office-encoded</Mark>
+            </span>
+          ) : null}
           {row.cancelled && row.cancellationReason ? (
             // The strikethrough shows the receipt was voided; the reason is the point of
             // keeping it on the record at all rather than deleting the row.

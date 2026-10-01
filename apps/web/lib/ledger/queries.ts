@@ -65,6 +65,26 @@ export async function selectByIds<Row>(
 }
 
 /**
+ * The subset of `collectionIds` that has a `collection_recoveries` row -- entered at the
+ * office after the tablet that wrote it was wiped, not synced from a device (Task 4's
+ * `recover_collection`). Every screen or report that marks a receipt "office-encoded" reads
+ * this same set, so the one RLS note lives here instead of being repeated at each call site:
+ * a role with no SELECT on `collection_recoveries` (e.g. a collector) has its rows filtered
+ * to nothing by Postgres, not refused with an error, so `selectByIds` never throws for that
+ * role -- it just returns an empty set, and every caller renders no badge rather than
+ * breaking the page.
+ */
+export async function recoveredCollectionIds(
+  supabase: SupabaseClient<Database, "ceedo_collections">,
+  collectionIds: string[],
+): Promise<Set<string>> {
+  const rows = await selectByIds(collectionIds, (chunk) =>
+    supabase.from("collection_recoveries").select("collection_id").in("collection_id", chunk),
+  );
+  return new Set(rows.map((r) => r.collection_id));
+}
+
+/**
  * "Stall 12 · Fish": the number and its section. Numbers repeat across sections, so the
  * number alone is ambiguous. Reads a stalls embed selected with `sections(name)`.
  */
@@ -223,6 +243,10 @@ export interface SubsidiaryLedgerEntry {
   cancelled: boolean;
   /** Only ever set when `cancelled` is true; the reason a supervisor voided the receipt. */
   cancellationReason: string | null;
+  /** Has a `collection_recoveries` row -- entered at the office after the tablet that wrote
+   * it was wiped, not synced from a device. Always false for a `charge` row, where the
+   * concept does not apply. */
+  officeEncoded: boolean;
   runningBalance: Centavos;
   /**
    * Set only when `entryType === "charge"` (`sourceId` is then a `charges.id`). Backs the
@@ -283,6 +307,12 @@ export async function getSubsidiaryLedger(leaseId: string): Promise<SubsidiaryLe
   if (balancesError) throw balancesError;
   const balanceById = new Map((balances ?? []).map((b) => [b.id, b]));
 
+  // Same shape as the cancellation/balance lookups above: the view doesn't carry
+  // office-encoded status, so a third, targeted query over just this lease's collection
+  // rows fills it in. See `recoveredCollectionIds`'s own comment for the RLS note.
+  const collectionIds = rows.filter((r) => r.entry_type === "collection").map((r) => r.source_id!);
+  const officeEncodedIds = await recoveredCollectionIds(supabase, collectionIds);
+
   // lease_id/entry_date/entry_type/detail/source_id/cancelled are all direct columns or
   // non-NULL-producing expressions in the view's own CTE (see the migration) -- never null
   // in practice, unlike period_start/period_end/or_no, which the interface already types
@@ -303,6 +333,7 @@ export async function getSubsidiaryLedger(leaseId: string): Promise<SubsidiaryLe
       sourceId,
       cancelled: r.cancelled!,
       cancellationReason: r.cancelled ? (reasonById.get(sourceId) ?? null) : null,
+      officeEncoded: r.entry_type === "collection" && officeEncodedIds.has(sourceId),
       runningBalance: centavos(r.running_balance),
       outstanding: balance ? centavos(balance.outstanding) : null,
       isSettled: balance ? balance.is_settled : null,
@@ -372,7 +403,7 @@ export async function getCollections(filters: {
   const leaseIds = [...new Set(rows.map((r) => r.lease_id).filter((id): id is string => id !== null))];
   const collectionIds = rows.map((r) => r.id);
 
-  const [collectors, leases, cancellations, recoveries] = await Promise.all([
+  const [collectors, leases, cancellations, recoveredIds] = await Promise.all([
     selectByIds(collectorIds, (chunk) =>
       supabase.from("app_users").select("id, full_name").in("id", chunk),
     ),
@@ -382,19 +413,12 @@ export async function getCollections(filters: {
     selectByIds(collectionIds, (chunk) =>
       supabase.from("standing_cancellations").select("collection_id, reason").in("collection_id", chunk),
     ),
-    // Task 6: a role with no SELECT on collection_recoveries (a collector, under RLS) gets
-    // an empty array here, not an error -- `selectByIds` surfaces a real query error, but
-    // RLS filters rows rather than refusing the query, so this browser never breaks for
-    // that role; it just shows no badges, same as `getRecoveryShift`'s own comment.
-    selectByIds(collectionIds, (chunk) =>
-      supabase.from("collection_recoveries").select("collection_id").in("collection_id", chunk),
-    ),
+    recoveredCollectionIds(supabase, collectionIds),
   ]);
 
   const collectorNameById = new Map(collectors.map((c) => [c.id, c.full_name]));
   const stallNoByLeaseId = new Map(leases.map((l) => [l.id, l.stalls?.stall_no ?? "—"]));
   const reasonById = new Map(cancellations.map((c) => [c.collection_id, c.reason]));
-  const recoveredIds = new Set(recoveries.map((r) => r.collection_id));
 
   return rows.map((r) => ({
     id: r.id,

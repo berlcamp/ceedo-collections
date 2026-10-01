@@ -1,6 +1,6 @@
 import { fromPesos } from "@ceedo/shared";
 import { classifyShift, officeEncodedCounts, type ShiftClass, type ShiftRow } from "./shift-class";
-import { ledgerClient, selectByIds } from "./queries";
+import { ledgerClient, recoveredCollectionIds, selectByIds } from "./queries";
 import { settlementsByShift } from "../shortages/by-shift";
 import { tally } from "../shortages/tally";
 
@@ -42,16 +42,9 @@ export async function getShifts(): Promise<ShiftRow[]> {
       supabase.from("collections").select("id, shift_id").in("shift_id", chunk),
     ),
   ]);
-  // Same RLS shape as `getCollections`' own recoveries lookup: a role with no SELECT on
-  // collection_recoveries gets an empty array here, not an error, so this screen never
-  // breaks for it -- it just shows no "office-encoded" badges.
-  const recoveredIds = new Set(
-    (
-      await selectByIds(
-        collections.map((c) => c.id),
-        (chunk) => supabase.from("collection_recoveries").select("collection_id").in("collection_id", chunk),
-      )
-    ).map((r) => r.collection_id),
+  const recoveredIds = await recoveredCollectionIds(
+    supabase,
+    collections.map((c) => c.id),
   );
   const officeEncoded = officeEncodedCounts(
     // shift_id is nullable in the generated type (a collection posted before migration

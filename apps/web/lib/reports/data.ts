@@ -1,4 +1,5 @@
 import { fromPesos, type Centavos } from "@ceedo/shared";
+import { recoveredCollectionIds } from "@/lib/ledger/queries";
 import { getServerClient } from "@/lib/supabase/server";
 import type { BookletInput, Consumption } from "./accountability";
 import type { OpenException } from "./open-exceptions";
@@ -83,17 +84,7 @@ export async function receipts(from: string, to: string, collectorId?: string | 
       )
     ).map((c) => c.collection_id),
   );
-  // Same RLS shape as the ledger screens' own recoveries lookup (lib/ledger/queries.ts,
-  // lib/ledger/shifts.ts): a role with no SELECT on collection_recoveries gets an empty
-  // array here, not an error, so a report never fails to build for it -- it just shows no
-  // office-encoded flag.
-  const officeEncoded = new Set(
-    (
-      await byIds(ids, (chunk) =>
-        supabase.from("collection_recoveries").select("collection_id").in("collection_id", chunk),
-      )
-    ).map((r) => r.collection_id),
-  );
+  const officeEncoded = await recoveredCollectionIds(supabase, ids);
   const leases = await byIds(
     rows.flatMap((r) => (r.lease_id ? [r.lease_id] : [])),
     (chunk) => supabase.from("leases").select("id, stalls(stall_no), tenants(full_name)").in("id", chunk),

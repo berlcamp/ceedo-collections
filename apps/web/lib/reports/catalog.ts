@@ -161,7 +161,12 @@ export const REPORTS: ReportEntry[] = [
             ],
             rows: entries.map((e) => ({
               date: e.entryDate,
-              detail: e.cancelled ? `${e.detail} (cancelled)` : e.detail,
+              // Same text-badge convention the RCD builder uses for the same reason: the
+              // printed page and the xlsx export both read `detail` as plain text, so the
+              // flags ride in the string rather than as a styled element neither has.
+              detail: [e.detail, e.cancelled ? "(cancelled)" : "", e.officeEncoded ? "(office-encoded)" : ""]
+                .filter(Boolean)
+                .join(" "),
               or: e.orNo === null ? null : String(e.orNo),
               debit: e.debit,
               credit: e.credit,
