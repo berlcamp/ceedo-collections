@@ -26,7 +26,14 @@ export interface FieldConfig {
   help?: string;
 }
 
-type TableName = keyof Database["ceedo_collections"]["Tables"];
+type Tables = Database["ceedo_collections"]["Tables"];
+
+// Only tables keyed by `id`: the generic save and delete actions filter on `.eq("id", ...)`.
+// A table keyed otherwise (collection_recoveries, keyed by collection_id) in this union
+// narrows that column to `never` and fails the build.
+type TableName = {
+  [K in keyof Tables]: Tables[K]["Row"] extends { id: unknown } ? K : never;
+}[keyof Tables];
 
 export interface ColumnConfig {
   key: string;
