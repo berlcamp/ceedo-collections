@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { z } from "zod";
 import { ScreenHeader } from "@/components/shell/screen-header";
 import { CloseForm } from "@/components/recovery/close-form";
 import { CloseSummary } from "@/components/recovery/close-summary";
@@ -41,6 +42,12 @@ export default async function RecoveryPage({
       </div>
     );
   }
+
+  // Final-review Task 5: `shiftId` reaches getRecoveryShift()'s `.eq("id", shiftId)`
+  // unvalidated. `id` is a uuid column, so a malformed `?shift=` (anything not shaped like
+  // one) makes Postgres itself raise "invalid input syntax for type uuid", which this page
+  // would otherwise let through as an unhandled 500 instead of the 404 a bad link deserves.
+  if (!z.guid().safeParse(shiftId).success) notFound();
 
   const shift = await getRecoveryShift(shiftId);
   if (!shift) notFound();
