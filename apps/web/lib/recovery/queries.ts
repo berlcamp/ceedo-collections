@@ -56,6 +56,10 @@ export interface RecoveryShift {
   businessDate: string;
   status: string;
   receipts: RecoveryReceipt[];
+  /** Centavos, like every other money field here. Null until `office_close_shift` runs. */
+  declaredTotal: number | null;
+  /** Centavos, signed: negative is short, positive is over. Null until closed. */
+  variance: number | null;
 }
 
 /** The shift a recovery is being entered into, and every receipt already on it (from the
@@ -69,7 +73,7 @@ export async function getRecoveryShift(shiftId: string): Promise<RecoveryShift |
     // shape from the literal type of this argument, and a `string`-widened expression (as
     // `+`-concatenation produces) falls back to an untyped GenericStringError row.
     .select(
-      "id, collector_id, device_id, business_date, status, collector:app_users!shifts_collector_id_fkey(full_name), device:devices!shifts_device_id_fkey(label, last_seen_at)",
+      "id, collector_id, device_id, business_date, status, declared_total, variance, collector:app_users!shifts_collector_id_fkey(full_name), device:devices!shifts_device_id_fkey(label, last_seen_at)",
     )
     .eq("id", shiftId)
     .maybeSingle();
@@ -103,6 +107,8 @@ export async function getRecoveryShift(shiftId: string): Promise<RecoveryShift |
     lastSeenAt: shift.device?.last_seen_at ?? null,
     businessDate: shift.business_date,
     status: shift.status,
+    declaredTotal: shift.declared_total === null ? null : centavos(shift.declared_total),
+    variance: shift.variance === null ? null : centavos(shift.variance),
     receipts: (rows ?? []).map((r) => ({
       id: r.id,
       orNo: r.or_no,

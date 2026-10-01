@@ -76,7 +76,7 @@ export function ShiftPicker({
         <FieldShell
           id="rs-reason"
           label="Reason"
-          help="Why these receipts are being recovered -- kept with every receipt this session posts."
+          help="Why this shift is being opened for recovery. The receipt form on the next screen asks again, and keeps its own answer for every receipt it posts."
           error={errors.reason}
         >
           <TextArea id="rs-reason" name="reason" rows={2} required />

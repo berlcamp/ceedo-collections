@@ -4,6 +4,7 @@ import { Mark } from "@/components/ui/mark";
 import { Notice } from "@/components/ui/panel";
 import { formatDate } from "@/lib/format/date";
 import type { RecoveryShift } from "@/lib/recovery/queries";
+import { heardFromAfterManilaMidnight } from "@/lib/recovery/tablet-activity";
 
 /**
  * The shift's own receipts, first -- from the tablet or already office-encoded in an
@@ -20,7 +21,7 @@ export function RecoveredReceipts({ shift }: { shift: RecoveryShift }) {
 
   return (
     <div className="mb-6">
-      {shift.lastSeenAt && shift.lastSeenAt > `${shift.businessDate}T00:00:00` ? (
+      {shift.lastSeenAt && heardFromAfterManilaMidnight(shift.lastSeenAt, shift.businessDate) ? (
         <Notice tone="warning" className="mb-3">
           This tablet was last heard from {formatDate(shift.lastSeenAt)}. Recover only if its
           data was lost; a tablet still in use would send these receipts again.

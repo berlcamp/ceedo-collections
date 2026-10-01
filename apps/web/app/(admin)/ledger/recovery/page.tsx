@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { ScreenHeader } from "@/components/shell/screen-header";
 import { CloseForm } from "@/components/recovery/close-form";
+import { CloseSummary } from "@/components/recovery/close-summary";
 import { ReceiptForm } from "@/components/recovery/receipt-form";
 import { RecoveredReceipts } from "@/components/recovery/recovered-receipts";
 import { ShiftPicker } from "@/components/recovery/shift-picker";
@@ -61,6 +62,8 @@ export default async function RecoveryPage({
           <ReceiptForm shift={shift} booklets={booklets} leases={leases} fees={fees} />
           <CloseForm shift={shift} />
         </>
+      ) : shift.variance !== null && shift.declaredTotal !== null ? (
+        <CloseSummary declaredTotal={shift.declaredTotal} variance={shift.variance} />
       ) : (
         <p className="mt-6 text-sm text-ink-2">This shift is closed. Its totals are final.</p>
       )}

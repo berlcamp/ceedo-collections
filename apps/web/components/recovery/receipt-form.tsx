@@ -177,12 +177,14 @@ export function ReceiptForm({
           <TextInput id="rf-time" name="time" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
         </FieldShell>
 
-        <FieldShell id="rf-kind" label="Kind">
+        <fieldset className="mb-3.5">
+          <legend className="caption mb-1 text-ink-2">Kind</legend>
           <div className="flex gap-1.5" role="group" aria-label="Receipt kind">
             <Button
               variant={kind === "lease" ? "primary" : "secondary"}
               size="sm"
               className="flex-1"
+              aria-pressed={kind === "lease"}
               onClick={() => setKind("lease")}
             >
               Lease
@@ -191,12 +193,13 @@ export function ReceiptForm({
               variant={kind === "cash" ? "primary" : "secondary"}
               size="sm"
               className="flex-1"
+              aria-pressed={kind === "cash"}
               onClick={() => setKind("cash")}
             >
               Cash fee
             </Button>
           </div>
-        </FieldShell>
+        </fieldset>
 
         {kind === "lease" ? (
           <>
