@@ -60,8 +60,19 @@ export interface ReceiptRow {
 }
 
 /** Receipts between two business dates, optionally one collector's, cancelled and
- * office-encoded ones flagged. */
-export async function receipts(from: string, to: string, collectorId?: string | null): Promise<ReceiptRow[]> {
+ * office-encoded ones flagged.
+ *
+ * `officeEncoded: false` skips the `collection_recoveries` lookup entirely (`officeEncoded`
+ * comes back `false` on every row, not a correct-but-unread value). Final-review Task 7:
+ * the RCD's "earlier" range (builders/rcd.ts, everything before the report's own day) is
+ * only ever summed through `live()` for the undeposited-before figure -- its rows'
+ * `officeEncoded` is never read -- so that lookup was pure cost with no caller. */
+export async function receipts(
+  from: string,
+  to: string,
+  collectorId?: string | null,
+  options: { officeEncoded?: boolean } = {},
+): Promise<ReceiptRow[]> {
   const supabase = await getServerClient();
   const rows = await allPages((a, b) => {
     let q = supabase
@@ -84,7 +95,8 @@ export async function receipts(from: string, to: string, collectorId?: string | 
       )
     ).map((c) => c.collection_id),
   );
-  const officeEncoded = await recoveredCollectionIds(supabase, ids);
+  const officeEncoded =
+    options.officeEncoded === false ? new Set<string>() : await recoveredCollectionIds(supabase, ids);
   const leases = await byIds(
     rows.flatMap((r) => (r.lease_id ? [r.lease_id] : [])),
     (chunk) => supabase.from("leases").select("id, stalls(stall_no), tenants(full_name)").in("id", chunk),

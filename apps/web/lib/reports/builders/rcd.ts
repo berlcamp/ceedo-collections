@@ -32,7 +32,9 @@ export async function buildRcd(p: ReportParams): Promise<Report> {
 
   const [today, earlier, depositedToday, depositedEarlier, held, fees] = await Promise.all([
     receipts(p.date, p.date, p.collectorId),
-    receipts(EPOCH, dayBefore(p.date), p.collectorId),
+    // `earlier` only ever feeds live() below, for the undeposited-before figure -- its rows'
+    // officeEncoded is never read, so the collection_recoveries lookup behind it is skipped.
+    receipts(EPOCH, dayBefore(p.date), p.collectorId, { officeEncoded: false }),
     deposits(p.date, p.date, p.collectorId),
     deposits(EPOCH, dayBefore(p.date), p.collectorId),
     booklets(p.collectorId),
