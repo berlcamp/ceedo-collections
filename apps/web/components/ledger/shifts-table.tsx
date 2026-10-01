@@ -50,7 +50,19 @@ function columns(
       sortValue: (row) => KLASS_LABEL[row.klass],
       searchValue: (row) => KLASS_LABEL[row.klass],
       facet: (row) => KLASS_LABEL[row.klass],
-      render: (row) => badge(row.klass),
+      render: (row) => (
+        <span className="flex flex-wrap items-center gap-1.5">
+          {badge(row.klass)}
+          {/* Task 6: the same `office` tone the collection browser and the Recovery
+              screen's own receipt list use -- a shift with any office-encoded receipt
+              carries the badge, regardless of how it otherwise classifies. */}
+          {row.officeEncodedCount > 0 ? (
+            <Mark tone="office">
+              {row.officeEncodedCount} office-encoded
+            </Mark>
+          ) : null}
+        </span>
+      ),
     },
     { key: "collector", label: "Collector", sortValue: (row) => row.collectorName, facet: (row) => row.collectorName, render: (row) => row.collectorName },
     { key: "device", label: "Device", sortValue: (row) => row.deviceLabel, facet: (row) => row.deviceLabel, render: (row) => row.deviceLabel },

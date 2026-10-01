@@ -169,6 +169,21 @@ export default async function ResourcePage({
         })()
       : null;
 
+  // Task 6: re-registering a device whose last shift never closed would have its new
+  // `shift_open` refused as today (spec §5, "Re-registered tablet opens a new shift before
+  // recovery") -- the credential panel warns the admin before issuing rather than after the
+  // tablet discovers it on its own. Only fetched for the one screen that needs it.
+  const openShiftDateByDevice =
+    config.key === "devices" && isAdmin(staff.role) && !error
+      ? await (async () => {
+          const { data } = await supabase
+            .from("shifts")
+            .select("device_id, business_date")
+            .eq("status", "open");
+          return new Map((data ?? []).map((s) => [s.device_id, s.business_date]));
+        })()
+      : null;
+
   const spec: ResourceFormSpec = {
     resourceKey: config.key,
     singular: config.singular,
@@ -221,7 +236,11 @@ export default async function ResourcePage({
             devices={(rows ?? [])
               .map((row) => row as unknown as { id: string; label: string; active: boolean })
               .filter((record) => record.active)
-              .map((record) => ({ id: record.id, label: record.label }))}
+              .map((record) => ({
+                id: record.id,
+                label: record.label,
+                openShiftDate: openShiftDateByDevice?.get(record.id) ?? null,
+              }))}
           />
         ) : null}
         {config.key === "users" && isAdmin(staff.role) && !error ? (

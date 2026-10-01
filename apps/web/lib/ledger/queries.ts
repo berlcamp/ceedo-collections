@@ -340,6 +340,9 @@ export interface CollectionRow {
   grossAmount: Centavos;
   cancelled: boolean;
   cancellationReason: string | null;
+  /** Has a `collection_recoveries` row -- entered at the office after the tablet that
+   * wrote it was wiped, not synced from a device (Task 4's `recover_collection`). */
+  officeEncoded: boolean;
 }
 
 /**
@@ -369,7 +372,7 @@ export async function getCollections(filters: {
   const leaseIds = [...new Set(rows.map((r) => r.lease_id).filter((id): id is string => id !== null))];
   const collectionIds = rows.map((r) => r.id);
 
-  const [collectors, leases, cancellations] = await Promise.all([
+  const [collectors, leases, cancellations, recoveries] = await Promise.all([
     selectByIds(collectorIds, (chunk) =>
       supabase.from("app_users").select("id, full_name").in("id", chunk),
     ),
@@ -379,11 +382,19 @@ export async function getCollections(filters: {
     selectByIds(collectionIds, (chunk) =>
       supabase.from("standing_cancellations").select("collection_id, reason").in("collection_id", chunk),
     ),
+    // Task 6: a role with no SELECT on collection_recoveries (a collector, under RLS) gets
+    // an empty array here, not an error -- `selectByIds` surfaces a real query error, but
+    // RLS filters rows rather than refusing the query, so this browser never breaks for
+    // that role; it just shows no badges, same as `getRecoveryShift`'s own comment.
+    selectByIds(collectionIds, (chunk) =>
+      supabase.from("collection_recoveries").select("collection_id").in("collection_id", chunk),
+    ),
   ]);
 
   const collectorNameById = new Map(collectors.map((c) => [c.id, c.full_name]));
   const stallNoByLeaseId = new Map(leases.map((l) => [l.id, l.stalls?.stall_no ?? "—"]));
   const reasonById = new Map(cancellations.map((c) => [c.collection_id, c.reason]));
+  const recoveredIds = new Set(recoveries.map((r) => r.collection_id));
 
   return rows.map((r) => ({
     id: r.id,
@@ -394,6 +405,7 @@ export async function getCollections(filters: {
     grossAmount: centavos(r.gross_amount),
     cancelled: reasonById.has(r.id),
     cancellationReason: reasonById.get(r.id) ?? null,
+    officeEncoded: recoveredIds.has(r.id),
   }));
 }
 

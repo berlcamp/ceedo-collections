@@ -1,12 +1,12 @@
 import { fromPesos } from "@ceedo/shared";
-import { classifyShift, type ShiftClass, type ShiftRow } from "./shift-class";
-import { ledgerClient } from "./queries";
+import { classifyShift, officeEncodedCounts, type ShiftClass, type ShiftRow } from "./shift-class";
+import { ledgerClient, selectByIds } from "./queries";
 import { settlementsByShift } from "../shortages/by-shift";
 import { tally } from "../shortages/tally";
 
 // Re-exported so every existing importer (and lib/ledger/shifts.test.ts) keeps working
 // against this module unchanged; the definitions now live in the client-safe file.
-export { classifyShift, formatVariance } from "./shift-class";
+export { classifyShift, formatVariance, officeEncodedCounts } from "./shift-class";
 export type { ShiftClass, ShiftRow } from "./shift-class";
 
 /**
@@ -35,8 +35,30 @@ export async function getShifts(): Promise<ShiftRow[]> {
   if (error) throw new Error(error.message);
 
   const today = new Date().toISOString().slice(0, 10);
-  const settlements = await settlementsByShift(
-    (data ?? []).filter((row) => Number(row.variance ?? 0) < 0).map((row) => row.id),
+  const shiftIds = (data ?? []).map((row) => row.id);
+  const [settlements, collections] = await Promise.all([
+    settlementsByShift((data ?? []).filter((row) => Number(row.variance ?? 0) < 0).map((row) => row.id)),
+    selectByIds(shiftIds, (chunk) =>
+      supabase.from("collections").select("id, shift_id").in("shift_id", chunk),
+    ),
+  ]);
+  // Same RLS shape as `getCollections`' own recoveries lookup: a role with no SELECT on
+  // collection_recoveries gets an empty array here, not an error, so this screen never
+  // breaks for it -- it just shows no "office-encoded" badges.
+  const recoveredIds = new Set(
+    (
+      await selectByIds(
+        collections.map((c) => c.id),
+        (chunk) => supabase.from("collection_recoveries").select("collection_id").in("collection_id", chunk),
+      )
+    ).map((r) => r.collection_id),
+  );
+  const officeEncoded = officeEncodedCounts(
+    // shift_id is nullable in the generated type (a collection posted before migration
+    // 20260919000043 genuinely has none), but every row here came back from an `.in
+    // ("shift_id", chunk)` filter over this list's own shift ids -- never null in practice.
+    collections.map((c) => ({ id: c.id, shiftId: c.shift_id! })),
+    recoveredIds,
   );
 
   const rows: ShiftRow[] = (data ?? []).map((row) => ({
@@ -54,6 +76,7 @@ export async function getShifts(): Promise<ShiftRow[]> {
       row.variance === null || Number(row.variance) >= 0
         ? null
         : tally(fromPesos(Number(row.variance)), settlements.get(row.id) ?? []).outstanding,
+    officeEncodedCount: officeEncoded.get(row.id) ?? 0,
   }));
 
   return rows.sort((a, b) => {

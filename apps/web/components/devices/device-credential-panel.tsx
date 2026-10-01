@@ -12,11 +12,17 @@ import {
   revokeCredential,
   type IssueCredentialResult,
 } from "@/lib/devices/credential-actions";
+import { formatDate } from "@/lib/format/date";
 import { encodeEnrollment } from "@ceedo/shared";
 
 export interface DeviceOption {
   id: string;
   label: string;
+  /** The business date of this device's open shift, or null if it has none. Set from
+   * `shifts` (status = 'open') by the page -- a re-registered tablet whose last shift never
+   * closed cannot open a new one (spec §4.2, §5's "Re-registered tablet opens a new shift
+   * before recovery"), so this warns before issuing rather than after the tablet is refused. */
+  openShiftDate: string | null;
 }
 
 /**
@@ -95,6 +101,8 @@ export function DeviceCredentialPanel({ devices }: { devices: DeviceOption[] }) 
 
   if (devices.length === 0) return null;
 
+  const selected = devices.find((device) => device.id === deviceId) ?? null;
+
   return (
     <Panel
       title="Device credential"
@@ -113,6 +121,17 @@ export function DeviceCredentialPanel({ devices }: { devices: DeviceOption[] }) 
           options={devices.map((device) => ({ value: device.id, label: device.label }))}
         />
       </FieldShell>
+
+      {selected?.openShiftDate ? (
+        // Warning, not a block (spec §4.2): re-issuing is still allowed -- the tablet's new
+        // `shift_open` would simply be refused as today until the open one is recovered and
+        // closed through Collections → Recovery, same as §5's edge case.
+        <Notice tone="warning" className="mb-3">
+          This tablet has an open shift from {formatDate(selected.openShiftDate)}. If its data
+          was lost, recover and close that shift first (Collections → Recovery); otherwise the
+          new registration cannot open a shift.
+        </Notice>
+      ) : null}
 
       {error ? (
         <Notice tone="error" className="mb-3">

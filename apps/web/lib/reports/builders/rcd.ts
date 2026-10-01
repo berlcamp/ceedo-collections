@@ -56,7 +56,13 @@ export async function buildRcd(p: ReportParams): Promise<Report> {
       sort: r.orNo,
       or: `${prefix.get(r.bookletId) ?? ""} ${r.orNo}`.trim(),
       payor: r.payer || "—",
-      nature: r.cancelled ? `${fees.get(r.feeTypeId) ?? ""} (CANCELLED)` : (fees.get(r.feeTypeId) ?? ""),
+      // Same text-badge convention as cancelled: the Report of Collections and Deposits is
+      // the one report builder that lists individual receipts (spec §4.2), and both the
+      // printed page and the xlsx export read a Cell as plain text, so the flag rides in
+      // this column rather than as a separate styled element neither renderer has.
+      nature: [fees.get(r.feeTypeId) ?? "", r.cancelled ? "(CANCELLED)" : "", r.officeEncoded ? "(OFFICE-ENCODED)" : ""]
+        .filter(Boolean)
+        .join(" "),
       amount: fromCentavos(r.cancelled ? 0 : r.amount),
     })),
     ...spoiled

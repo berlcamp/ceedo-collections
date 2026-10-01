@@ -63,4 +63,26 @@ export interface ShiftRow {
    * 20260929000058). Null when the shift was not short.
    */
   stillOwed: Centavos | null;
+  /** Receipts on this shift that have a `collection_recoveries` row -- entered at the
+   * office, not synced from the tablet (Task 4's `recover_collection`). Zero for a shift
+   * with none, which is the common case and renders no badge. */
+  officeEncodedCount: number;
+}
+
+/**
+ * Per-shift count of office-encoded receipts, from the shift's own collections and the
+ * set of collection ids that have a `collection_recoveries` row. Pure and DB-free so it can
+ * be unit tested without a Postgres mock -- `getShifts()` is the only caller that actually
+ * reaches the database, for both inputs.
+ */
+export function officeEncodedCounts(
+  collections: { id: string; shiftId: string }[],
+  recoveredIds: ReadonlySet<string>,
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const c of collections) {
+    if (!recoveredIds.has(c.id)) continue;
+    counts.set(c.shiftId, (counts.get(c.shiftId) ?? 0) + 1);
+  }
+  return counts;
 }

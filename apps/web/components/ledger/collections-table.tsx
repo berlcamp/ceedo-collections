@@ -17,8 +17,14 @@ function columns(canCancel: boolean): DataColumn<CollectionRow>[] {
       nowrap: true,
       sortValue: (row) => row.orNo,
       render: (row) => (
-        <span className={`font-mono text-xs ${row.cancelled ? "text-ink-3 line-through" : "text-ink"}`}>
-          {row.orNo}
+        <span className="flex items-center gap-1.5">
+          <span className={`font-mono text-xs ${row.cancelled ? "text-ink-3 line-through" : "text-ink"}`}>
+            {row.orNo}
+          </span>
+          {/* Task 6: entered at the office after the tablet that wrote it was wiped -- the
+              same `office` tone the Recovery screen's own receipt list already uses
+              (components/recovery/recovered-receipts.tsx). */}
+          {row.officeEncoded ? <Mark tone="office">Office-encoded</Mark> : null}
         </span>
       ),
     },

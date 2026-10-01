@@ -1,6 +1,6 @@
 import { fromCentavos } from "@ceedo/shared";
 import { describe, expect, it } from "vitest";
-import { classifyShift, formatVariance } from "./shifts";
+import { classifyShift, formatVariance, officeEncodedCounts } from "./shifts";
 
 describe("classifyShift", () => {
   it("flags a shift still open after its business date", () => {
@@ -55,5 +55,37 @@ describe("formatVariance", () => {
     // Phase 2's handover names zero-value rendering as an untested seam. A shift that has
     // not closed has NO variance, which is a different fact from a variance of zero.
     expect(formatVariance(null)).not.toMatch(/balanced/i);
+  });
+});
+
+describe("officeEncodedCounts", () => {
+  it("counts only the recovered collection on a shift of two", () => {
+    // Task 6: a shift with one office-encoded receipt among its two should report
+    // officeEncodedCount: 1, not 2 -- the synced one came from the tablet.
+    const counts = officeEncodedCounts(
+      [
+        { id: "c1", shiftId: "shift-1" },
+        { id: "c2", shiftId: "shift-1" },
+      ],
+      new Set(["c1"]),
+    );
+    expect(counts.get("shift-1")).toBe(1);
+  });
+
+  it("reports no entry for a shift with nothing recovered", () => {
+    const counts = officeEncodedCounts([{ id: "c1", shiftId: "shift-1" }], new Set());
+    expect(counts.get("shift-1")).toBeUndefined();
+  });
+
+  it("keeps two shifts' counts separate", () => {
+    const counts = officeEncodedCounts(
+      [
+        { id: "c1", shiftId: "shift-1" },
+        { id: "c2", shiftId: "shift-2" },
+      ],
+      new Set(["c1", "c2"]),
+    );
+    expect(counts.get("shift-1")).toBe(1);
+    expect(counts.get("shift-2")).toBe(1);
   });
 });
