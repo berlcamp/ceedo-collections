@@ -97,11 +97,18 @@ describe("recovery_shift", () => {
     expect(data).not.toBe(closed);
   });
 
-  it("refuses when the tablet holds an open shift for another day", async () => {
+  it("refuses when the tablet holds an open shift for another day, and names the collector", async () => {
+    // Final-review Task 4 (spec §3.2 "names it"): an admin picking from the Step 1 pickers
+    // has no other way to tell whose shift is blocking theirs.
     const fx = await createCollectionFixture(db);
     await openShiftFor(fx);
+    const { rows } = await db.query(
+      `select full_name from ceedo_collections.app_users where id = $1`,
+      [fx.collectorId],
+    );
     const { error } = await recoveryShift(admin, fx, "2026-10-06");
     expect(error?.message).toMatch(/already has an open shift/);
+    expect(error?.message).toContain(rows[0].full_name);
   });
 
   it("refuses without a reason", async () => {

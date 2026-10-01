@@ -62,9 +62,10 @@ security definer
 set search_path = ceedo_collections, pg_temp
 as $$
 declare
-  v_open    ceedo_collections.shifts;
-  v_id      uuid;
-  v_pg_role text := coalesce(nullif(current_setting('role', true), 'none'), session_user);
+  v_open         ceedo_collections.shifts;
+  v_id           uuid;
+  v_pg_role      text := coalesce(nullif(current_setting('role', true), 'none'), session_user);
+  v_other_name   text;
 begin
   perform ceedo_collections.assert_recovery_admin(p_reason);
 
@@ -86,8 +87,12 @@ begin
     if v_open.collector_id = p_collector_id and v_open.business_date = p_business_date then
       return v_open.id;
     end if;
-    raise exception 'That tablet already has an open shift from % for another collector or day. Recover and close that one first.',
-      to_char(v_open.business_date, 'Mon DD, YYYY');
+    -- Final-review Task 4 (spec §3.2 "names it"): an admin picking collector/device/date
+    -- from the Step 1 pickers has no other way to tell whose shift is blocking theirs.
+    select full_name into v_other_name
+      from ceedo_collections.app_users where id = v_open.collector_id;
+    raise exception 'That tablet already has an open shift from % for %. Recover and close that one first.',
+      to_char(v_open.business_date, 'Mon DD, YYYY'), coalesce(v_other_name, 'another collector');
   end if;
 
   v_id := gen_random_uuid();
