@@ -188,15 +188,19 @@ export async function getCollectorLeases(collectorId: string): Promise<RecoveryL
 
   const { data: leases, error: leasesError } = await supabase
     .from("leases")
-    .select("id, stalls!inner(stall_no, sections!inner(facility_id)), tenants(full_name)")
+    .select("id, stalls!inner(stall_no, sections!inner(facility_id, name)), tenants(full_name)")
     .eq("status", "active")
     .in("stalls.sections.facility_id", facilityIds);
   if (leasesError) throw leasesError;
 
+  // Stall, section, tenant: a stall number alone repeats across sections, and the stub names
+  // the tenant, so the admin needs all three to be sure which lease the receipt was for.
   return (leases ?? [])
     .map((l) => ({
       id: l.id,
-      label: `${l.stalls?.stall_no ?? "—"} · ${l.tenants?.full_name ?? "—"}`,
+      label: [l.stalls?.stall_no, l.stalls?.sections?.name, l.tenants?.full_name]
+        .map((part) => part ?? "—")
+        .join(" · "),
     }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
