@@ -5,8 +5,8 @@ import { fromPesos, isAdmin, type Centavos, type Database } from "@ceedo/shared"
 import { toSaveResult, type SaveResult } from "@/lib/admin/save-result";
 import { requireStaff } from "@/lib/supabase/session";
 import { ledgerClient } from "@/lib/ledger/queries";
-import { getLeaseFeeType } from "./queries";
-import { tickedRanks } from "./months";
+import { getLeaseFeeType, getUnpaidGroups } from "./queries";
+import { tickedRanks, type UnpaidGroup } from "./months";
 import { closeSchema, openSchema, receiptSchema } from "./schemas";
 
 /**
@@ -202,4 +202,21 @@ export async function closeRecoveredShift(formData: FormData): Promise<SaveResul
   // The RPC's only return shape (see its own final `return jsonb_build_object(...)`).
   const result = data as { variance: number };
   return { ok: true, id: parsed.data.shiftId, variance: centavos(result.variance) };
+}
+
+/**
+ * Backs the receipt form's lease picker: once an admin chooses a lease, its unpaid months
+ * are fetched through this action rather than a route handler, because every other read on
+ * this screen already goes through a Server Component and this is the one piece the receipt
+ * form (a Client Component, for the ticking state) needs after the page has rendered.
+ *
+ * Admin only, same as the three actions above -- thrown, not a `SaveResult`, because this
+ * has no form to show a field error beside; the caller is a lease `<Select>`'s change
+ * handler, and the one failure mode (a non-admin reaching this screen at all) already
+ * cannot happen past the page's own redirect.
+ */
+export async function unpaidGroupsFor(leaseId: string): Promise<UnpaidGroup[]> {
+  const staff = await requireStaff();
+  if (!isAdmin(staff.role)) throw new Error("Only an administrator may recover lost receipts.");
+  return getUnpaidGroups(leaseId);
 }

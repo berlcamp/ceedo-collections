@@ -13,9 +13,11 @@ export type { NavModule, NavSection, NavTab } from "./match";
  *
  * A tab names either a registry resource (its title and read roles come from the registry,
  * so the rail can never offer a role a screen RLS will render empty) or a fixed screen that
- * every web role may read.
+ * every web role may read, unless it names `roles`, which narrows it the same way a
+ * resource's own `readRoles` does (e.g. Recovery, admin only -- the page itself redirects
+ * anyone else regardless, per spec 2026-09-30-office-recovery §4.1).
  */
-type TabSpec = { resource: string } | { href: string; label: string };
+type TabSpec = { resource: string } | { href: string; label: string; roles?: Role[] };
 
 interface ModuleSpec {
   key: string;
@@ -39,6 +41,7 @@ const SECTIONS: { heading: string; modules: ModuleSpec[] }[] = [
           { href: "/ledger/remittances", label: "Remittances" },
           { href: "/ledger/shortages", label: "Shortages" },
           { href: "/ledger/exceptions", label: "Exceptions" },
+          { href: "/ledger/recovery", label: "Recovery", roles: ["admin"] },
         ],
       },
       {
@@ -132,7 +135,10 @@ export function navFor(role: Role, options: { superAdmin?: boolean } = {}): NavS
     heading: section.heading,
     modules: section.modules.flatMap((mod) => {
       const tabs = mod.tabs.flatMap((tab): NavTab[] => {
-        if (!("resource" in tab)) return [tab];
+        if (!("resource" in tab)) {
+          if (tab.roles && !tab.roles.includes(role)) return [];
+          return [{ href: tab.href, label: tab.label }];
+        }
         const config = RESOURCES[tab.resource];
         return config && config.readRoles.includes(role)
           ? [{ href: `/${config.key}`, label: config.title }]
