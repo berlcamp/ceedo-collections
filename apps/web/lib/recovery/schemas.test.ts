@@ -136,3 +136,79 @@ describe("receiptSchema.quantity", () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe("receiptSchema.leaseId", () => {
+  it("accepts a valid guid", () => {
+    const result = receiptSchema.safeParse({
+      ...validLeaseReceipt,
+      leaseId: "44444444-4444-4444-8444-444444444444",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.leaseId).toBe("44444444-4444-4444-8444-444444444444");
+  });
+
+  it("reads a blank leaseId as not supplied, not a refusal", () => {
+    // The lease <Select> submits "" until a lease is chosen -- actions.ts's own "Choose the
+    // lease" field error is what should fire for that, not zod's generic guid message.
+    const result = receiptSchema.safeParse({ ...validLeaseReceipt, leaseId: "" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.leaseId).toBeUndefined();
+  });
+
+  it("refuses a malformed, non-blank leaseId", () => {
+    const result = receiptSchema.safeParse({ ...validLeaseReceipt, leaseId: "not-a-guid" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const issue = result.error.issues.find((i) => i.path.join(".") === "leaseId");
+      expect(issue).toBeDefined();
+    }
+  });
+});
+
+describe("receiptSchema.feeTypeId", () => {
+  it("accepts a valid guid", () => {
+    const result = receiptSchema.safeParse({
+      ...validLeaseReceipt,
+      kind: "cash",
+      feeTypeId: "33333333-3333-4333-8333-333333333333",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("reads a blank feeTypeId as not supplied, not a refusal", () => {
+    const result = receiptSchema.safeParse({ ...validLeaseReceipt, feeTypeId: "" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.feeTypeId).toBeUndefined();
+  });
+
+  it("refuses a malformed, non-blank feeTypeId", () => {
+    const result = receiptSchema.safeParse({ ...validLeaseReceipt, feeTypeId: "not-a-guid" });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("receiptSchema.time", () => {
+  it("accepts a valid time", () => {
+    const result = receiptSchema.safeParse({ ...validLeaseReceipt, time: "23:59" });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a blank time", () => {
+    const result = receiptSchema.safeParse({ ...validLeaseReceipt, time: "" });
+    expect(result.success).toBe(true);
+  });
+
+  it("refuses an hour past 23, which the old \\d{2}:\\d{2} shape let through", () => {
+    const result = receiptSchema.safeParse({ ...validLeaseReceipt, time: "99:99" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const issue = result.error.issues.find((i) => i.path.join(".") === "time");
+      expect(issue?.message).toBe("Enter a valid time");
+    }
+  });
+
+  it("refuses a minute past 59", () => {
+    const result = receiptSchema.safeParse({ ...validLeaseReceipt, time: "12:60" });
+    expect(result.success).toBe(false);
+  });
+});

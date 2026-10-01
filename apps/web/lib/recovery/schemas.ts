@@ -65,17 +65,24 @@ export const receiptSchema = z.object({
   bookletId: z.guid("Choose the booklet"),
   orNo: z.coerce.number().int().positive("Enter the serial on the stub"),
   businessDate: dateOnly,
-  // Stubs rarely carry a time; blank is allowed and defaulted in actions.ts.
+  // Stubs rarely carry a time; blank is allowed and defaulted in actions.ts. `23:59` is the
+  // latest valid time of day -- the previous `\d{2}:\d{2}` shape also accepted "99:99".
   time: z
     .string()
-    .regex(/^\d{2}:\d{2}$/, "Enter a valid time")
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Enter a valid time")
     .optional()
     .or(z.literal("")),
   kind: z.enum(["lease", "cash"]),
-  leaseId: z.string().optional(),
+  // z.guid() validates only a present value: the lease <Select> submits "" (not an absent
+  // field) until one is chosen, and the cash-kind branch never renders this field at all
+  // (formData.get returns null then). Either way this must read as "not supplied", so
+  // actions.ts's own `if (!r.leaseId) return { ok: false, fieldErrors: { leaseId: ... } }`
+  // keeps showing "Choose the lease" rather than zod's generic "Invalid GUID" on a blank.
+  leaseId: z.preprocess((v) => (v === "" ? undefined : v), z.guid("Choose the lease").optional()),
   // Comma-separated group ranks, e.g. "1,2" -- see tickedRanks() in ./months.
   months: z.string().optional(),
-  feeTypeId: z.string().optional(),
+  // Same "blank reads as absent" reasoning as leaseId above.
+  feeTypeId: z.preprocess((v) => (v === "" ? undefined : v), z.guid("Choose the fee").optional()),
   rateClass: z.string().optional(),
   // A count, not money -- a blank/missing field coerces to 0, which .positive() already
   // refuses; the explicit message is only so that refusal reads like the rest of the form
