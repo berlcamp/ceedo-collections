@@ -153,6 +153,12 @@ create trigger collection_recoveries_audit
   after insert or update or delete on ceedo_collections.collection_recoveries
   for each row execute function ceedo_collections.write_collection_recovery_audit();
 
+-- A trigger function is invoked by the trigger, never called directly, so (same as
+-- write_audit() in migration 0010) it needs no grant -- only the default PUBLIC execute
+-- revoked, so it is not a function any role could reach, e.g. ceedo_app via its PUBLIC
+-- membership (invariant 26, tests/db/sync-privileges.test.ts).
+revoke execute on function ceedo_collections.write_collection_recovery_audit() from public;
+
 -- ---------------------------------------------------------------------------------------
 
 -- post_collection's reason codes, as sentences for the admin holding the stub.
