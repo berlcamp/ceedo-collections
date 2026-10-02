@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
-import { View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { formatSerial } from "@ceedo/shared";
 import { receiptHistory, type HistoryDay, type HistoryRow } from "@ceedo/sync-engine";
-import { Action, Body, Label, List, Note, RackHead, Register, Rift, Screen, Slot, Title, color } from "../ui";
+import { Action, Note, RackHead, Register, Rift, Screen, color, face, radius, size, space } from "../ui";
 import { fromWire } from "../ui/money";
 import { clockTime, longDate } from "../ui/time";
 import { freshness, type Freshness } from "../ui/staleness";
@@ -11,11 +11,12 @@ import { deviceDriver } from "../db/driver";
 import { signedIn } from "../auth/session";
 import { businessDate, onSyncSettled } from "../sync/device-sync";
 
+// Short enough for one table cell; a refusal or cancellation reason gets its own line.
 const STATUS: Record<HistoryRow["status"], { said: string; tone: string }> = {
   waiting: { said: "Waiting to sync", tone: color.warning },
   synced: { said: "Synced", tone: color.confirmed },
   refused: { said: "Refused", tone: color.refusal },
-  cancelled: { said: "Cancelled by office", tone: color.muted },
+  cancelled: { said: "Cancelled", tone: color.muted },
 };
 
 const PAGE_DAYS = 14; // receiptHistory's default page
@@ -132,45 +133,74 @@ export default function History() {
 
       {days.map((day) => (
         <View key={day.businessDate}>
-          <Label>
-            {`${longDate(day.businessDate)} · ${day.count} receipt${day.count === 1 ? "" : "s"} · ${
-              fromWire(day.total) ?? "total unavailable"
-            }`}
-          </Label>
-          <Rift h={8} />
-          <List>
-            {day.rows.map((row) => {
+          <View style={s.table}>
+            <View style={s.dayBar}>
+              <Text style={s.dayDate} numberOfLines={1}>
+                {longDate(day.businessDate)}
+              </Text>
+              <Text style={s.dayTotal} numberOfLines={1}>
+                {`${day.count} receipt${day.count === 1 ? "" : "s"} · ${
+                  fromWire(day.total) ?? "total unavailable"
+                }`}
+              </Text>
+            </View>
+            <View style={[s.row, s.headRow]}>
+              <Text style={[s.head, s.time]}>Time</Text>
+              <Text style={[s.head, s.or]}>OR no.</Text>
+              <Text style={[s.head, s.payer]}>Paid by</Text>
+              <Text style={[s.head, s.amount]}>Amount</Text>
+              <Text style={[s.head, s.status]}>Status</Text>
+            </View>
+            {day.rows.map((row, index) => {
               const status = STATUS[row.status];
+              const cancelled = row.status === "cancelled";
+              const ink = cancelled ? color.suppressed : color.ink;
               const payer = row.stallNo
                 ? `${row.stallNo}${row.tenantName ? ` · ${row.tenantName}` : ""}`
                 : `${row.feeTypeName ?? "On-the-spot fee"}${row.quantity ? ` × ${row.quantity}` : ""}`;
               return (
-                <Slot
-                  key={row.id}
-                  icon={row.stallNo ? "storefront-outline" : "cash-plus"}
-                  suppressed={row.status === "cancelled"}
-                  left={
-                    <View style={{ gap: 2 }}>
-                      <Title numberOfLines={1}>
-                        {row.orNo !== null && row.serialPrefix
-                          ? formatSerial(row.serialPrefix, row.orNo)
-                          : `OR ${row.orNo ?? "?"}`}
-                      </Title>
-                      <Body>{payer}</Body>
-                      <Body tone={color.muted}>{clockTime(row.collectedAt) ?? "No time recorded"}</Body>
+                <View key={row.id} style={[s.entry, index % 2 === 1 && s.zebra]}>
+                  <View style={s.row}>
+                    <Text style={[s.cell, s.time, { color: color.muted }]} numberOfLines={1}>
+                      {clockTime(row.collectedAt) ?? "—"}
+                    </Text>
+                    <Text style={[s.cell, s.or, s.strong, { color: ink }]} numberOfLines={1}>
+                      {row.orNo !== null && row.serialPrefix
+                        ? formatSerial(row.serialPrefix, row.orNo)
+                        : `OR ${row.orNo ?? "?"}`}
+                    </Text>
+                    <Text style={[s.cell, s.payer, { color: ink }]} numberOfLines={1}>
+                      {payer}
+                    </Text>
+                    <Text
+                      style={[
+                        s.cell,
+                        s.amount,
+                        s.strong,
+                        { color: ink },
+                        cancelled && s.struck,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {fromWire(row.grossAmount) ?? "—"}
+                    </Text>
+                    <View style={[s.status, s.statusCell]}>
+                      <View style={[s.dot, { backgroundColor: status.tone }]} />
+                      <Text style={[s.cell, { color: status.tone }]} numberOfLines={1}>
+                        {status.said}
+                      </Text>
                     </View>
-                  }
-                  right={fromWire(row.grossAmount) ?? "—"}
-                  under={
-                    <Body tone={status.tone}>
-                      {row.detail ? `${status.said} · ${row.detail}` : status.said}
-                    </Body>
-                  }
-                />
+                  </View>
+                  {row.detail ? (
+                    <Text style={[s.detail, { color: status.tone }]} numberOfLines={2}>
+                      {row.detail}
+                    </Text>
+                  ) : null}
+                </View>
               );
             })}
-          </List>
-          <Rift h={20} />
+          </View>
+          <Rift h={space.step} />
         </View>
       ))}
 
@@ -185,3 +215,63 @@ export default function History() {
     </Screen>
   );
 }
+
+// A dense ledger: one line per receipt, so a full day fits on screen. Column widths are
+// fixed for the short fields and flexible for the payer, which truncates rather than wraps.
+const s = StyleSheet.create({
+  table: {
+    backgroundColor: color.card,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: color.rule,
+    overflow: "hidden",
+  },
+  dayBar: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: space.snug,
+    paddingHorizontal: space.snug,
+    paddingVertical: space.tight + 2,
+    backgroundColor: color.hero,
+  },
+  dayDate: { fontFamily: face.bold, fontSize: size.small, color: color.onHero, flexShrink: 1 },
+  dayTotal: { fontFamily: face.bold, fontSize: size.small, color: color.onHeroMuted },
+  headRow: {
+    backgroundColor: color.sunk,
+    paddingVertical: space.tight - 2,
+    borderBottomWidth: 1,
+    borderBottomColor: color.rule,
+  },
+  head: {
+    fontFamily: face.bold,
+    fontSize: size.label - 1,
+    color: color.muted,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  entry: {
+    paddingVertical: space.tight,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: color.rule,
+  },
+  zebra: { backgroundColor: color.ground },
+  row: { flexDirection: "row", alignItems: "center", gap: space.tight, paddingHorizontal: space.snug },
+  cell: { fontFamily: face.text, fontSize: size.label, color: color.ink },
+  strong: { fontFamily: face.bold },
+  struck: { textDecorationLine: "line-through" },
+  time: { width: 64 },
+  or: { width: 112 },
+  payer: { flex: 1, minWidth: 0 },
+  amount: { width: 92, textAlign: "right", fontVariant: ["tabular-nums"] },
+  status: { width: 128 },
+  statusCell: { flexDirection: "row", alignItems: "center", gap: 5 },
+  dot: { width: 7, height: 7, borderRadius: radius.pill },
+  detail: {
+    fontFamily: face.text,
+    fontSize: size.label - 1,
+    paddingLeft: space.snug + 64 + space.tight,
+    paddingRight: space.snug,
+    paddingTop: 2,
+  },
+});
