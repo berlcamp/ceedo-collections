@@ -241,13 +241,21 @@ export default function Shift() {
           </Group>
         </Hero>
       ) : (
-        <Card>
-          <Group gap={8}>
-            <Icon name="briefcase-clock-outline" tone={color.primary} size={32} />
-            <Body>No shift is open on this tablet for you.</Body>
-            <Body tone={color.muted}>Open one below to start the round.</Body>
-          </Group>
-        </Card>
+        <>
+          <Card>
+            <Group gap={8}>
+              <Icon name="briefcase-clock-outline" tone={color.primary} size={32} />
+              <Body>No shift is open on this tablet for you.</Body>
+              <Body tone={color.muted}>Open one below to start the round.</Body>
+            </Group>
+          </Card>
+          {/* The round is hidden with no shift open, and the history must stay reachable after
+              closeout -- that is when a collector most wants to check a day. */}
+          <Rift h={16} />
+          <TileGrid>
+            <Tile icon="history" label="Transaction history" hint="Your receipts" onPress={() => router.push("/history")} />
+          </TileGrid>
+        </>
       )}
 
       {shift ? (
@@ -264,6 +272,7 @@ export default function Shift() {
             <TileGrid>
               <Tile icon="cash-plus" label="Collect a fee" hint="Quantity × rate" onPress={() => router.push("/ambulant")} />
               <Tile icon="file-cancel-outline" label="Spoil a form" hint="A mis-written OR" onPress={() => router.push("/spoil")} />
+              <Tile icon="history" label="Transaction history" hint="Your receipts" onPress={() => router.push("/history")} />
             </TileGrid>
           ) : (
             <TileGrid>
@@ -271,6 +280,7 @@ export default function Shift() {
               <Tile icon="store-search-outline" label="Collect from a stall" hint="Search by stall or name" onPress={() => router.push("/leases")} />
               <Tile icon="cash-plus" label="On-the-spot fee" hint="No lease needed" onPress={() => router.push("/ambulant")} />
               <Tile icon="file-cancel-outline" label="Spoil a form" hint="A mis-written OR" onPress={() => router.push("/spoil")} />
+              <Tile icon="history" label="Transaction history" hint="Your receipts" onPress={() => router.push("/history")} />
             </TileGrid>
           )}
         </>
