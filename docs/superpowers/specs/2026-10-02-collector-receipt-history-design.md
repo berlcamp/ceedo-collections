@@ -56,8 +56,8 @@ The first full pull after deploy is larger; that is the accepted cost.
 ## Tablet: data -- `receiptHistory` in `packages/sync-engine/src/history.ts`
 
 ```ts
-receiptHistory(driver, collectorId, { before?: HistoryCursor; limit?: number })
-  : Promise<{ rows: HistoryRow[]; next: HistoryCursor | null }>
+receiptHistory(driver, collectorId, { beforeDate?: string; days?: number })
+  : Promise<{ days: HistoryDay[]; nextBeforeDate: string | null }>
 ```
 
 Read-only. Union of:
@@ -77,7 +77,10 @@ gross_amount (wire string), status, detail, and the payer: stall number + tenant
 `leases`/`stalls`/`tenants` when `lease_id` is set, otherwise the `fee_types` name, plus
 quantity from `local_lines` for device rows.
 
-Ordered by `collected_at desc, id desc`; keyset paging on that pair, 100 per page.
+Paged by WHOLE business days, 14 per page, newest first; rows within a day by collection
+time, newest first. Paging by receipt count would split a day across pages and print a
+wrong day total. Each `HistoryDay` carries its date, its rows, and its count and total
+computed over every non-cancelled receipt that day.
 
 ## Tablet: screen -- `apps/collector/src/app/history.tsx`
 
