@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
 import { randomUUID } from "expo-crypto";
 import {
@@ -59,8 +59,12 @@ export default function Receipt() {
   const [contextError, setContextError] = useState<string | null>(null);
   const [contextDetail, setContextDetail] = useState<string | null>(null);
   const [orText, setOrText] = useState("");
-  const [check, setCheck] = useState<OrEntryResult | null>(null);
-  const [acceptedSkip, setAcceptedSkip] = useState(false);
+  // The skip the collector accepted, pinned to the number and booklets it was accepted for:
+  // a different number, or a reloaded context, needs its own confirmation.
+  const [skipAcceptedFor, setSkipAcceptedFor] = useState<{
+    context: OrEntryContext;
+    orText: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,13 +74,17 @@ export default function Receipt() {
   // duplicating it. If this read fails, `context` stays null and Record would otherwise
   // stay disabled with nothing on screen saying why -- the same shape as the PIN-screen
   // stranding bug from the previous phase, just relocated. So it always resolves one way
-  // or the other: either a context, or a stated reason plus a way to retry.
-  const loadContext = useCallback(() => {
+  // or the other: either a context, or a stated reason plus a way to retry. The error is
+  // cleared when the read succeeds, and up front only by the button, so the effect sets no
+  // state synchronously.
+  const fetchContext = useCallback(() => {
     if (!collector) return;
-    setContextError(null);
-    setContextDetail(null);
     orEntryContext(driver, collector.id)
-      .then(setContext)
+      .then((loaded) => {
+        setContext(loaded);
+        setContextError(null);
+        setContextDetail(null);
+      })
       .catch((caught: unknown) => {
         setContextError("Could not load your booklets.");
         setContextDetail(String(caught));
@@ -84,11 +92,17 @@ export default function Receipt() {
   }, [collector, driver]);
 
   useEffect(() => {
-    loadContext();
-  }, [loadContext]);
+    fetchContext();
+  }, [fetchContext]);
 
-  // ONE effect drives validation, keyed on both the typed text and the booklet context,
-  // rather than validating only from the TextInput's onChangeText. `check === null` used
+  const loadContext = () => {
+    setContextError(null);
+    setContextDetail(null);
+    fetchContext();
+  };
+
+  // Validation is derived from both the typed text and the booklet context, rather than
+  // computed only from the TextInput's onChangeText. `check === null` used
   // to conflate two causes: "not a valid number yet" and "context has not loaded yet". A
   // collector who types a complete, valid OR number before orEntryContext resolves would
   // see a dead Record button that self-heals only on the NEXT keystroke -- there might not
@@ -100,15 +114,18 @@ export default function Receipt() {
   // would then have ENABLED Record and written 1005 against whatever the paper actually
   // says. The non-empty-but-not-a-number state gets its own message below rather than
   // leaving the button dead with nothing said.
-  useEffect(() => {
-    setAcceptedSkip(false);
-    const orNo = parseOrNo(orText);
-    if (!context || orNo === null) {
-      setCheck(null);
-      return;
-    }
-    setCheck(validateOrEntry(context, orNo));
-  }, [context, orText]);
+  //
+  // Parsed once and reused, so the echoed serial, the recorded serial and the validated
+  // serial cannot be three different numbers.
+  const orNo = parseOrNo(orText);
+  const check = useMemo<OrEntryResult | null>(
+    () => (context && orNo !== null ? validateOrEntry(context, orNo) : null),
+    [context, orNo],
+  );
+  const acceptedSkip =
+    skipAcceptedFor !== null &&
+    skipAcceptedFor.context === context &&
+    skipAcceptedFor.orText === orText;
 
   if (!collector) {
     return (
@@ -148,9 +165,6 @@ export default function Receipt() {
   const matchedBooklet =
     check?.ok ? context?.booklets.find((b) => b.id === check.bookletId) : undefined;
 
-  // Parsed once and reused, so the echoed serial, the recorded serial and the validated
-  // serial cannot be three different numbers.
-  const orNo = parseOrNo(orText);
   const notANumber = orText.trim() !== "" && orNo === null;
   const skipUnconfirmed = check?.ok === true && check.warning === "sequence_skipped" && !acceptedSkip;
 
@@ -334,7 +348,7 @@ export default function Receipt() {
               <Action
                 label="Yes, that is the number written"
                 icon="check"
-                onPress={() => setAcceptedSkip(true)}
+                onPress={() => context && setSkipAcceptedFor({ context, orText })}
               />
             }
           >

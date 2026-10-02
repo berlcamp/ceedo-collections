@@ -51,13 +51,16 @@ export default function Spoil() {
   // it. If this read fails, `context` stays null and "Mark spoiled" would otherwise stay
   // disabled with nothing on screen saying why -- the same stranding shape receipt.tsx
   // guards against. So it always resolves one way or the other: either a context, or a
-  // stated reason plus a way to retry.
-  const loadContext = useCallback(() => {
+  // stated reason plus a way to retry. The error is cleared when the read succeeds, and up
+  // front only by the button, so the effect sets no state synchronously.
+  const fetchContext = useCallback(() => {
     if (!collector) return;
-    setContextError(null);
-    setContextDetail(null);
     orEntryContext(driver, collector.id)
-      .then(setContext)
+      .then((loaded) => {
+        setContext(loaded);
+        setContextError(null);
+        setContextDetail(null);
+      })
       .catch((caught: unknown) => {
         setContextError("Could not load your booklets.");
         setContextDetail(String(caught));
@@ -65,8 +68,14 @@ export default function Spoil() {
   }, [collector, driver]);
 
   useEffect(() => {
-    loadContext();
-  }, [loadContext]);
+    fetchContext();
+  }, [fetchContext]);
+
+  const loadContext = () => {
+    setContextError(null);
+    setContextDetail(null);
+    fetchContext();
+  };
 
   if (!collector) {
     return (

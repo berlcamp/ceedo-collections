@@ -118,10 +118,15 @@ export default function SignIn() {
   // the one that brings a new collector's name onto the tablet.
   useEffect(() => onSyncSettled(() => void load()), [load]);
 
-  useEffect(() => {
+  // A different collector starts with an empty PIN and no error. Adjusted during render
+  // (React's pattern for state that follows other state) rather than in an effect, which
+  // would paint the old PIN once before clearing it.
+  const [pinFor, setPinFor] = useState(collectorId);
+  if (pinFor !== collectorId) {
+    setPinFor(collectorId);
     setError(null);
     setPin("");
-  }, [collectorId]);
+  }
 
   async function submit() {
     if (!collectorId) {

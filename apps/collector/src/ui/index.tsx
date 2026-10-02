@@ -5,7 +5,6 @@ import {
   isValidElement,
   useContext,
   useEffect,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -899,7 +898,7 @@ export function Field({
  * Cut to an instant state change when the system's Remove animations setting is on.
  */
 export function PunchMark({ serial }: { serial: string }) {
-  const settle = useRef(new Animated.Value(0)).current;
+  const [settle] = useState(() => new Animated.Value(0));
   const [reduced, setReduced] = useState<boolean | null>(null);
 
   useEffect(() => {
