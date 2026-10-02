@@ -41,7 +41,8 @@ export interface HistoryDay {
  */
 const HISTORY = `
   with h as (
-    select c.id, c.or_no, c.booklet_id, c.collected_at, c.business_date, c.gross_amount,
+    select c.id, c.or_no, c.booklet_id, c.collected_at,
+           coalesce(c.business_date, substr(c.collected_at, 1, 10)) as business_date, c.gross_amount,
            c.lease_id, c.fee_type_id,
            case when exists (
                   select 1 from collection_cancellations cc
@@ -54,7 +55,7 @@ const HISTORY = `
      where c.collector_id = ?
     union all
     select lc.id, lc.or_no, lc.booklet_id, lc.collected_at,
-           coalesce(ls.business_date, substr(lc.collected_at, 1, 10)), lc.gross_amount,
+           coalesce(ls.business_date, substr(lc.collected_at, 1, 10)) as business_date, lc.gross_amount,
            lc.lease_id, lc.fee_type_id,
            case o.state when 'pending' then 'waiting' when 'in_flight' then 'waiting'
                         when 'rejected' then 'refused' else 'synced' end,
@@ -82,7 +83,7 @@ interface Raw {
   or_no: number | null;
   serial_prefix: string | null;
   collected_at: string | null;
-  business_date: string | null;
+  business_date: string;
   gross_amount: string | number | null;
   status: HistoryStatus;
   detail: string | null;
@@ -129,7 +130,7 @@ export async function receiptHistory(
   );
   const totals = new Map<string, Centavos>();
   for (const raw of rows) {
-    const date = raw.business_date ?? "";
+    const date = raw.business_date;
     const day = byDate.get(date);
     if (!day) continue;
     day.rows.push({

@@ -161,11 +161,24 @@ describe("receiptHistory", () => {
     expect(await all()).toEqual([]);
   });
 
-  it("orders mixed timestamp formats newest first", async () => {
-    server("early", { business_date: "2026-10-02", collected_at: "2026-10-02T02:59:59+00:00" });
-    device("late", { collected_at: "2026-10-02T03:00:00.000Z" }, "pending");
-    server("mid", { business_date: "2026-10-02", collected_at: "2026-10-02T02:59:59.500+00:00", or_no: 1005 });
-    expect((await all()).map((r) => r.id)).toEqual(["late", "mid", "early"]);
+  it("server receipt with null business_date falls back to collected_at date", async () => {
+    db.prepare(
+      `insert into collections (id, or_no, booklet_id, collector_id, collected_at, business_date,
+         fee_type_id, lease_id, gross_amount)
+       values (?, ?, 'bk', 'me', '2026-10-02T02:00:00+00:00', null, 'rent', 'ls', '100.00')`,
+    ).run("s_null_bd", 1001);
+    expect(await all()).toMatchObject([
+      { id: "s_null_bd", status: "synced", businessDate: "2026-10-02" },
+    ]);
+    const { days } = await receiptHistory(driver, "me");
+    expect(days[0]!.total).toBe("100.00");
+  });
+
+  it("orders mixed timestamp formats newest first, using UTC normalisation", async () => {
+    server("utc_z_form", { business_date: "2026-10-02", collected_at: "2026-10-02T03:00:00.000Z", or_no: 1005 });
+    server("offset_form", { business_date: "2026-10-02", collected_at: "2026-10-02T10:59:59+08:00", or_no: 1006 });
+    const rows = await all();
+    expect(rows.map((r) => r.id)).toEqual(["utc_z_form", "offset_form"]);
   });
 
   it("tolerates odd amounts", async () => {
@@ -174,6 +187,15 @@ describe("receiptHistory", () => {
     server("c", { gross_amount: null, or_no: 1004 });
     const { days } = await receiptHistory(driver, "me");
     expect(days[0]!.total).toBe("1250.50");
+  });
+
+  it("unparseable amounts contribute 0 to total without throwing", async () => {
+    server("valid", { gross_amount: "100.00" });
+    server("invalid", { gross_amount: "abc", or_no: 1003 });
+    const { days } = await receiptHistory(driver, "me");
+    expect(days[0]!.total).toBe("100.00");
+    expect(days[0]!.count).toBe(2);
+    expect(days[0]!.rows.find((r) => r.id === "invalid")?.grossAmount).toBe("abc");
   });
 
   it("pages by whole business days", async () => {
