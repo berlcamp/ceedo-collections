@@ -24,8 +24,27 @@ afterAll(async () => {
 type Pull = {
   cursor: string;
   collections: { id: string }[];
-  collection_cancellations: { collection_id: string }[];
+  leases: { id: string }[];
+  collection_allocations: { collection_id: string }[];
+  collection_cancellations: { id: string; collection_id: string }[];
+  collection_reinstatements: { id: string; cancellation_id: string }[];
 };
+
+// Cancels a receipt and lifts the cancellation, as migration 20260928000051 records it:
+// a reinstatement row pointing at the cancellation. Returns the reinstatement's id.
+async function cancelAndReinstate(collectionId: string, by: string): Promise<string> {
+  const { rows: cc } = await db.query(
+    `insert into ceedo_collections.collection_cancellations (collection_id, cancelled_by, reason)
+     values ($1, $2, 'Wrong payer') returning id`,
+    [collectionId, by],
+  );
+  const { rows: cr } = await db.query(
+    `insert into ceedo_collections.collection_reinstatements (cancellation_id, reinstated_by, reason)
+     values ($1, $2, 'Right payer after all') returning id`,
+    [cc[0].id, by],
+  );
+  return cr[0].id as string;
+}
 
 async function pull(deviceId: string, cursor = 0): Promise<Pull> {
   const { rows } = await db.query(
@@ -126,5 +145,75 @@ describe("sync_pull — collector history", () => {
     const other = await createSyncFixture(db);
 
     expect((await pull(other.deviceId)).collections.map((c) => c.id)).not.toContain(id);
+  });
+
+  it("sends an on-the-spot receipt's reinstatement under collector scope", async () => {
+    const fx = await createSyncFixture(db);
+    const id = await postCollectionAsOwner(db, fx, {
+      groupRanks: [],
+      leaseId: null,
+      feeTypeId: fx.perHeadFeeTypeId,
+      lines: [{ fee_type_id: fx.perHeadFeeTypeId, rate_class: "hog", quantity: 1 }],
+    });
+    const reinstatementId = await cancelAndReinstate(id, fx.collectorId);
+    const other = await createSyncFixture(db);
+
+    const result = await pull(other.deviceId);
+
+    expect(result.collection_cancellations.map((c) => c.collection_id)).toContain(id);
+    expect(result.collection_reinstatements.map((r) => r.id)).toContain(reinstatementId);
+  });
+
+  // An on-the-spot receipt settles no charge, so it has no allocations. The receipt here is
+  // on a lease, but its collector has moved to another area and nobody covers the lease any
+  // more: only the collector scope can send its allocation and reinstatement.
+  it("sends allocations and reinstatements of a receipt whose lease is out of every scope", async () => {
+    const fx = await createSyncFixture(db);
+    await db.query(`select ceedo_collections.run_accrual('2026-10-05'::date)`);
+    const id = await postCollectionAsOwner(db, fx, { groupRanks: [1] });
+    const reinstatementId = await cancelAndReinstate(id, fx.collectorId);
+    const other = await createSyncFixture(db);
+    await db.query(
+      `update ceedo_collections.collector_assignments set active = false where collector_id = $1`,
+      [fx.collectorId],
+    );
+    await db.query(
+      `insert into ceedo_collections.collector_assignments (collector_id, facility_id, active)
+       values ($1, $2, true)`,
+      [fx.collectorId, other.facilityId],
+    );
+
+    const result = await pull(other.deviceId);
+
+    expect(result.leases.map((l) => l.id)).not.toContain(fx.leaseId);
+    expect(result.collections.map((c) => c.id)).toContain(id);
+    expect(result.collection_allocations.map((a) => a.collection_id)).toContain(id);
+    expect(result.collection_reinstatements.map((r) => r.id)).toContain(reinstatementId);
+  });
+
+  it("a delta pull sends a collector's older receipts when only their area changed", async () => {
+    const fx = await createSyncFixture(db);
+    const elsewhere = await createSyncFixture(db);
+    const id = await postCollectionAsOwner(db, fx, {
+      groupRanks: [],
+      leaseId: null,
+      feeTypeId: fx.perHeadFeeTypeId,
+      lines: [{ fee_type_id: fx.perHeadFeeTypeId, rate_class: "hog", quantity: 1 }],
+    });
+    const first = await pull(fx.deviceId);
+    expect((await pull(fx.deviceId, Number(first.cursor))).collections.map((c) => c.id)).not.toContain(
+      id,
+    );
+
+    // Nothing about the receipt changes: only the collector gains an area.
+    await db.query(
+      `insert into ceedo_collections.collector_assignments (collector_id, facility_id, active)
+       values ($1, $2, true)`,
+      [fx.collectorId, elsewhere.facilityId],
+    );
+
+    const delta = await pull(fx.deviceId, Number(first.cursor));
+
+    expect(delta.collections.map((c) => c.id)).toContain(id);
   });
 });
