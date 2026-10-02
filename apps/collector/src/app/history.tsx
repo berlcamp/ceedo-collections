@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import { View } from "react-native";
 import { formatSerial } from "@ceedo/shared";
@@ -18,6 +18,8 @@ const STATUS: Record<HistoryRow["status"], { said: string; tone: string }> = {
   cancelled: { said: "Cancelled by office", tone: color.muted },
 };
 
+const PAGE_DAYS = 14; // receiptHistory's default page
+
 /**
  * Every receipt the signed-in collector has, newest first, a business day at a time.
  *
@@ -35,12 +37,25 @@ export default function History() {
   const [loaded, setLoaded] = useState(false);
   const [fresh, setFresh] = useState<Freshness | null>(null);
 
+  // How many business days are on screen, and which request is the newest. A reload re-reads
+  // the WHOLE depth the collector has paged to (a sync must not throw their place away), and
+  // a request that finds a newer one has started drops its result instead of overwriting it.
+  const shown = useRef(PAGE_DAYS);
+  const latest = useRef(0);
+  const paging = useRef(false);
+
   const load = useCallback(async () => {
     if (!collector) return;
-    const page = await receiptHistory(driver, collector.id);
+    const mine = ++latest.current;
+    const page = await receiptHistory(driver, collector.id, {
+      days: Math.max(PAGE_DAYS, shown.current),
+    });
+    const stamp = await freshness(driver, businessDate());
+    if (mine !== latest.current) return;
+    shown.current = page.days.length;
     setDays(page.days);
     setNext(page.nextBeforeDate);
-    setFresh(await freshness(driver, businessDate()));
+    setFresh(stamp);
     setLoaded(true);
   }, [collector, driver]);
 
@@ -52,10 +67,18 @@ export default function History() {
   useEffect(() => onSyncSettled(() => void load()), [load]);
 
   const older = async () => {
-    if (!collector || !next) return;
-    const page = await receiptHistory(driver, collector.id, { beforeDate: next });
-    setDays((shown) => [...shown, ...page.days]);
-    setNext(page.nextBeforeDate);
+    if (!collector || !next || paging.current) return;
+    paging.current = true;
+    const mine = ++latest.current;
+    try {
+      const page = await receiptHistory(driver, collector.id, { beforeDate: next });
+      if (mine !== latest.current) return;
+      shown.current += page.days.length;
+      setDays((now) => [...now, ...page.days]);
+      setNext(page.nextBeforeDate);
+    } finally {
+      paging.current = false;
+    }
   };
 
   if (!collector) {
