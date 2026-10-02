@@ -43,6 +43,8 @@
     "@types/react": "~19.2.2",
     "babel-plugin-inline-import": "^3.0.0",
     "babel-preset-expo": "~57.0.0",
+    "eslint": "^9",
+    "eslint-config-expo": "^57.0.2",
     "typescript": "^6.0.3"
   },
   "scripts": {
