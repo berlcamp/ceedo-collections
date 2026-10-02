@@ -48,3 +48,4 @@ export {
   type DraftAllocation,
   type DraftLine,
 } from "./collect";
+export { receiptHistory, type HistoryDay, type HistoryRow, type HistoryStatus } from "./history";
