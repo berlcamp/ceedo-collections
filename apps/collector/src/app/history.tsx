@@ -20,6 +20,9 @@ const STATUS: Record<HistoryRow["status"], { said: string; tone: string }> = {
 
 const PAGE_DAYS = 14; // receiptHistory's default page
 
+const READ_FAILED = "Could not load your history from this tablet. Go back and open it again.";
+const OLDER_FAILED = "Could not load older receipts from this tablet. Try Show older again.";
+
 /**
  * Every receipt the signed-in collector has, newest first, a business day at a time.
  *
@@ -36,6 +39,9 @@ export default function History() {
   const [next, setNext] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [fresh, setFresh] = useState<Freshness | null>(null);
+  // A failed read of this tablet's own database. Shown in place of the empty state, which
+  // would otherwise claim "no receipts" about a history that could not be read.
+  const [failed, setFailed] = useState<string | null>(null);
 
   // How many business days are on screen, and which request is the newest. A reload re-reads
   // the WHOLE depth the collector has paged to (a sync must not throw their place away), and
@@ -47,16 +53,29 @@ export default function History() {
   const load = useCallback(async () => {
     if (!collector) return;
     const mine = ++latest.current;
-    const page = await receiptHistory(driver, collector.id, {
-      days: Math.max(PAGE_DAYS, shown.current),
-    });
-    const stamp = await freshness(driver, businessDate());
-    if (mine !== latest.current) return;
-    shown.current = page.days.length;
-    setDays(page.days);
-    setNext(page.nextBeforeDate);
-    setFresh(stamp);
-    setLoaded(true);
+    try {
+      const page = await receiptHistory(driver, collector.id, {
+        days: Math.max(PAGE_DAYS, shown.current),
+      });
+      if (mine !== latest.current) return;
+      shown.current = page.days.length;
+      setDays(page.days);
+      setNext(page.nextBeforeDate);
+      setFailed(null);
+    } catch {
+      if (mine === latest.current) setFailed(READ_FAILED);
+    } finally {
+      // Loaded either way, so the screen never sits blank waiting on a read that is over.
+      if (mine === latest.current) setLoaded(true);
+    }
+    // The sync age in the bar is separate: failing to read it must not hide the receipts,
+    // and the bar simply keeps its last age (or shows none).
+    try {
+      const stamp = await freshness(driver, businessDate());
+      if (mine === latest.current) setFresh(stamp);
+    } catch {
+      // Nothing to show; the receipts above are still right.
+    }
   }, [collector, driver]);
 
   useFocusEffect(
@@ -76,6 +95,9 @@ export default function History() {
       shown.current += page.days.length;
       setDays((now) => [...now, ...page.days]);
       setNext(page.nextBeforeDate);
+      setFailed(null);
+    } catch {
+      if (mine === latest.current) setFailed(OLDER_FAILED);
     } finally {
       paging.current = false;
     }
@@ -100,7 +122,9 @@ export default function History() {
         />
       }
     >
-      {loaded && days.length === 0 ? (
+      {failed && days.length === 0 ? <Note icon="alert-circle-outline">{failed}</Note> : null}
+
+      {loaded && !failed && days.length === 0 ? (
         <Note icon="receipt-text-outline">
           No receipts yet. Sync from the shift screen to load your history.
         </Note>
@@ -149,6 +173,13 @@ export default function History() {
           <Rift h={20} />
         </View>
       ))}
+
+      {failed && days.length > 0 ? (
+        <>
+          <Note>{failed}</Note>
+          <Rift h={12} />
+        </>
+      ) : null}
 
       {next ? <Action label="Show older" icon="history" onPress={() => void older()} /> : null}
     </Screen>
