@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { formatSerial } from "@ceedo/shared";
 import { receiptHistory, type HistoryDay, type HistoryRow } from "@ceedo/sync-engine";
 import { Action, Note, RackHead, Register, Rift, Screen, color, face, radius, size, space } from "../ui";
@@ -19,6 +19,20 @@ const STATUS: Record<HistoryRow["status"], { said: string; tone: string }> = {
   cancelled: { said: "Cancelled", tone: color.muted },
 };
 
+// Column widths in dp at the default font size. Android's font-size setting scales the text
+// but not a fixed width, so these grow with it (see columns()) or the Status column clips.
+const COLUMN = { time: 64, or: 112, amount: 92, status: 128 } as const;
+
+function columns(fontScale: number) {
+  const k = Math.max(1, fontScale);
+  return {
+    time: { width: Math.ceil(COLUMN.time * k) },
+    or: { width: Math.ceil(COLUMN.or * k) },
+    amount: { width: Math.ceil(COLUMN.amount * k) },
+    status: { width: Math.ceil(COLUMN.status * k) },
+  };
+}
+
 const PAGE_DAYS = 14; // receiptHistory's default page
 
 const READ_FAILED = "Could not load your history from this tablet. Go back and open it again.";
@@ -35,6 +49,7 @@ export default function History() {
   const router = useRouter();
   const driver = deviceDriver();
   const collector = signedIn();
+  const col = columns(useWindowDimensions().fontScale);
 
   const [days, setDays] = useState<HistoryDay[]>([]);
   const [next, setNext] = useState<string | null>(null);
@@ -145,11 +160,11 @@ export default function History() {
               </Text>
             </View>
             <View style={[s.row, s.headRow]}>
-              <Text style={[s.head, s.time]}>Time</Text>
-              <Text style={[s.head, s.or]}>OR no.</Text>
+              <Text style={[s.head, s.time, col.time]} numberOfLines={1}>Time</Text>
+              <Text style={[s.head, s.or, col.or]} numberOfLines={1}>OR no.</Text>
               <Text style={[s.head, s.payer]}>Paid by</Text>
-              <Text style={[s.head, s.amount]}>Amount</Text>
-              <Text style={[s.head, s.status]}>Status</Text>
+              <Text style={[s.head, s.amount, col.amount]} numberOfLines={1}>Amount</Text>
+              <Text style={[s.head, s.status, col.status]} numberOfLines={1}>Status</Text>
             </View>
             {day.rows.map((row, index) => {
               const status = STATUS[row.status];
@@ -161,10 +176,10 @@ export default function History() {
               return (
                 <View key={row.id} style={[s.entry, index % 2 === 1 && s.zebra]}>
                   <View style={s.row}>
-                    <Text style={[s.cell, s.time, { color: color.muted }]} numberOfLines={1}>
+                    <Text style={[s.cell, s.time, col.time, { color: color.muted }]} numberOfLines={1}>
                       {clockTime(row.collectedAt) ?? "—"}
                     </Text>
-                    <Text style={[s.cell, s.or, s.strong, { color: ink }]} numberOfLines={1}>
+                    <Text style={[s.cell, s.or, col.or, s.strong, { color: ink }]} numberOfLines={1}>
                       {row.orNo !== null && row.serialPrefix
                         ? formatSerial(row.serialPrefix, row.orNo)
                         : `OR ${row.orNo ?? "?"}`}
@@ -176,6 +191,7 @@ export default function History() {
                       style={[
                         s.cell,
                         s.amount,
+                        col.amount,
                         s.strong,
                         { color: ink },
                         cancelled && s.struck,
@@ -184,15 +200,21 @@ export default function History() {
                     >
                       {fromWire(row.grossAmount) ?? "—"}
                     </Text>
-                    <View style={[s.status, s.statusCell]}>
+                    <View style={[s.status, col.status, s.statusCell]}>
                       <View style={[s.dot, { backgroundColor: status.tone }]} />
-                      <Text style={[s.cell, { color: status.tone }]} numberOfLines={1}>
+                      <Text style={[s.cell, s.statusText, { color: status.tone }]} numberOfLines={1}>
                         {status.said}
                       </Text>
                     </View>
                   </View>
                   {row.detail ? (
-                    <Text style={[s.detail, { color: status.tone }]} numberOfLines={2}>
+                    <Text
+                      style={[
+                        s.detail,
+                        { color: status.tone, paddingLeft: space.snug + col.time.width + space.tight },
+                      ]}
+                      numberOfLines={2}
+                    >
                       {row.detail}
                     </Text>
                   ) : null}
@@ -217,7 +239,9 @@ export default function History() {
 }
 
 // A dense ledger: one line per receipt, so a full day fits on screen. Column widths are
-// fixed for the short fields and flexible for the payer, which truncates rather than wraps.
+// fixed for the short fields (see COLUMN) and flexible for the payer, which truncates rather
+// than wraps. On a screen too narrow for even that, every column shrinks and ellipsizes, so
+// Status is never pushed off the edge of the card.
 const s = StyleSheet.create({
   table: {
     backgroundColor: color.card,
@@ -260,17 +284,17 @@ const s = StyleSheet.create({
   cell: { fontFamily: face.text, fontSize: size.label, color: color.ink },
   strong: { fontFamily: face.bold },
   struck: { textDecorationLine: "line-through" },
-  time: { width: 64 },
-  or: { width: 112 },
+  time: { flexShrink: 1 },
+  or: { flexShrink: 1 },
   payer: { flex: 1, minWidth: 0 },
-  amount: { width: 92, textAlign: "right", fontVariant: ["tabular-nums"] },
-  status: { width: 128 },
+  amount: { flexShrink: 1, textAlign: "right", fontVariant: ["tabular-nums"] },
+  status: { flexShrink: 1 },
   statusCell: { flexDirection: "row", alignItems: "center", gap: 5 },
+  statusText: { flexShrink: 1 },
   dot: { width: 7, height: 7, borderRadius: radius.pill },
   detail: {
     fontFamily: face.text,
     fontSize: size.label - 1,
-    paddingLeft: space.snug + 64 + space.tight,
     paddingRight: space.snug,
     paddingTop: 2,
   },
