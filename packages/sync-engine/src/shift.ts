@@ -201,6 +201,25 @@ export async function closeShift(
     [JSON.stringify(payload), entryId],
   );
 
+  // A REFUSED OPENING IS RE-SENT WITH THE CLOSE. A rejected shift_open is never pushed again
+  // (outbox.ts `pushable`), so the server never holds the shift and its close can only ever
+  // answer "No such shift" -- production, 2026-10-05, where an earlier shift still open on
+  // the server had refused the opening. Re-armed here, it goes up first in the same push:
+  // once a supervisor has closed the shift in the way, the opening lands and the close
+  // behind it settles. If it is refused again, its detail names that shift.
+  const refusedOpening = await driver.select<{ id: string }>(
+    `select id from outbox
+      where id = ? and type = 'shift_open' and state = 'rejected'
+        and coalesce(reason_code, '') <> 'invalid_payload'`,
+    [input.shiftId],
+  );
+  await driver.execute(
+    `update outbox set state = 'pending', reason_code = null, retryable = null
+      where id = ? and type = 'shift_open' and state = 'rejected'
+        and coalesce(reason_code, '') <> 'invalid_payload'`,
+    [input.shiftId],
+  );
+
   const offline = async (detail: string): Promise<CloseOutcome> => {
     // Closed HERE, pending THERE. The shift stops blocking the next sign-in (spec E10 tests
     // for `open` specifically) while its entry stays pushable in the outbox.
@@ -220,8 +239,11 @@ export async function closeShift(
     };
   };
 
-  const rows = (await pushable(driver)).filter((row) => row.id === entryId);
-  if (rows.length === 0) {
+  const rows = (await pushable(driver)).filter(
+    (row) => row.id === entryId || (refusedOpening.length > 0 && row.id === input.shiftId),
+  );
+  const closeIndex = rows.findIndex((row) => row.id === entryId);
+  if (closeIndex === -1) {
     const own = await driver.select<{ state: string }>("select state from outbox where id = ?", [
       entryId,
     ]);
@@ -237,7 +259,7 @@ export async function closeShift(
 
   let results: PushResult[];
   try {
-    await markInFlight(driver, [entryId]);
+    await markInFlight(driver, rows.map((row) => row.id));
     const res = await deps.transport.post("sync-push", {
       credential_id: deps.credentialId,
       secret: deps.secret,
@@ -252,8 +274,9 @@ export async function closeShift(
   }
 
   await applyResults(driver, rows, results);
-  const result = results[0];
+  const result = results.find((one) => one.index === closeIndex);
   if (!result) return offline("The server returned no result for this closeout.");
+  const opening = results.find((one) => one.index !== closeIndex && one.type === "shift_open");
 
   if (result.status === "mismatch") {
     // RECORDS are missing, which is the comparison that BLOCKS. The shift stays open and a
@@ -294,7 +317,10 @@ export async function closeShift(
 
   if (result.status === "rejected") {
     // Settled as rejected by applyResults; nothing local is rewritten. See CloseOutcome.
-    return { status: "rejected", reason: result.reason ?? null, detail: result.detail ?? null };
+    // A refused opening is the cause and the close's "No such shift" only its echo, so the
+    // collector is shown the opening's reason, which names the shift in the way.
+    const cause = opening?.status === "rejected" ? opening : result;
+    return { status: "rejected", reason: cause.reason ?? null, detail: cause.detail ?? null };
   }
 
   // Anything else this device does not know how to read. The entry has already been
@@ -336,12 +362,23 @@ export async function closeoutReadiness(
       ? { kind: "queued", count: others.length }
       : null;
 
+  // The shift's own refused OPENING comes first: while it stands, the close can only be
+  // refused as "No such shift", and the opening's detail is the one that says why.
+  const opening = await driver.select<{ state: string; last_result: string | null }>(
+    "select state, last_result from outbox where id = ? and type = 'shift_open'",
+    [shiftId],
+  );
   const own = await driver.select<{ state: string; last_result: string | null }>(
     "select state, last_result from outbox where id = ?",
     [entryId],
   );
   let refused: CloseoutReadiness["refused"] = null;
-  const lastResult = own[0]?.state === "acked" ? null : own[0]?.last_result;
+  const lastResult =
+    opening[0]?.state === "rejected" && opening[0].last_result
+      ? opening[0].last_result
+      : own[0]?.state === "acked"
+        ? null
+        : own[0]?.last_result;
   if (lastResult) {
     try {
       const result = JSON.parse(lastResult) as { status?: string; detail?: string; reason?: string };

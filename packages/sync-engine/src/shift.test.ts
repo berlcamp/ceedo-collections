@@ -315,6 +315,67 @@ describe("the shift lifecycle", () => {
     expect(outcome.status).toBe("closed");
   });
 
+  describe("a shift whose opening the server refused", () => {
+    // Production, 2026-10-05: a tablet's shift_open was refused because an earlier shift was
+    // still open on the server for that tablet. A refused shift_open is never re-pushed, so
+    // the server never held the shift, and every closeout answered "No such shift" while the
+    // tablet told the collector to close out again.
+    const deps = (transport: Transport) => ({
+      transport,
+      credentialId: "c",
+      secret: "s",
+      businessDate: "2026-10-05",
+    });
+    const IN_THE_WAY =
+      "Shift 154c92ef (opened 2026-10-01 10:59) is still open on the server for this tablet.";
+
+    async function openRefused(): Promise<string> {
+      const id = await openShift(driver, { id: randomUUID(), collectorId: "alice", businessDate: "2026-10-05" });
+      db.prepare(
+        `update outbox set state = 'rejected', reason_code = 'server_error', retryable = 0,
+                last_result = ? where id = ?`,
+      ).run(JSON.stringify({ index: 0, type: "shift_open", status: "rejected", reason: "server_error", detail: IN_THE_WAY }), id);
+      return id;
+    }
+
+    it("re-sends the opening ahead of the closeout", async () => {
+      const id = await openRefused();
+      let sent: { entries: { type: string }[] } | undefined;
+      const accepting: Transport = {
+        async post(_path, body) {
+          sent = body as typeof sent;
+          return {
+            status: 200,
+            body: [
+              { index: 0, type: "shift_open", status: "accepted" },
+              { index: 1, type: "shift_close", status: "closed", system_count: 0, system_total: 0, variance: 0 },
+            ],
+          };
+        },
+      };
+
+      const outcome = await closeShift(driver, deps(accepting), { shiftId: id, declaredTotal: "0.00" });
+
+      expect(sent?.entries.map((entry) => entry.type)).toEqual(["shift_open", "shift_close"]);
+      expect(outcome.status).toBe("closed");
+      expect(db.prepare("select state from outbox where id = ?").get(id)).toEqual({ state: "acked" });
+    });
+
+    it("names the shift in the way, not 'no such shift', when the opening is refused again", async () => {
+      const id = await openRefused();
+      const refusing = transportReturning([
+        { index: 0, type: "shift_open", status: "rejected", reason: "server_error", detail: IN_THE_WAY },
+        { index: 1, type: "shift_close", status: "rejected", reason: "server_error", detail: `No such shift: ${id}` },
+      ]);
+
+      const outcome = await closeShift(driver, deps(refusing), { shiftId: id, declaredTotal: "0.00" });
+
+      expect(outcome).toMatchObject({ status: "rejected", detail: IN_THE_WAY });
+      expect((await closeoutReadiness(driver, id)).refused).toEqual({ status: "rejected", detail: IN_THE_WAY });
+      expect(db.prepare("select status from local_shifts where id = ?").get(id)).toEqual({ status: "open" });
+    });
+  });
+
   it("does not claim a close was sent when it is held behind an earlier one", async () => {
     const earlier = await openShift(driver, { id: randomUUID(), collectorId: "bob", businessDate: "2026-10-05" });
     await closeShift(
