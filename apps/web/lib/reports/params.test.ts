@@ -12,6 +12,7 @@ describe("report params", () => {
       month: "2026-09",
       collectorId: null,
       leaseId: null,
+      facilityId: null,
     });
   });
 
@@ -25,6 +26,7 @@ describe("report params", () => {
       month: "2026-07",
       collectorId: "11111111-1111-4111-8111-111111111111",
       leaseId: null,
+      facilityId: null,
     });
     expect(readParams({ date: "31/08/2026", month: "2026-7" }, lateUtc).date).toBe("2026-09-24");
   });
@@ -37,5 +39,11 @@ describe("report params", () => {
   it("writes dates the way the office does", () => {
     expect(longDate("2026-09-03")).toBe("3 September 2026");
     expect(longMonth("2026-12")).toBe("December 2026");
+  });
+  it("reads an optional facility id and ignores a mangled one", () => {
+    const id = "44444444-4444-4444-8444-444444444444";
+    expect(readParams({ facility: id }, lateUtc).facilityId).toBe(id);
+    expect(readParams({ facility: "all" }, lateUtc).facilityId).toBeNull();
+    expect(readParams({}, lateUtc).facilityId).toBeNull();
   });
 });

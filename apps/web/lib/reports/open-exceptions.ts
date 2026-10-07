@@ -40,6 +40,8 @@ export function exceptionsInScope(
     const on = row.collectedAt ? manilaDate(row.collectedAt) : null;
     if (on === null) return true;
 
+    // A balance as of D is moved by every receipt dated on or before D.
+    if (kinds.includes("asOf")) return on <= p.date;
     if (kinds.includes("date")) return on === p.date;
     if (kinds.includes("month")) {
       const { from, to } = monthBounds(p.month);

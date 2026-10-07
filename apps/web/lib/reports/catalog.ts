@@ -5,8 +5,11 @@ import { ReportInputError } from "./errors";
 import { buildRcd } from "./builders/rcd";
 import { buildAbstract, buildExceptions, buildRaaf, buildReconciliation } from "./builders/monthly";
 
-/** Which inputs a report asks for; the hub renders exactly these. */
-export type ParamKind = "date" | "month" | "collector" | "lease";
+/**
+ * Which inputs a report asks for; the hub renders exactly these. `asOf` is a date read
+ * as "on or before" (balances); `date` is one business day.
+ */
+export type ParamKind = "date" | "asOf" | "month" | "collector" | "lease" | "facility";
 
 export interface ReportEntry {
   key: string;

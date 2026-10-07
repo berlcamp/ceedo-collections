@@ -20,3 +20,22 @@ export async function getLeaseOptions(): Promise<LeaseOption[]> {
     }))
     .sort((a, b) => a.label.localeCompare(b.label, "en", { numeric: true }));
 }
+
+export interface FacilityOption {
+  id: string;
+  label: string;
+}
+
+/** Every facility, by name: the hub's facility filter. */
+export async function getFacilityOptions(): Promise<FacilityOption[]> {
+  const supabase = await getServerClient();
+  const { data, error } = await supabase.from("facilities").select("id, name").order("name");
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((f) => ({ id: f.id, label: f.name }));
+}
+
+/** A facility's name for a report's scope line; null for "all facilities". */
+export async function facilityLabel(id: string | null): Promise<string | null> {
+  if (!id) return null;
+  return (await getFacilityOptions()).find((f) => f.id === id)?.label ?? null;
+}

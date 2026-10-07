@@ -6,7 +6,7 @@ const ALICE = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
 const LEASE = "33333333-3333-4333-8333-333333333333";
 
-const params: ReportParams = { date: "2026-09-29", month: "2026-09", collectorId: ALICE, leaseId: LEASE };
+const params: ReportParams = { date: "2026-09-29", month: "2026-09", collectorId: ALICE, leaseId: LEASE, facilityId: null };
 
 function ex(collectorId: string, collectedAt: string | null, leaseId: string | null = null): OpenException {
   return { collectorId, collectedAt, leaseId };
@@ -45,5 +45,14 @@ describe("exceptionsInScope", () => {
     const rows = [ex(ALICE, null)];
 
     expect(exceptionsInScope(rows, ["month"], params)).toEqual(rows);
+  });
+
+  it("scopes an as-of report to everything collected on or before the date", () => {
+    const rows = [
+      ex(ALICE, "2026-09-28T02:00:00Z"),
+      ex(BOB, "2026-09-29T15:59:00Z"), // 23:59 on the 29th in Manila
+      ex(BOB, "2026-09-29T16:00:00Z"), // 00:00 on the 30th in Manila
+    ];
+    expect(exceptionsInScope(rows, ["asOf", "facility"], params)).toEqual([rows[0], rows[1]]);
   });
 });
