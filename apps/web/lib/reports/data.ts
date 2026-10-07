@@ -2,6 +2,7 @@ import { fromPesos, type Centavos } from "@ceedo/shared";
 import { recoveredCollectionIds } from "@/lib/ledger/queries";
 import { getServerClient } from "@/lib/supabase/server";
 import type { BookletInput, Consumption } from "./accountability";
+import type { BalanceRow } from "./builders/balances";
 import type { OpenException } from "./open-exceptions";
 
 /**
@@ -260,4 +261,29 @@ export async function openExceptions(): Promise<OpenException[]> {
       leaseId: typeof payload["lease_id"] === "string" ? payload["lease_id"] : null,
     };
   });
+}
+
+/** lease_balances_as_of, paged; optionally one facility. */
+export async function balancesAsOf(date: string, facilityId: string | null): Promise<BalanceRow[]> {
+  const supabase = await getServerClient();
+  const rows = await allPages((from, to) => {
+    let q = supabase.rpc("lease_balances_as_of", { p_date: date });
+    if (facilityId) q = q.eq("facility_id", facilityId);
+    return q.order("lease_id").range(from, to);
+  });
+  return rows.map((r) => ({
+    leaseId: r.lease_id,
+    facilityName: r.facility_name,
+    sectionName: r.section_name,
+    stallNo: r.stall_no,
+    tenantName: r.tenant_name,
+    rate: centavos(r.rate_amount),
+    accrualPeriod: r.accrual_period,
+    notYetDue: centavos(r.not_yet_due),
+    days1to30: centavos(r.bucket_1_30),
+    days31to60: centavos(r.bucket_31_60),
+    days61to90: centavos(r.bucket_61_90),
+    over90: centavos(r.bucket_over_90),
+    outstanding: centavos(r.outstanding),
+  }));
 }

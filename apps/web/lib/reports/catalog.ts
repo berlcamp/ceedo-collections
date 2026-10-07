@@ -2,7 +2,10 @@ import { getAging, getDelinquency, getLeaseBalance, getSubsidiaryLedger } from "
 import { longDate, type ReportParams } from "./params";
 import type { Report } from "./report";
 import { ReportInputError } from "./errors";
+import { balancesReport } from "./builders/balances";
 import { buildRcd } from "./builders/rcd";
+import { balancesAsOf } from "./data";
+import { facilityLabel } from "./options";
 import { buildAbstract, buildExceptions, buildRaaf, buildReconciliation } from "./builders/monthly";
 
 /**
@@ -59,6 +62,19 @@ export const REPORTS: ReportEntry[] = [
     purpose: "Sync exceptions by collector, resolutions by supervisor, and closeout variances, for a month.",
     params: ["month"],
     build: buildExceptions,
+  },
+  {
+    key: "balances-as-of",
+    title: "Tenant balances",
+    purpose: "What every tenant owed at the end of a chosen date, by facility and section, aged from that date.",
+    params: ["asOf", "facility"],
+    build: async (p) => {
+      const [rows, facilityName] = await Promise.all([
+        balancesAsOf(p.date, p.facilityId),
+        facilityLabel(p.facilityId),
+      ]);
+      return balancesReport(rows, { date: p.date, facilityName });
+    },
   },
   {
     key: "aging",
