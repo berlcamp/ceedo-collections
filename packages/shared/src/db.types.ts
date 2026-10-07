@@ -1955,6 +1955,29 @@ export type Database = {
           period_start: string
         }[]
       }
+      lease_receipts_by_day: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          base: number
+          business_date: string
+          lease_id: string
+          surcharge: number
+        }[]
+      }
+      leases_active_between: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          accrual_period: Database["ceedo_collections"]["Enums"]["accrual_period"]
+          facility_id: string
+          facility_name: string
+          lease_id: string
+          rate_amount: number
+          section_id: string
+          section_name: string
+          stall_no: string
+          tenant_name: string
+        }[]
+      }
       next_row_version: { Args: never; Returns: number }
       office_close_shift: {
         Args: { p_declared_total: number; p_reason: string; p_shift_id: string }
