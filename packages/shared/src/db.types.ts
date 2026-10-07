@@ -1918,6 +1918,28 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
       issue_device_credential: { Args: { p_device_id: string }; Returns: Json }
+      lease_balances_as_of: {
+        Args: { p_date: string }
+        Returns: {
+          accrual_period: Database["ceedo_collections"]["Enums"]["accrual_period"]
+          bucket_1_30: number
+          bucket_31_60: number
+          bucket_61_90: number
+          bucket_over_90: number
+          facility_id: string
+          facility_name: string
+          lease_id: string
+          not_yet_due: number
+          oldest_due_date: string
+          outstanding: number
+          rate_amount: number
+          section_id: string
+          section_name: string
+          stall_no: string
+          tenant_name: string
+          unpaid_charges: number
+        }[]
+      }
       lease_periods: {
         Args: {
           p_accrual_period: Database["ceedo_collections"]["Enums"]["accrual_period"]
