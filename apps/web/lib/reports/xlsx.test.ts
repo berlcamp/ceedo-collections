@@ -81,3 +81,26 @@ describe("report helpers", () => {
     );
   });
 });
+
+describe("dense sections", () => {
+  it("narrows the columns and freezes the name column", async () => {
+    const wide: Report = {
+      title: "Monthly tenant payments",
+      scope: "October 2026",
+      sections: [
+        {
+          dense: true,
+          columns: [
+            { key: "tenant", label: "Tenant", kind: "text" },
+            { key: "d1", label: "1", kind: "money", total: true },
+          ],
+          rows: [{ tenant: "A", d1: fromCentavos(20_000) }],
+        },
+      ],
+    };
+    const { sheet } = await readBack(await toXlsx(wide));
+    expect(sheet.getColumn(1).width).toBe(26);
+    expect(sheet.getColumn(2).width).toBe(10);
+    expect(sheet.views[0]).toMatchObject({ state: "frozen", xSplit: 1 });
+  });
+});

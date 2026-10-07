@@ -26,13 +26,13 @@ export function ReportDocument({ report, generatedAt }: { report: Report; genera
             {section.rows.length === 0 ? (
               <p className="border-y border-black/40 py-2 text-sm italic">{section.empty ?? "None."}</p>
             ) : (
-              <table className="w-full border-collapse text-[12px] leading-snug">
+              <table className={`w-full border-collapse leading-snug ${section.dense ? "text-[9px]" : "text-[12px]"}`}>
                 <thead className="table-header-group">
                   <tr className="border-y border-black">
                     {section.columns.map((c) => (
                       <th
                         key={c.key}
-                        className={`px-1.5 py-1 font-semibold ${numeric(c) ? "text-right" : "text-left"}`}
+                        className={`${section.dense ? "px-0.5" : "px-1.5"} py-1 font-semibold ${numeric(c) ? "text-right" : "text-left"}`}
                       >
                         {c.label}
                       </th>
@@ -45,7 +45,7 @@ export function ReportDocument({ report, generatedAt }: { report: Report; genera
                       {section.columns.map((c) => (
                         <td
                           key={c.key}
-                          className={`px-1.5 py-0.5 ${numeric(c) ? "text-right tabular-nums" : ""}`}
+                          className={`${section.dense ? "px-0.5" : "px-1.5"} py-0.5 ${numeric(c) ? "text-right tabular-nums" : ""}`}
                         >
                           {show(c, row[c.key])}
                         </td>
@@ -59,7 +59,7 @@ export function ReportDocument({ report, generatedAt }: { report: Report; genera
                       {section.columns.map((c, n) => (
                         <td
                           key={c.key}
-                          className={`px-1.5 py-1 ${numeric(c) ? "text-right tabular-nums" : ""}`}
+                          className={`${section.dense ? "px-0.5" : "px-1.5"} py-1 ${numeric(c) ? "text-right tabular-nums" : ""}`}
                         >
                           {c.key in totals ? show(c, totals[c.key]!) : n === 0 ? "Total" : ""}
                         </td>

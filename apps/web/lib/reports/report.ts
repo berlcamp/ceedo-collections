@@ -36,6 +36,8 @@ export interface ReportSection {
   rows: Record<string, Cell>[];
   /** Shown instead of an empty table. */
   empty?: string;
+  /** A wide grid (e.g. one column per day): small print, narrow Excel columns. */
+  dense?: boolean;
 }
 
 /** The totals row of a section: each `total` column summed, as integers (centavos). */
