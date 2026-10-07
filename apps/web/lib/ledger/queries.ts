@@ -2,6 +2,7 @@ import type { Database } from "@ceedo/shared";
 import { fromPesos, type Centavos } from "@ceedo/shared";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isMissingRelationError } from "./db-errors";
+import { manilaToday } from "../reports/params";
 import { getServerClient } from "../supabase/server";
 
 /**
@@ -154,29 +155,35 @@ export interface AgingRow {
   total: Centavos;
 }
 
+/**
+ * Aging is the as-of-today case of lease_balances_as_of (migration 062), so it can never
+ * disagree with the Tenant balances report. Paged: PostgREST stops at 1000 rows.
+ */
 export async function getAging(): Promise<AgingRow[]> {
   const supabase = await ledgerClient();
-  const { data, error } = await supabase
-    .from("aging_of_receivables")
-    .select("*")
-    .order("bucket_over_90", { ascending: false });
-  if (error) throw error;
-
-  // lease_id/stall_id/stall_no/tenant_name come from inner joins and a GROUP BY on
-  // lease_id (see the view's own definition) -- never null in practice, though the
-  // generator marks every view column nullable because it cannot see that guarantee.
-  const labels = await stallLabelsByLeaseId((data ?? []).map((r) => r.lease_id!));
-  return (data ?? []).map((r) => ({
-    leaseId: r.lease_id!,
-    stallNo: r.stall_no!,
-    stallLabel: labels.get(r.lease_id!) ?? `Stall ${r.stall_no}`,
-    tenantName: r.tenant_name!,
+  const today = manilaToday();
+  const rows: Database["ceedo_collections"]["Functions"]["lease_balances_as_of"]["Returns"] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .rpc("lease_balances_as_of", { p_date: today })
+      .order("bucket_over_90", { ascending: false })
+      .order("lease_id")
+      .range(from, from + 999);
+    if (error) throw error;
+    rows.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
+  return rows.map((r) => ({
+    leaseId: r.lease_id,
+    stallNo: r.stall_no,
+    stallLabel: [`Stall ${r.stall_no}`, r.section_name].filter(Boolean).join(" · "),
+    tenantName: r.tenant_name,
     bucket1to30: centavos(r.bucket_1_30),
     bucket31to60: centavos(r.bucket_31_60),
     bucket61to90: centavos(r.bucket_61_90),
     bucketOver90: centavos(r.bucket_over_90),
     notYetDue: centavos(r.not_yet_due),
-    total: centavos(r.total),
+    total: centavos(r.outstanding),
   }));
 }
 
