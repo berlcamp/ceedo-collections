@@ -3,7 +3,9 @@ import { recoveredCollectionIds } from "@/lib/ledger/queries";
 import { getServerClient } from "@/lib/supabase/server";
 import type { BookletInput, Consumption } from "./accountability";
 import type { BalanceRow } from "./builders/balances";
+import type { PaymentDay, PaymentLease } from "./builders/tenant-payments";
 import type { OpenException } from "./open-exceptions";
+import { monthBounds } from "./params";
 
 /**
  * Reads for the report builders. Every list is read in pages: PostgREST returns at most
@@ -286,4 +288,45 @@ export async function balancesAsOf(date: string, facilityId: string | null): Pro
     over90: centavos(r.bucket_over_90),
     outstanding: centavos(r.outstanding),
   }));
+}
+
+/** The grid's leases and per-day receipts for a month; optionally one facility. */
+export async function tenantPaymentData(
+  month: string,
+  facilityId: string | null,
+): Promise<{ leases: PaymentLease[]; days: PaymentDay[] }> {
+  const { from, to } = monthBounds(month);
+  const supabase = await getServerClient();
+  const leaseRows = await allPages((a, b) => {
+    let q = supabase.rpc("leases_active_between", { p_from: from, p_to: to });
+    if (facilityId) q = q.eq("facility_id", facilityId);
+    return q.order("lease_id").range(a, b);
+  });
+  const ids = new Set(leaseRows.map((l) => l.lease_id));
+  const dayRows = await allPages((a, b) =>
+    supabase
+      .rpc("lease_receipts_by_day", { p_from: from, p_to: to })
+      .order("lease_id")
+      .order("business_date")
+      .range(a, b),
+  );
+  return {
+    leases: leaseRows.map((l) => ({
+      leaseId: l.lease_id,
+      facilityName: l.facility_name,
+      sectionName: l.section_name,
+      stallNo: l.stall_no,
+      tenantName: l.tenant_name,
+      rate: centavos(l.rate_amount),
+      accrualPeriod: l.accrual_period,
+    })),
+    days: dayRows
+      .filter((d) => ids.has(d.lease_id))
+      .map((d) => ({
+        leaseId: d.lease_id,
+        businessDate: d.business_date,
+        base: centavos(d.base),
+        surcharge: centavos(d.surcharge),
+      })),
+  };
 }

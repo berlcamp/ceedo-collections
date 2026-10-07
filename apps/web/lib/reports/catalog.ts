@@ -4,7 +4,8 @@ import type { Report } from "./report";
 import { ReportInputError } from "./errors";
 import { balancesReport } from "./builders/balances";
 import { buildRcd } from "./builders/rcd";
-import { balancesAsOf } from "./data";
+import { tenantPaymentsReport } from "./builders/tenant-payments";
+import { balancesAsOf, tenantPaymentData } from "./data";
 import { facilityLabel } from "./options";
 import { buildAbstract, buildExceptions, buildRaaf, buildReconciliation } from "./builders/monthly";
 
@@ -41,6 +42,19 @@ export const REPORTS: ReportEntry[] = [
     purpose: "A month's receipts totalled by fee type, by accountable form and by collector.",
     params: ["month"],
     build: buildAbstract,
+  },
+  {
+    key: "tenant-payments",
+    title: "Monthly tenant payments",
+    purpose: "Every lease's rent received on each day of a month, with surcharges and totals, by facility and section.",
+    params: ["month", "facility"],
+    build: async (p) => {
+      const [{ leases, days }, facilityName] = await Promise.all([
+        tenantPaymentData(p.month, p.facilityId),
+        facilityLabel(p.facilityId),
+      ]);
+      return tenantPaymentsReport(leases, days, { month: p.month, facilityName });
+    },
   },
   {
     key: "raaf",
