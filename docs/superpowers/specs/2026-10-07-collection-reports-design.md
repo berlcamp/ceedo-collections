@@ -13,9 +13,12 @@ by hand in Excel:
 2. **Monthly tenant payments**: tenant × day grid for a month.
 3. **Tenant balances as of a date**.
 4. **Monthly summary of collections**: account lines × Jan–Dec for a year.
-5. **Deposit details (QBO)**: the month's collections, one line per tenant payment and
-   one per collector, day and account for walk-in fees, in the layout the office types
-   into QuickBooks Online. It ends with a per-tenant total.
+5. **Collections detail**: every collection in a month, filterable, with a per-tenant
+   summary. It replaces the office's QuickBooks Online entry log.
+
+**The system replaces QuickBooks Online.** The office currently keys every collection
+into QBO by hand (the April Deposits sample) to get its detail list and per-tenant
+summaries. Once these reports exist, QBO entry stops. Nothing is exported to QBO.
 
 Success: for a day or month entered in the system, each report reproduces the figures the
 office would otherwise compute by hand. The reports agree with one another by
@@ -37,14 +40,14 @@ Samples the office shared (kept outside the repo; they contain real names):
   2026", about 110 account lines × Jan–Dec. It ends with a non-income block, a by-facility
   summary and the cashier's control figure.
 - *April 2026 Deposits*: the office's QuickBooks Online entry log for one month, typed
-  by hand.
+  by hand. Report 5 replaces it.
   - Size: 11,674 lines, about 376 a day, totalling 4,938,388.90.
   - Columns: Date, Transaction type (Rental / Walk-in / Occupancy Payment), Customer,
     Area, Memo "Collector – Account", Amount.
   - Walk-in fees are one line per collector, day and account under a "Walk-in Customer
     <Facility> – <Fee>" customer. Bus companies are their own customers.
-  - Two pivot sheets give the rent paid per tenant for the month. Its 55 account names
-    are the QBO chart of accounts.
+  - Two pivot sheets give the rent paid per tenant for the month.
+  - Its 55 account names cross-check the seeded account chart.
 
 ## What exists today
 
@@ -118,13 +121,8 @@ The lines of the monthly summary.
 ```
 id, code text unique, name text, facility_id uuid null, group_name text,
 sort_order int, kind text check (kind in ('income','non_income')),
-treasurer_line_id uuid not null, rcd_column_id uuid not null, active bool,
-qbo_name text null
+treasurer_line_id uuid not null, rcd_column_id uuid not null, active bool
 ```
-
-`qbo_name` is the account's name in QuickBooks Online, when it differs from the summary
-label (e.g. "Ante-Mortem Fee" vs "Ante Mortem"). Report 5 uses it, falling back to
-`name`. It is seeded from the 55 account names in the April Deposits file.
 
 - Both groupings are **required**, so no peso can fall off the Treasurer page or the
   per-collector matrix.
@@ -405,36 +403,26 @@ Layout: portrait for (a); landscape for (b) and (c).
   - the difference per month.
 - Layout: landscape.
 
-### 5. Deposit details (QBO) (`deposit-details`; parameters: month, facility?)
+### 5. Collections detail (`collections-detail`; parameters: month, facility?, collector?, account?, tenant?)
 
-The office types this list into QuickBooks Online by hand: about 11,700 lines a month.
-The report reproduces it so they can paste it in or bulk-import it.
+This replaces the QuickBooks Online entry log and its pivots.
 
-- **Section 1, the deposit lines.** Columns: Date, Transaction Type, Customer, Area,
-  Memo/Description, Amount. Ordered by date, then collector.
-  - **Tenant receipts** (lease receipts and keyed receipts that carry a lease):
-    - one line per receipt portion;
-    - Transaction Type is `Rental Payment`, or `Occupancy Payment` for occupancy
-      accounts;
-    - Customer is the tenant's name.
-  - **Walk-in fees and cash tickets:**
-    - one line per collector, business date and account, summed;
-    - Transaction Type is `Walk-in Payment`;
-    - Customer is the payer reference where the fee is per payer (bus companies on
-      terminal fees, electricity payers). Otherwise it is "Walk-in Customer <Facility> –
-      <account>".
-  - **Area** is the facility name. **Memo** is "<Collector surname, given name> –
-    <qbo_name or name>".
-  - **Amount** is plain pesos with no thousands separator, so it pastes cleanly.
-  - Cancelled receipts are left out.
-- **Section 2, payments per tenant.** Customer, Area, and total for the month, sorted
-  by name, with a grand total. This is the office's pivot: their "summary of all their
-  payments".
-- **Export.** The xlsx export puts section 1 on its own sheet, a single header row with
-  no title rows, so it can go straight into a QBO import tool. A CSV download of section
-  1 is offered as well.
-- **Invariant:** section 1 total = section 2 total + walk-in lines = the month's total
+- **Section 1, collection lines.**
+  - Columns: Date, OR #, Type (Rental / Occupancy / Walk-in / Cash ticket), Customer,
+    Facility, Collector, Account, Payment mode, Amount.
+  - One line per receipt portion, in date then OR order. Cancelled receipts are left out.
+  - Customer is the tenant's name for lease receipts. Otherwise it is the payer
+    reference (bus company, electricity payer), or "Walk-in" if there is none.
+  - The optional filters narrow the list. The screen is searchable by customer.
+- **Section 2, payments per tenant.**
+  - Customer, Facility, Stall, and the month's total split into rent, surcharge,
+    occupancy and other. Sorted by name, with a grand total.
+  - This replaces the office's pivot, their "summary of all their payments".
+- **Section 3, totals by account.** Each account's month total, so the list can be
+  checked against the monthly summary without a pivot.
+- **Invariant:** with no filters, Section 1 total = Section 3 total = the month's column
   in the monthly summary, before adjustments.
+- **Layout:** landscape. The xlsx export puts each section on its own sheet.
 
 ### Unclassified warning
 
@@ -517,7 +505,8 @@ Each phase is releasable on its own:
    shift total and variance recomputation).
 4. The **Daily Collection Report**.
 5. The **Monthly summary**, adjustments and control totals.
-6. The **Deposit details (QBO)** report and its CSV export.
+6. The **Collections detail** report. QuickBooks entry stops once phases 1–6 have run
+   in parallel with QBO for one full month and the figures agree.
 7. Collector app: keyed amounts and facility-filtered fees.
 
 Migrations reach production as `dist-sql` bundles the user runs, after checking
@@ -534,8 +523,10 @@ Migrations reach production as `dist-sql` bundles the user runs, after checking
   in kilos and derives the slaughter fee from it; this system records heads and variety
   only.
 - Cash tickets as accountable forms (issued, sold and returned ranges in the RAAF).
-- A direct QuickBooks Online integration through its API. Report 5 is a file the office
-  imports or pastes.
+- **History before cutover.** The system starts fresh on 2026-10-01: the 2026 monthly
+  summary shows October–December only, and full-year reports start in 2027.
+  January–September 2026 stay in QuickBooks and the office's Excel files as the archive.
+  No exports to or imports from QuickBooks.
 - Occupancy-fee obligations and their balances. April shows the occupancy fee paid in
   instalments (one IBJT tenant: 200, 400, 100, 100, 200), so it is a receivable. This
   spec only reports the receipts.
@@ -546,8 +537,6 @@ These get their own specs.
 
 - How is the occupancy fee set, and what is owed per tenant? This is needed for a later
   occupancy-receivable spec.
-- Which QBO import tool, if any, the office will use. This may fix the export's exact
-  column names and date format.
 - The effective date of the 75/25 ante/post-mortem split. Also: what makes up the rest
   of the monthly NMIS non-income line beyond the 25% share?
 - Which Treasurer line and RCD column each currently-unplaced account belongs to:
