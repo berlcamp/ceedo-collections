@@ -60,9 +60,14 @@ Samples the office shared (kept outside the repo; they contain real names):
   resolved at query time. The rejected alternatives were stamping an account on each
   receipt at posting, and one fee type per account line.
 - **Checks are accepted at the office only.** Collectors in the field take cash.
-- **Ante/post-mortem fees split by a fixed, dated percentage** between city income and
-  NMIS non-income. The office must confirm the percentage: year-to-date figures put the
-  city share near 43%, while the RCD column header says "25%".
+- **Ante/post-mortem fees split by a fixed, dated percentage: 75% city income (in the
+  Slaughterhouse line and column) and 25% NMIS non-income.**
+  - Verified on Sept 30: Diagro's ante + post-mortem fees are 1,100.00 + 484.40 = 1,584.40.
+    Their 25% is 396.10, which is exactly the "(25%)" column.
+  - The monthly summary's NMIS line is larger than 25% of these fees would give. Its
+    other source is an open question for the office.
+- **Cash-ticket sales (CR tickets and similar) are entered on the web by the office**,
+  per collector per day. They are cash the collector remits but are not ORs.
 - **Non-receipt lines are entered by accounting each month**: withholding tax, payment
   for disapproved leave, prior-period adjustments and over-deposit. The cashier's control
   figure is entered the same way.
@@ -101,8 +106,14 @@ The lines of the monthly summary.
 ```
 id, code text unique, name text, facility_id uuid null, group_name text,
 sort_order int, kind text check (kind in ('income','non_income')),
-treasurer_line_id uuid null, rcd_column_id uuid null, active bool
+treasurer_line_id uuid not null, rcd_column_id uuid not null, active bool
 ```
+
+- Both groupings are **required**, so no peso can fall off the Treasurer page or the
+  per-collector matrix.
+- Accounts the office has not yet placed (citation ticket, rental surcharges, City Gym,
+  Night Market, IBJT Tabo, veterinary, occupancy fees…) point to a seeded **"Other
+  collections"** Treasurer line and RCD column until the office decides.
 
 - `facility_id` is null for cross-facility groups (Surcharges, Non-Income).
 - `group_name` holds the summary's sub-headings, e.g. "Stall Sections Daily Rent",
@@ -137,6 +148,33 @@ note text not null, entered_by, entered_at, cancelled_at, cancelled_by, cancel_r
 ```
 
 Append-only. A cancellation is recorded with a reason, never deleted.
+
+### `cash_ticket_sales`
+
+Cash-ticket money (comfort-room tickets and similar) does not go on ORs. On the
+Sept 30 abstracts these are lump figures:
+
+- PM 3,000;
+- IBJT 1,500 + 2,045;
+- Wellness Park 470.
+
+```
+id, shift_id uuid not null, collector_id, business_date, fee_type_id,
+amount numeric(14,2) check (amount > 0), ticket_from int null, ticket_to int null,
+note, entered_by, entered_at, cancelled_at, cancelled_by, cancel_reason
+```
+
+- **Who enters it, and when:** a supervisor or accounting user, through an RPC, against
+  the collector's shift for that day. Entry is allowed until the shift is remitted.
+- **Effect on the shift:**
+  - Entering or cancelling a sale recomputes the shift's `system_total` and `variance`.
+    The cash the collector declared includes the ticket money, so the shift reads as an
+    overage until the office enters it.
+  - The shifts list flags shifts with an overage and no cash-ticket entry.
+- **Fee type and rules:** the fee type is facility-specific and keyed (e.g. "PM CR cash
+  ticket"), and it is classified by the ordinary rules.
+- **Out of scope:** ticket serials are recorded when given, but tracking cash tickets as
+  accountable forms (RAAF) is not part of this spec.
 
 ### `monthly_control_totals`
 
@@ -179,14 +217,25 @@ reproduce the monthly summary's structure:
 - Daily rent per section, for Public Mall, IBJT and Wellness Park.
 - Rentable and semi-rentable monthly rent.
 - Occupancy fee per section.
-- Per-facility CR, certification, delivery, misc, parking and storage.
+- Per-facility CR (cash tickets), certification, delivery, misc, parking and storage.
 - Terminal fee per bus company (`rate_class` = company).
-- Slaughterhouse sub-fees.
-- Cotta, cemetery, gym, playground and fitness-ground entrance fees.
-- Rental and electricity surcharges per facility.
+- Slaughterhouse sub-fees. Ante- and post-mortem are split 7500/2500 between the
+  slaughterhouse income lines and NMIS.
+- Fees and entrance charges by place:
+  - Cotta: entrance fee.
+  - Public Cemetery: burial fee (Brgy. Bongbong).
+  - City Gym: rental.
+  - Wellness Park: entrance fees for the playground and the fitness ground.
+- Rental surcharges per facility, which are the surcharge portion of lease receipts.
+- Electricity: a keyed **electricity bill payment** fee type and a keyed **electricity
+  surcharge** fee type for each of Public Mall, IBJT, Wellness Park and Unitop.
+  - The two are issued as two lines on the same OR, as the abstracts show
+    ("EBP" + "Surcharge/EBP").
+  - The electricity surcharge does not use the allocation-based surcharge portion: no
+    electricity charges exist to allocate to.
 - Night Market and IBJT Tabo.
-- The non-income lines: NMIS, citation ticket, electricity per facility, veterinary,
-  withholding tax, disapproved leave, prior-period adjustments.
+- The non-income lines: NMIS, citation ticket, electricity (PM, IBJT, Wellness Park,
+  Unitop), veterinary, withholding tax, disapproved leave, prior-period adjustments.
 
 The office reviews the account list before the seed is deployed to production.
 
@@ -199,7 +248,8 @@ returns one row per receipt portion:
 
 ```
 collection_id, or_no, booklet_id, business_date, collector_id, lease_id, payer_ref,
-fee_type_id, account_id, payment_mode, amount, cancelled bool
+fee_type_id, account_id, payment_mode, amount, cancelled bool,
+source text  -- 'receipt' | 'cash_ticket'
 ```
 
 - **Lease receipts** (rent):
@@ -219,6 +269,10 @@ fee_type_id, account_id, payment_mode, amount, cancelled bool
   to the centavo. The rounding remainder goes to the largest share, so the portions sum
   exactly to the receipt.
 - **No match:** the portion goes to `UNCLASSIFIED`.
+- **Cash-ticket sales:** non-cancelled `cash_ticket_sales` rows are a third, exclusive
+  branch. They are returned with `collection_id` and `or_no` null and a `source` column
+  of `cash_ticket`; the other branches return `source = 'receipt'`. They are classified
+  by fee type like any cash-fee line.
 - **Cancelled receipts:**
   - Returned with `cancelled = true`. Every total excludes them; the abstracts list them.
   - Status is current: cancelled minus reinstated, as of now.
@@ -266,14 +320,30 @@ A `security invoker` SQL function. For each lease that started on or before D:
 
 **(b) Collections per collector**
 
-- One row per collector with receipts that day. Columns are the RCD columns plus Total,
-  with a sub-total row.
+- One row per **active collector**, including those with nothing that day (the sample
+  lists them all). Columns are the RCD columns plus Total, with a sub-total row.
 - A deposit block follows: less check, cash, total deposit, total collection.
 
 **(c) Abstracts**
 
-- One section per collector per facility. Columns: No., OR #, Name (tenant, or payer for
-  cash fees), Section, Stall, Amount, Total, Remarks.
+- **Grouping:**
+  - One abstract per collector, in OR order.
+  - It is broken into one section **per booklet**, totalled "Total 1/n … n/n" as the
+    office's pages are.
+  - A collector's run may cover several facilities (one Sept 30 collector had Public
+    Mall and IBJT receipts in the same run). The Section column shows each receipt's
+    facility and section.
+- **Base columns:** No., OR #, Name (tenant, or payer for cash fees), Section, Stall,
+  Amount, Total, Remarks.
+- **Extra columns by facility type:**
+  - Terminal: **Plate/Body #**, taken from the receipt's payer reference.
+  - Slaughterhouse: **Variety** (rate class) and **Heads** (quantity). Weight is not
+    modelled; see Out of scope.
+- **Lines on one OR:** a receipt with several lines (e.g. electricity bill + electricity
+  surcharge) shows one row per line, with the OR total on its first row.
+- **Cash tickets:** a collector's cash-ticket sales are listed after their ORs.
+- **Section summary:** each collector's abstract ends with a summary by section and
+  account, matching the office's "Row Labels / Sum" tables.
 - Cancelled ORs are listed as "(cancelled)" with zero.
 - Remarks are derived from the ledger:
   - the date range of rental charges the receipt settled, e.g. "Sept 1–30" or
@@ -287,6 +357,10 @@ Layout: portrait for (a); landscape for (b) and (c).
 - Blocks are grouped facility → account line, for rent and occupancy-fee lines.
 - One row per lease active at any point in the month, *including leases with no
   payments*. Columns: Name, Stall, Rate, day 1…N, Surcharge, Total.
+  - The office's April sample has only Name, Rate/day, days and Total.
+  - **Stall** and **Surcharge** are deliberate additions. Stall tells apart tenants with
+    the same name and tenants with several stalls; Surcharge makes the row total
+    everything the lease paid.
   - Day cells hold the base portions received that day.
   - Surcharge sums the month's surcharge portions.
 - Totals per block, per facility and overall.
@@ -326,6 +400,8 @@ The band links to the unclassified list.
   - the rule editor, which only adds rules with an effective date and ends the previous
     set;
   - the list of unclassified receipts, each with a "create rule" shortcut.
+- **`/ledger/cash-tickets`**: cash-ticket sales per collector per day, entered against
+  the shift by a supervisor or accounting user; cancelling requires a reason.
 - **`/ledger/adjustments`**: monthly adjustments and control totals.
   - Accounting records them; supervisors and admins can read them.
   - Cancelling requires a reason.
@@ -371,8 +447,15 @@ The band links to the unclassified list.
     - tenant-payments block totals = the monthly summary's lines for that month;
     - summary grand total = all non-cancelled receipt portions + adjustments.
 - **Fixture:**
-  - A trimmed version of the Sept 30 data with fictitious names.
-  - Run through the seed rules, it must reproduce that day's Treasurer line totals.
+  - A trimmed version of the Sept 30 data with fictitious names, run through the seed
+    rules.
+  - Its expected figures are the ones **agreed with the office, not the printed ones**,
+    because the hand report has errors:
+    - Balomaga's abstract totals 5,396.00, but the per-collector sheet shows 6,396.00.
+    - Balat's 1,722.00 "Electric Bill" is reported under IBJT, not Electricity.
+    - Demecillo's OR 6320800 is printed 2,050.00, but its lines sum to 2,048.00.
+  - The test asserts the corrected figures, and the spec's open questions carry these
+    discrepancies.
 
 ## Rollout
 
@@ -382,7 +465,8 @@ Each phase is releasable on its own:
    `aging` rebuilt on it.
 2. The **Monthly tenant payments** report.
 3. The account chart, rules, fee catalogue seed, `amount_mode`, `fee_types.facility_id`,
-   `payment_mode`, and the **Office receipt** page.
+   `payment_mode`, the **Office receipt** page, and **cash-ticket entry** (with the
+   shift total and variance recomputation).
 4. The **Daily Collection Report**.
 5. The **Monthly summary**, adjustments and control totals.
 6. Collector app: keyed amounts and facility-filtered fees.
@@ -397,11 +481,23 @@ Migrations reach production as `dist-sql` bundles the user runs, after checking
 - The tenant-list import from the office's spreadsheet.
 - Day-of-week rent schedules (Tabo on Saturday and Sunday, Night Market Friday to Sunday)
   and holidays.
+- Slaughterhouse rating by weight. The office's slaughterhouse abstract records weight
+  in kilos and derives the slaughter fee from it; this system records heads and variety
+  only.
+- Cash tickets as accountable forms (issued, sold and returned ranges in the RAAF).
+- The office's "Deposits" per-transaction list (date, type, customer, collector –
+  account, amount). The reviewer has seen it, but it is not among this spec's sources. It
+  becomes a report here once the sample is shared.
 
 These get their own specs.
 
 ## Open questions for the office
 
-- The ante/post-mortem city share percentage, and its effective date.
+- The effective date of the 75/25 ante/post-mortem split. Also: what makes up the rest
+  of the monthly NMIS non-income line beyond the 25% share?
+- Which Treasurer line and RCD column each currently-unplaced account belongs to:
+  citation ticket, rental surcharges, City Gym, Night Market, IBJT Tabo, veterinary, and
+  occupancy fees.
+- The corrected figures for the three Sept 30 discrepancies listed under Testing.
 - Confirmation of the seeded account list and its Treasurer and RCD groupings.
 - The names and titles for the signature blocks.
