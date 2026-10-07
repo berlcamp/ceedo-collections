@@ -119,12 +119,35 @@ describe("lease_balances_as_of", () => {
     expect(dec.unpaid_charges).toBe(2);
   });
 
-  it("shows an elapsed-but-not-yet-due monthly charge as not yet due", async () => {
-    await charge("2026-11-05", "300.00", "2026-10-31");
-    expect(await owed("2026-10-31")).toBe(0); // period not over yet
-    const [row] = await asOf("2026-11-03");
-    expect(Number(row.not_yet_due)).toBe(300);
+  it("counts a monthly charge only once accrual would have raised it (its period has ended)", async () => {
+    // lease_periods bills a month once it has ended: October (due 10-05) exists from 10-31.
+    await db.query(
+      `insert into ceedo_collections.charges
+         (lease_id, fee_type_id, charge_type, period_start, period_end, due_date, amount,
+          surcharge_bps, source)
+       values ($1, $2, 'rental', '2026-10-01', '2026-10-31', '2026-10-05', 300.00, 0, 'manual')`,
+      [fx.leaseId, fx.feeTypeId],
+    );
+    expect(await owed("2026-10-10")).toBe(0);
+    const [row] = await asOf("2026-10-31");
     expect(Number(row.outstanding)).toBe(300);
+    expect(Number(row.bucket_1_30)).toBe(300); // 26 days past the 5th
+  });
+
+  it("counts a surcharge only from the day run_surcharge would have raised it", async () => {
+    // A surcharge carries its parent's due date but is raised once the date passes
+    // due_date + 1 month (run_surcharge, migration 0021).
+    const rent = await charge("2026-10-01");
+    await db.query(
+      `insert into ceedo_collections.charges
+         (lease_id, fee_type_id, charge_type, parent_charge_id, period_start, period_end,
+          due_date, amount, surcharge_bps, source)
+       values ($1, $2, 'surcharge', $3, '2026-10-01', '2026-10-01', '2026-10-01', 1.50, 0, 'manual')`,
+      [fx.leaseId, fx.feeTypeId, rent],
+    );
+    expect(await owed("2026-10-15")).toBe(50);
+    expect(await owed("2026-11-01")).toBe(50);
+    expect(await owed("2026-11-02")).toBe(51.5);
   });
 
   it("omits a lease that owes nothing on the date", async () => {

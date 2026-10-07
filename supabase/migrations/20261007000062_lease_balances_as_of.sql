@@ -4,8 +4,12 @@
 -- same in December. security invoker: RLS on charges/collections/leases gates it exactly
 -- as it gates charge_balances.
 --
--- On D:
---   * a charge counts once its period has ended before D or it fell due by D;
+-- On D, a charge counts once the ledger held it -- the books as they stood that day:
+--   * a rental once its period has ended (period_end <= D): run_accrual raises a period
+--     only once it is over, so a monthly charge due on the 5th exists from month end;
+--   * a surcharge once D > due_date + 1 month, the rule run_surcharge raises it by (it
+--     carries its parent's due_date, so due_date alone would date it a month early);
+--   * an opening balance once it fell due;
 --   * a receipt counts if dated by D and not cancelled by D (a cancellation reinstated by
 --     D does not count) -- so a receipt cancelled after D still paid on D;
 --   * a condonation counts from the Manila date it was recorded.
@@ -73,7 +77,11 @@ as $$
     from ceedo_collections.charges c
     left join alloc al on al.charge_id = c.id
     left join cond  co on co.charge_id = c.id
-    where c.due_date <= p_date or c.period_end < p_date
+    where case c.charge_type
+            when 'rental'    then c.period_end <= p_date
+            when 'surcharge' then p_date > (c.due_date + interval '1 month')::date
+            else c.due_date <= p_date
+          end
   ),
   per_lease as (
     select

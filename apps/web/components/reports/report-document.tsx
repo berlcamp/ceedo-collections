@@ -1,4 +1,4 @@
-import { pesos, sectionTotals, type Cell, type Report, type ReportColumn } from "@/lib/reports/report";
+import { cellText, sectionTotals, type Report, type ReportColumn } from "@/lib/reports/report";
 
 /**
  * The printable form of a report, and what "Save as PDF" in Chrome produces. Parent §10
@@ -8,7 +8,7 @@ import { pesos, sectionTotals, type Cell, type Report, type ReportColumn } from 
 export function ReportDocument({ report, generatedAt }: { report: Report; generatedAt: string }) {
   return (
     <article className="bg-white px-8 py-7 text-black shadow-sm ring-1 ring-rule print:p-0 print:shadow-none print:ring-0">
-      <style>{`@page { size: A4 landscape; margin: 12mm; }`}</style>
+      <style>{`@page { size: A4 landscape; margin: ${report.sections.some((s) => s.dense) ? 6 : 12}mm; }`}</style>
 
       <header className="mb-5 border-b-2 border-black pb-3">
         <p className="text-xs uppercase tracking-wider">City Economic Enterprise and Development Office</p>
@@ -26,7 +26,7 @@ export function ReportDocument({ report, generatedAt }: { report: Report; genera
             {section.rows.length === 0 ? (
               <p className="border-y border-black/40 py-2 text-sm italic">{section.empty ?? "None."}</p>
             ) : (
-              <table className={`w-full border-collapse leading-snug ${section.dense ? "text-[9px]" : "text-[12px]"}`}>
+              <table className={`w-full border-collapse leading-snug ${section.dense ? "text-[8px]" : "text-[12px]"}`}>
                 <thead className="table-header-group">
                   <tr className="border-y border-black">
                     {section.columns.map((c) => (
@@ -47,7 +47,7 @@ export function ReportDocument({ report, generatedAt }: { report: Report; genera
                           key={c.key}
                           className={`${section.dense ? "px-0.5" : "px-1.5"} py-0.5 ${numeric(c) ? "text-right tabular-nums" : ""}`}
                         >
-                          {show(c, row[c.key])}
+                          {cellText(c, row[c.key], section.dense)}
                         </td>
                       ))}
                     </tr>
@@ -61,7 +61,7 @@ export function ReportDocument({ report, generatedAt }: { report: Report; genera
                           key={c.key}
                           className={`${section.dense ? "px-0.5" : "px-1.5"} py-1 ${numeric(c) ? "text-right tabular-nums" : ""}`}
                         >
-                          {c.key in totals ? show(c, totals[c.key]!) : n === 0 ? "Total" : ""}
+                          {c.key in totals ? cellText(c, totals[c.key]!, section.dense) : n === 0 ? "Total" : ""}
                         </td>
                       ))}
                     </tr>
@@ -103,9 +103,3 @@ function numeric(c: ReportColumn) {
   return c.kind === "money" || c.kind === "int";
 }
 
-function show(c: ReportColumn, value: Cell | undefined): string {
-  if (value === null || value === undefined || value === "") return "—";
-  if (c.kind === "money") return pesos(Number(value));
-  if (c.kind === "int") return Number(value).toLocaleString("en-PH");
-  return String(value);
-}

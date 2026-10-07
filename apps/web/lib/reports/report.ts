@@ -69,3 +69,14 @@ export function fileName(title: string, scope: string, ext: string): string {
     .slice(0, 90);
   return `${slug}.${ext}`;
 }
+
+/**
+ * A cell as printed. Empty is "—", except in a dense grid, where 31 dashes per row are
+ * what push a month's day columns past an A4 landscape page.
+ */
+export function cellText(c: ReportColumn, value: Cell | undefined, dense = false): string {
+  if (value === null || value === undefined || value === "") return dense ? "" : "—";
+  if (c.kind === "money") return pesos(Number(value));
+  if (c.kind === "int") return Number(value).toLocaleString("en-PH");
+  return String(value);
+}

@@ -28,7 +28,10 @@ as $$
   join ceedo_collections.sections   s  on s.id = st.section_id
   join ceedo_collections.facilities f  on f.id = s.facility_id
   join ceedo_collections.tenants    t  on t.id = l.tenant_id
-  where (l.start_date <= p_to and (l.end_date is null or l.end_date >= p_from))
+  -- A lease marked ended/terminated with no end_date has no term to place in a range, so
+  -- only the paid-in-range branch can bring it in.
+  where (l.start_date <= p_to and (l.end_date is null or l.end_date >= p_from)
+         and (l.status = 'active' or l.end_date is not null))
      or exists (
        select 1 from ceedo_collections.collections c
        where c.lease_id = l.id and c.business_date between p_from and p_to

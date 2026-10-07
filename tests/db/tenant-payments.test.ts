@@ -111,6 +111,13 @@ describe("leases_active_between", () => {
     expect(await active("2026-10-01", "2026-10-31")).toHaveLength(0);
   });
 
+  it("omits a lease marked ended with no end date, unless it took money in the range", async () => {
+    // The admin form allows status 'ended' with end_date left empty; such a lease must not
+    // haunt every later month with an empty row.
+    await db.query(`update ceedo_collections.leases set status = 'ended' where id = $1`, [fx.leaseId]);
+    expect(await active("2026-10-01", "2026-10-31")).toHaveLength(0);
+  });
+
   it("keeps an ended lease that was paid in the range", async () => {
     await charge("2026-10-01");
     await postCollectionAsOwner(db, fx, { groupRanks: [1], collectedAt: "2026-10-05T02:00:00+00:00" });
