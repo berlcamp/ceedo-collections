@@ -36,6 +36,8 @@ export interface ReportSection {
   rows: Record<string, Cell>[];
   /** Shown instead of an empty table. */
   empty?: string;
+  /** A wide grid (e.g. one column per day): small print, narrow Excel columns. */
+  dense?: boolean;
 }
 
 /** The totals row of a section: each `total` column summed, as integers (centavos). */
@@ -66,4 +68,15 @@ export function fileName(title: string, scope: string, ext: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 90);
   return `${slug}.${ext}`;
+}
+
+/**
+ * A cell as printed. Empty is "—", except in a dense grid, where 31 dashes per row are
+ * what push a month's day columns past an A4 landscape page.
+ */
+export function cellText(c: ReportColumn, value: Cell | undefined, dense = false): string {
+  if (value === null || value === undefined || value === "") return dense ? "" : "—";
+  if (c.kind === "money") return pesos(Number(value));
+  if (c.kind === "int") return Number(value).toLocaleString("en-PH");
+  return String(value);
 }

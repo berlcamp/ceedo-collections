@@ -4,7 +4,7 @@ import { buttonClass } from "@/components/ui/button";
 import { NativeSelect, TextInput } from "@/components/ui/field";
 import { getCollectors } from "@/lib/ledger/queries";
 import { REPORTS } from "@/lib/reports/catalog";
-import { getLeaseOptions } from "@/lib/reports/options";
+import { getFacilityOptions, getLeaseOptions } from "@/lib/reports/options";
 import { manilaToday } from "@/lib/reports/params";
 import { requireStaff } from "@/lib/supabase/session";
 
@@ -15,9 +15,10 @@ import { requireStaff } from "@/lib/supabase/session";
 export default async function ReportsPage() {
   await requireStaff();
   const needs = new Set(REPORTS.flatMap((r) => r.params));
-  const [collectors, leases] = await Promise.all([
+  const [collectors, leases, facilities] = await Promise.all([
     needs.has("collector") ? getCollectors() : Promise.resolve([]),
     needs.has("lease") ? getLeaseOptions() : Promise.resolve([]),
+    needs.has("facility") ? getFacilityOptions() : Promise.resolve([]),
   ]);
   const today = manilaToday();
 
@@ -37,6 +38,25 @@ export default async function ReportsPage() {
                 <label className="text-xs text-ink-2">
                   Date
                   <TextInput type="date" name="date" defaultValue={today} className="mt-1 w-40" required />
+                </label>
+              ) : null}
+              {report.params.includes("asOf") ? (
+                <label className="text-xs text-ink-2">
+                  As of
+                  <TextInput type="date" name="date" defaultValue={today} className="mt-1 w-40" required />
+                </label>
+              ) : null}
+              {report.params.includes("facility") ? (
+                <label className="text-xs text-ink-2">
+                  Facility
+                  <NativeSelect name="facility" className="mt-1 w-52" defaultValue="">
+                    <option value="">All facilities</option>
+                    {facilities.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </NativeSelect>
                 </label>
               ) : null}
               {report.params.includes("month") ? (

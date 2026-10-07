@@ -58,7 +58,9 @@ export async function toXlsx(report: Report): Promise<Buffer> {
     sheet.addRow(report.signatures.map((s) => `${s.label}: ${s.name ?? "________________"}`));
   }
 
-  for (let i = 1; i <= width; i++) sheet.getColumn(i).width = i === 1 ? 26 : 16;
+  const dense = report.sections.some((s) => s.dense);
+  for (let i = 1; i <= width; i++) sheet.getColumn(i).width = i === 1 ? 26 : dense ? 10 : 16;
+  if (dense) sheet.views = [{ state: "frozen", xSplit: 1, ySplit: 0 }];
 
   return Buffer.from(await book.xlsx.writeBuffer());
 }

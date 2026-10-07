@@ -9,6 +9,8 @@ export interface ReportParams {
   month: string;
   collectorId: string | null;
   leaseId: string | null;
+  /** Narrows a report to one facility; null means every facility. */
+  facilityId: string | null;
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -33,6 +35,7 @@ export function readParams(
     month,
     collectorId: UUID.test(one("collector")) ? one("collector") : null,
     leaseId: UUID.test(one("lease")) ? one("lease") : null,
+    facilityId: UUID.test(one("facility")) ? one("facility") : null,
   };
 }
 

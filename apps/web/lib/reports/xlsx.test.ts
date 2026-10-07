@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 import { fromCentavos } from "@ceedo/shared";
-import { fileName, pesos, sectionTotals, type Report } from "./report";
+import { cellText, fileName, pesos, sectionTotals, type Report } from "./report";
 import { toXlsx } from "./xlsx";
 
 const report: Report = {
@@ -79,5 +79,40 @@ describe("report helpers", () => {
     expect(fileName("RCD", "Maria Santos · 23 Sep 2026", "xlsx")).toBe(
       "rcd-maria-santos-23-sep-2026.xlsx",
     );
+  });
+});
+
+describe("dense sections", () => {
+  it("narrows the columns and freezes the name column", async () => {
+    const wide: Report = {
+      title: "Monthly tenant payments",
+      scope: "October 2026",
+      sections: [
+        {
+          dense: true,
+          columns: [
+            { key: "tenant", label: "Tenant", kind: "text" },
+            { key: "d1", label: "1", kind: "money", total: true },
+          ],
+          rows: [{ tenant: "A", d1: fromCentavos(20_000) }],
+        },
+      ],
+    };
+    const { sheet } = await readBack(await toXlsx(wide));
+    expect(sheet.getColumn(1).width).toBe(26);
+    expect(sheet.getColumn(2).width).toBe(10);
+    expect(sheet.views[0]).toMatchObject({ state: "frozen", xSplit: 1 });
+  });
+});
+
+describe("cellText", () => {
+  const money = { key: "d1", label: "1", kind: "money" as const };
+  it("leaves an empty cell blank in a dense grid, so 31 day columns fit an A4 landscape page", () => {
+    expect(cellText(money, null, true)).toBe("");
+    expect(cellText(money, null, false)).toBe("—");
+  });
+  it("formats figures the same either way", () => {
+    expect(cellText(money, 20_000, true)).toBe("200.00");
+    expect(cellText({ key: "n", label: "N", kind: "int" }, 1234, false)).toBe("1,234");
   });
 });

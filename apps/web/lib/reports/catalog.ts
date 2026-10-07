@@ -2,11 +2,18 @@ import { getAging, getDelinquency, getLeaseBalance, getSubsidiaryLedger } from "
 import { longDate, type ReportParams } from "./params";
 import type { Report } from "./report";
 import { ReportInputError } from "./errors";
+import { balancesReport } from "./builders/balances";
 import { buildRcd } from "./builders/rcd";
+import { tenantPaymentsReport } from "./builders/tenant-payments";
+import { balancesAsOf, tenantPaymentData } from "./data";
+import { facilityLabel } from "./options";
 import { buildAbstract, buildExceptions, buildRaaf, buildReconciliation } from "./builders/monthly";
 
-/** Which inputs a report asks for; the hub renders exactly these. */
-export type ParamKind = "date" | "month" | "collector" | "lease";
+/**
+ * Which inputs a report asks for; the hub renders exactly these. `asOf` is a date read
+ * as "on or before" (balances); `date` is one business day.
+ */
+export type ParamKind = "date" | "asOf" | "month" | "collector" | "lease" | "facility";
 
 export interface ReportEntry {
   key: string;
@@ -37,6 +44,19 @@ export const REPORTS: ReportEntry[] = [
     build: buildAbstract,
   },
   {
+    key: "tenant-payments",
+    title: "Monthly tenant payments",
+    purpose: "Every lease's rent received on each day of a month, with surcharges and totals, by facility and section.",
+    params: ["month", "facility"],
+    build: async (p) => {
+      const [{ leases, days }, facilityName] = await Promise.all([
+        tenantPaymentData(p.month, p.facilityId),
+        facilityLabel(p.facilityId),
+      ]);
+      return tenantPaymentsReport(leases, days, { month: p.month, facilityName });
+    },
+  },
+  {
     key: "raaf",
     title: "Report of Accountability for Accountable Forms",
     purpose: "Every booklet held in the month: beginning, received, used, spoiled, ending, and whether it balances.",
@@ -56,6 +76,19 @@ export const REPORTS: ReportEntry[] = [
     purpose: "Sync exceptions by collector, resolutions by supervisor, and closeout variances, for a month.",
     params: ["month"],
     build: buildExceptions,
+  },
+  {
+    key: "balances-as-of",
+    title: "Tenant balances",
+    purpose: "What every tenant owed at the end of a chosen date, by facility and section, aged from that date.",
+    params: ["asOf", "facility"],
+    build: async (p) => {
+      const [rows, facilityName] = await Promise.all([
+        balancesAsOf(p.date, p.facilityId),
+        facilityLabel(p.facilityId),
+      ]);
+      return balancesReport(rows, { date: p.date, facilityName });
+    },
   },
   {
     key: "aging",
