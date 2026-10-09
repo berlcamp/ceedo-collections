@@ -46,6 +46,7 @@ declare
   v_constraint   text;
   v_mode         text;
   v_unit         numeric(14,2);
+  v_amount       numeric;
 begin
   -- STEP 1: IDEMPOTENCY. Before anything else, and by primary key.
   -- A retry after a dropped connection carries the same client-generated id and must
@@ -214,12 +215,19 @@ begin
       from ceedo_collections.fee_types where id = (v_line ->> 'fee_type_id')::uuid;
 
     if v_mode = 'keyed' then
+      -- The amount is tested as stored: rounded to the centavo, and only after the text is
+      -- known to be a plain decimal that fits numeric(14,2). The cast is its own statement
+      -- so garbage ("abc", "1e400") is refused as amount_mismatch instead of raising.
+      v_amount := null;
+      if (v_line ->> 'amount') ~ '^\s*[0-9]{1,12}(\.[0-9]+)?\s*$' then
+        v_amount := round((v_line ->> 'amount')::numeric, 2);
+      end if;
       if coalesce((v_line ->> 'quantity')::integer, 0) <> 1
-         or coalesce(nullif(v_line ->> 'amount', '')::numeric, 0) <= 0 then
+         or coalesce(v_amount, 0) <= 0 or v_amount >= 1000000000000 then
         return jsonb_build_object('status', 'rejected', 'reason', 'amount_mismatch',
           'detail', 'A keyed fee is one line of quantity 1 with an amount above zero');
       end if;
-      v_unit := round((v_line ->> 'amount')::numeric, 2);
+      v_unit := v_amount;
     else
       select * into v_rate
       from ceedo_collections.rates r

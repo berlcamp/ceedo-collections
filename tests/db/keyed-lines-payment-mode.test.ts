@@ -48,6 +48,10 @@ describe("keyed lines", () => {
     [{ quantity: 1, amount: "-5" }],
     [{ quantity: 1 }],
     [{ quantity: 2, amount: "10" }],
+    [{ quantity: 1, amount: "0.004" }],
+    [{ quantity: 1, amount: "abc" }],
+    [{ quantity: 1, amount: "1e400" }],
+    [{ quantity: 1, amount: "999999999999.999" }],
   ])("refuses %j with amount_mismatch", async (line) => {
     const fx = await createCollectionFixture(db);
     const r = await post(fx, await keyedFee(), line);
