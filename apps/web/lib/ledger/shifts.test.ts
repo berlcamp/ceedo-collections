@@ -89,3 +89,17 @@ describe("officeEncodedCounts", () => {
     expect(counts.size).toBe(1);
   });
 });
+
+import { needsCashTickets } from "./shift-class";
+
+describe("needsCashTickets", () => {
+  it("flags an overage with no cash-ticket entry", () => {
+    expect(needsCashTickets({ variance: 300000, cashTicketTotal: 0 })).toBe(true);
+  });
+  it("does not flag a balanced shift, a short one, or one with tickets entered", () => {
+    expect(needsCashTickets({ variance: 0, cashTicketTotal: 0 })).toBe(false);
+    expect(needsCashTickets({ variance: -100, cashTicketTotal: 0 })).toBe(false);
+    expect(needsCashTickets({ variance: 300000, cashTicketTotal: 150000 })).toBe(false);
+    expect(needsCashTickets({ variance: null, cashTicketTotal: 0 })).toBe(false);
+  });
+});

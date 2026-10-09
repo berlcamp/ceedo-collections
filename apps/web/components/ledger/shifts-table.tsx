@@ -6,7 +6,8 @@ import { DataTable } from "@/components/data-table/data-table";
 import type { DataColumn } from "@/components/data-table/types";
 import { Money } from "@/components/ledger/money";
 import { Mark, QuietMark } from "@/components/ui/mark";
-import { formatVariance, type ShiftClass, type ShiftRow } from "@/lib/ledger/shift-class";
+import Link from "next/link";
+import { formatVariance, needsCashTickets, type ShiftClass, type ShiftRow } from "@/lib/ledger/shift-class";
 import { formatDate } from "@/lib/format/date";
 import type { ShortageRow } from "@/lib/shortages/queries";
 import { SettleDialog } from "@/components/shortages/settle-dialog";
@@ -119,6 +120,11 @@ function columns(
         return (
           <span className={className}>
             {text}
+            {needsCashTickets(row) ? (
+              <Link href={`/ledger/cash-tickets?date=${row.businessDate}`} className="ml-2 text-xs font-normal text-amber underline">
+                Over, no cash tickets
+              </Link>
+            ) : null}
             {row.stillOwed !== null ? (
               <span className="block text-xs font-normal text-ink-3">
                 {row.stillOwed === 0 ? "Paid back" : `${format(row.stillOwed)} still owed`}
