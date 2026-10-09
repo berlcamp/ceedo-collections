@@ -47,17 +47,17 @@ describe("facilities, sections and stalls", () => {
     expect(data).toEqual([]);
   });
 
-  it("rejects a section on a non-market facility", async () => {
+  it("rejects a section on a parking facility", async () => {
     const service = serviceClient();
     const { data: terminal } = await service
       .from("facilities")
-      .insert({ name: "IBJT", code: uniqueCode("IBJT"), type: "terminal" })
+      .insert({ name: "Lot", code: uniqueCode("LOT"), type: "parking" })
       .select("id")
       .single();
     const { error } = await service
       .from("sections")
       .insert({ facility_id: terminal!.id, name: "Bay 1", default_accrual_period: "daily" });
-    expect(error?.message ?? "").toMatch(/market/i);
+    expect(error?.message ?? "").toMatch(/Sections may not belong/);
   });
 
   it("bumps row_version on every update", async () => {
@@ -108,10 +108,29 @@ describe("facilities, sections and stalls", () => {
 
     const { error } = await service
       .from("facilities")
+      .update({ type: "parking" })
+      .eq("id", facility!.id);
+
+    expect(error?.message ?? "").toMatch(/while it still has sections/);
+  });
+
+  it("allows a market with sections to become a terminal", async () => {
+    const service = serviceClient();
+    const { data: facility } = await service
+      .from("facilities")
+      .insert({ name: "Terminal Market", code: uniqueCode("TRM"), type: "market" })
+      .select("id")
+      .single();
+    await service
+      .from("sections")
+      .insert({ facility_id: facility!.id, name: "Bay", default_accrual_period: "daily" });
+
+    const { error } = await service
+      .from("facilities")
       .update({ type: "terminal" })
       .eq("id", facility!.id);
 
-    expect(error?.message ?? "").toMatch(/still has sections/i);
+    expect(error).toBeNull();
   });
 
   it("allows reclassifying a market with no sections", async () => {

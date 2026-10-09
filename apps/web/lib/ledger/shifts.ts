@@ -27,7 +27,7 @@ export async function getShifts(): Promise<ShiftRow[]> {
   const { data, error } = await supabase
     .from("shifts")
     .select(
-      "id, business_date, status, system_count, system_total, declared_total, variance, collector:app_users!shifts_collector_id_fkey(full_name), device:devices!shifts_device_id_fkey(label)",
+      "id, business_date, status, kind, system_count, system_total, declared_total, variance, collector:app_users!shifts_collector_id_fkey(full_name), device:devices!shifts_device_id_fkey(label)",
     )
     .order("business_date", { ascending: false })
     .limit(200);
@@ -45,7 +45,7 @@ export async function getShifts(): Promise<ShiftRow[]> {
   const rows: ShiftRow[] = (data ?? []).map((row) => ({
     id: row.id,
     collectorName: row.collector?.full_name ?? "Unknown collector",
-    deviceLabel: row.device?.label ?? "Unknown device",
+    deviceLabel: row.kind === "office" ? "Office" : (row.device?.label ?? "Unknown device"),
     businessDate: row.business_date,
     status: row.status,
     klass: classifyShift({ status: row.status, businessDate: row.business_date, today }),

@@ -581,11 +581,14 @@ export type Database = {
       }
       collections: {
         Row: {
+          bank: string | null
           booklet_id: string
           business_date: string
+          check_date: string | null
+          check_no: string | null
           collected_at: string
           collector_id: string
-          device_id: string
+          device_id: string | null
           fee_type_id: string
           gross_amount: number
           id: string
@@ -593,6 +596,7 @@ export type Database = {
           notes: string | null
           or_no: number
           payer_ref: string | null
+          payment_mode: string
           posted_at: string
           posted_by: string | null
           row_version: number
@@ -600,11 +604,14 @@ export type Database = {
           synced_at: string | null
         }
         Insert: {
+          bank?: string | null
           booklet_id: string
           business_date: string
+          check_date?: string | null
+          check_no?: string | null
           collected_at: string
           collector_id: string
-          device_id: string
+          device_id?: string | null
           fee_type_id: string
           gross_amount: number
           id: string
@@ -612,6 +619,7 @@ export type Database = {
           notes?: string | null
           or_no: number
           payer_ref?: string | null
+          payment_mode?: string
           posted_at?: string
           posted_by?: string | null
           row_version?: number
@@ -619,11 +627,14 @@ export type Database = {
           synced_at?: string | null
         }
         Update: {
+          bank?: string | null
           booklet_id?: string
           business_date?: string
+          check_date?: string | null
+          check_no?: string | null
           collected_at?: string
           collector_id?: string
-          device_id?: string
+          device_id?: string | null
           fee_type_id?: string
           gross_amount?: number
           id?: string
@@ -631,6 +642,7 @@ export type Database = {
           notes?: string | null
           or_no?: number
           payer_ref?: string | null
+          payment_mode?: string
           posted_at?: string
           posted_by?: string | null
           row_version?: number
@@ -932,8 +944,10 @@ export type Database = {
         Row: {
           accrues: boolean
           active: boolean
+          amount_mode: string
           code: string
           created_at: string
+          facility_id: string | null
           facility_type:
             | Database["ceedo_collections"]["Enums"]["facility_type"]
             | null
@@ -945,8 +959,10 @@ export type Database = {
         Insert: {
           accrues?: boolean
           active?: boolean
+          amount_mode?: string
           code: string
           created_at?: string
+          facility_id?: string | null
           facility_type?:
             | Database["ceedo_collections"]["Enums"]["facility_type"]
             | null
@@ -958,8 +974,10 @@ export type Database = {
         Update: {
           accrues?: boolean
           active?: boolean
+          amount_mode?: string
           code?: string
           created_at?: string
+          facility_id?: string | null
           facility_type?:
             | Database["ceedo_collections"]["Enums"]["facility_type"]
             | null
@@ -968,7 +986,15 @@ export type Database = {
           row_version?: number
           surcharge_bps?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "fee_types_facility_id_fkey"
+            columns: ["facility_id"]
+            isOneToOne: false
+            referencedRelation: "facilities"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       form_types: {
         Row: {
@@ -1254,8 +1280,9 @@ export type Database = {
           closed_at: string | null
           collector_id: string
           declared_total: number | null
-          device_id: string
+          device_id: string | null
           id: string
+          kind: string
           opened_at: string
           remittance_id: string | null
           row_version: number
@@ -1269,8 +1296,9 @@ export type Database = {
           closed_at?: string | null
           collector_id: string
           declared_total?: number | null
-          device_id: string
+          device_id?: string | null
           id: string
+          kind?: string
           opened_at: string
           remittance_id?: string | null
           row_version?: number
@@ -1284,8 +1312,9 @@ export type Database = {
           closed_at?: string | null
           collector_id?: string
           declared_total?: number | null
-          device_id?: string
+          device_id?: string | null
           id?: string
+          kind?: string
           opened_at?: string
           remittance_id?: string | null
           row_version?: number
@@ -2112,7 +2141,12 @@ export type Database = {
         | "exhausted"
       charge_source: "accrual" | "opening_balance" | "manual"
       charge_type: "rental" | "surcharge" | "opening_balance"
-      facility_type: "market" | "terminal" | "parking" | "slaughterhouse"
+      facility_type:
+        | "market"
+        | "terminal"
+        | "parking"
+        | "slaughterhouse"
+        | "other"
       lease_status: "active" | "ended" | "terminated"
       rate_basis:
         | "per_day"
@@ -2260,7 +2294,13 @@ export const Constants = {
       ],
       charge_source: ["accrual", "opening_balance", "manual"],
       charge_type: ["rental", "surcharge", "opening_balance"],
-      facility_type: ["market", "terminal", "parking", "slaughterhouse"],
+      facility_type: [
+        "market",
+        "terminal",
+        "parking",
+        "slaughterhouse",
+        "other",
+      ],
       lease_status: ["active", "ended", "terminated"],
       rate_basis: [
         "per_day",
