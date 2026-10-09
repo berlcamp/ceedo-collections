@@ -11,6 +11,110 @@ export type Json =
 export type Database = {
   ceedo_collections: {
     Tables: {
+      account_rule_shares: {
+        Row: {
+          account_id: string
+          id: string
+          rule_id: string
+          share_bps: number
+        }
+        Insert: {
+          account_id: string
+          id?: string
+          rule_id: string
+          share_bps: number
+        }
+        Update: {
+          account_id?: string
+          id?: string
+          rule_id?: string
+          share_bps?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_rule_shares_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "collection_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_rule_shares_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "account_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      account_rules: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          effective_from: string
+          effective_to: string | null
+          facility_id: string | null
+          fee_type_id: string
+          id: string
+          portion: string
+          rate_class: string | null
+          section_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          effective_from: string
+          effective_to?: string | null
+          facility_id?: string | null
+          fee_type_id: string
+          id?: string
+          portion: string
+          rate_class?: string | null
+          section_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          facility_id?: string | null
+          fee_type_id?: string
+          id?: string
+          portion?: string
+          rate_class?: string | null
+          section_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_rules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_rules_facility_id_fkey"
+            columns: ["facility_id"]
+            isOneToOne: false
+            referencedRelation: "facilities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_rules_fee_type_id_fkey"
+            columns: ["fee_type_id"]
+            isOneToOne: false
+            referencedRelation: "fee_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_rules_section_in_facility"
+            columns: ["section_id", "facility_id"]
+            isOneToOne: false
+            referencedRelation: "sections"
+            referencedColumns: ["id", "facility_id"]
+          },
+        ]
+      }
       accrual_runs: {
         Row: {
           business_date: string
@@ -354,6 +458,73 @@ export type Database = {
             columns: ["parent_charge_id"]
             isOneToOne: false
             referencedRelation: "charges"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      collection_accounts: {
+        Row: {
+          active: boolean
+          code: string
+          created_at: string
+          facility_id: string | null
+          group_name: string
+          id: string
+          kind: string
+          name: string
+          rcd_column_id: string
+          row_version: number
+          sort_order: number
+          treasurer_line_id: string
+        }
+        Insert: {
+          active?: boolean
+          code: string
+          created_at?: string
+          facility_id?: string | null
+          group_name: string
+          id?: string
+          kind: string
+          name: string
+          rcd_column_id: string
+          row_version?: number
+          sort_order: number
+          treasurer_line_id: string
+        }
+        Update: {
+          active?: boolean
+          code?: string
+          created_at?: string
+          facility_id?: string | null
+          group_name?: string
+          id?: string
+          kind?: string
+          name?: string
+          rcd_column_id?: string
+          row_version?: number
+          sort_order?: number
+          treasurer_line_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collection_accounts_facility_id_fkey"
+            columns: ["facility_id"]
+            isOneToOne: false
+            referencedRelation: "facilities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_accounts_rcd_column_id_fkey"
+            columns: ["rcd_column_id"]
+            isOneToOne: false
+            referencedRelation: "rcd_columns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_accounts_treasurer_line_id_fkey"
+            columns: ["treasurer_line_id"]
+            isOneToOne: false
+            referencedRelation: "treasurer_lines"
             referencedColumns: ["id"]
           },
         ]
@@ -1124,6 +1295,36 @@ export type Database = {
           },
         ]
       }
+      rcd_columns: {
+        Row: {
+          active: boolean
+          code: string
+          created_at: string
+          id: string
+          name: string
+          row_version: number
+          sort_order: number
+        }
+        Insert: {
+          active?: boolean
+          code: string
+          created_at?: string
+          id?: string
+          name: string
+          row_version?: number
+          sort_order: number
+        }
+        Update: {
+          active?: boolean
+          code?: string
+          created_at?: string
+          id?: string
+          name?: string
+          row_version?: number
+          sort_order?: number
+        }
+        Relationships: []
+      }
       remittances: {
         Row: {
           amount: number
@@ -1598,6 +1799,39 @@ export type Database = {
         }
         Relationships: []
       }
+      treasurer_lines: {
+        Row: {
+          active: boolean
+          code: string
+          created_at: string
+          id: string
+          name: string
+          row_version: number
+          sort_order: number
+          subtotal_group: number
+        }
+        Insert: {
+          active?: boolean
+          code: string
+          created_at?: string
+          id?: string
+          name: string
+          row_version?: number
+          sort_order: number
+          subtotal_group: number
+        }
+        Update: {
+          active?: boolean
+          code?: string
+          created_at?: string
+          id?: string
+          name?: string
+          row_version?: number
+          sort_order?: number
+          subtotal_group?: number
+        }
+        Relationships: []
+      }
       variance_settlements: {
         Row: {
           amount: number
@@ -1944,6 +2178,7 @@ export type Database = {
         Args: { roles: Database["ceedo_collections"]["Enums"]["app_role"][] }
         Returns: boolean
       }
+      install_chart_builtins: { Args: never; Returns: undefined }
       is_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
       issue_device_credential: { Args: { p_device_id: string }; Returns: Json }
@@ -2076,6 +2311,18 @@ export type Database = {
       rental_fee_type: {
         Args: {
           p_accrual_period: Database["ceedo_collections"]["Enums"]["accrual_period"]
+        }
+        Returns: string
+      }
+      replace_account_rule: {
+        Args: {
+          p_effective_from: string
+          p_facility_id: string
+          p_fee_type_id: string
+          p_portion: string
+          p_rate_class: string
+          p_section_id: string
+          p_shares: Json
         }
         Returns: string
       }
