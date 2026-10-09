@@ -320,6 +320,96 @@ export type Database = {
           },
         ]
       }
+      cash_ticket_sales: {
+        Row: {
+          amount: number
+          business_date: string
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          collector_id: string
+          entered_at: string
+          entered_by: string
+          fee_type_id: string
+          id: string
+          note: string | null
+          row_version: number
+          shift_id: string
+          ticket_from: number | null
+          ticket_to: number | null
+        }
+        Insert: {
+          amount: number
+          business_date: string
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          collector_id: string
+          entered_at?: string
+          entered_by: string
+          fee_type_id: string
+          id?: string
+          note?: string | null
+          row_version?: number
+          shift_id: string
+          ticket_from?: number | null
+          ticket_to?: number | null
+        }
+        Update: {
+          amount?: number
+          business_date?: string
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          collector_id?: string
+          entered_at?: string
+          entered_by?: string
+          fee_type_id?: string
+          id?: string
+          note?: string | null
+          row_version?: number
+          shift_id?: string
+          ticket_from?: number | null
+          ticket_to?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cash_ticket_sales_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_ticket_sales_collector_id_fkey"
+            columns: ["collector_id"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_ticket_sales_entered_by_fkey"
+            columns: ["entered_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_ticket_sales_fee_type_id_fkey"
+            columns: ["fee_type_id"]
+            isOneToOne: false
+            referencedRelation: "fee_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_ticket_sales_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       charge_condonations: {
         Row: {
           amount: number
@@ -2133,6 +2223,10 @@ export type Database = {
         Args: { collector: string; device: string }
         Returns: boolean
       }
+      cancel_cash_ticket_sale: {
+        Args: { p_reason: string; p_sale_id: string }
+        Returns: undefined
+      }
       cancel_collection: {
         Args: { p_collection_id: string; p_reason: string }
         Returns: string
@@ -2265,6 +2359,17 @@ export type Database = {
         Args: { p_receipt: Json; p_shift_id: string }
         Returns: string
       }
+      record_cash_ticket_sale: {
+        Args: {
+          p_amount: number
+          p_fee_type_id: string
+          p_note: string
+          p_shift_id: string
+          p_ticket_from: number
+          p_ticket_to: number
+        }
+        Returns: string
+      }
       record_opening_balance: {
         Args: {
           p_amount: number
@@ -2347,6 +2452,13 @@ export type Database = {
         Args: { p_exception_id: string; p_reason: string }
         Returns: Json
       }
+      restate_shift_for_tickets: {
+        Args: {
+          p_delta: number
+          p_shift: Database["ceedo_collections"]["Tables"]["shifts"]["Row"]
+        }
+        Returns: undefined
+      }
       revoke_device_credential: {
         Args: { p_device_id: string }
         Returns: undefined
@@ -2362,6 +2474,7 @@ export type Database = {
         Args: { p_collector_id: string; p_pin: string }
         Returns: undefined
       }
+      shift_cash_tickets: { Args: { p_shift_id: string }; Returns: number }
       sync_pull: {
         Args: { p_cursor: number; p_device_id: string }
         Returns: Json
