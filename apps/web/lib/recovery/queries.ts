@@ -84,6 +84,9 @@ export async function getRecoveryShift(shiftId: string): Promise<RecoveryShift |
     .maybeSingle();
   if (error) throw error;
   if (!shift) return null;
+  // Recovery is for a tablet's shift. An office shift (migration 0065) has no tablet and is
+  // closed from the Office receipt screen instead.
+  if (shift.device_id === null) return null;
 
   const { data: rows, error: rowsError } = await supabase
     .from("collections")

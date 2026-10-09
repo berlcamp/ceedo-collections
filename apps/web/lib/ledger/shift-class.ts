@@ -67,6 +67,17 @@ export interface ShiftRow {
    * office, not synced from the tablet (Task 4's `recover_collection`). Zero for a shift
    * with none, which is the common case and renders no badge. */
   officeEncodedCount: number;
+  /** Live cash-ticket sales entered against this shift, in centavos. */
+  cashTicketTotal: Centavos;
+}
+
+/**
+ * A shift whose declared cash exceeds its receipts and has no cash-ticket entry: usually the
+ * comfort-room or other ticket money, which the office has not entered yet (spec
+ * "cash_ticket_sales"). A flag to look, not an error.
+ */
+export function needsCashTickets(row: { variance: number | null; cashTicketTotal: number }): boolean {
+  return row.variance !== null && row.variance > 0 && row.cashTicketTotal === 0;
 }
 
 /**

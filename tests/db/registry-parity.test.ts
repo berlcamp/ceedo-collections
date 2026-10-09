@@ -18,6 +18,9 @@ const TABLES = [
   "staff_invites",
   "device_assignments",
   "collector_assignments",
+  "treasurer_lines",
+  "rcd_columns",
+  "collection_accounts",
 ];
 
 describe("admin registry parity", () => {
@@ -40,6 +43,16 @@ describe("admin registry select expressions resolve against the live schema", ()
       .from("device_assignments")
       .select(
         "id, active, devices(label), facilities(name), sections!device_assignments_section_id_fkey(name)",
+      )
+      .limit(1);
+    expect(error).toBeNull();
+  });
+
+  it("collection-accounts", async () => {
+    const { error } = await serviceClient()
+      .from("collection_accounts")
+      .select(
+        "id, code, name, facility_id, group_name, sort_order, kind, treasurer_line_id, rcd_column_id, active, facilities(name), treasurer_lines(name), rcd_columns(name)",
       )
       .limit(1);
     expect(error).toBeNull();

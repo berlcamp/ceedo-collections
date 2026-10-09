@@ -1,6 +1,6 @@
-import { fromPesos } from "@ceedo/shared";
+import { fromPesos, type Centavos } from "@ceedo/shared";
 import { classifyShift, officeEncodedCounts, type ShiftClass, type ShiftRow } from "./shift-class";
-import { ledgerClient, officeEncodedShiftIds } from "./queries";
+import { ledgerClient, officeEncodedShiftIds, selectByIds } from "./queries";
 import { settlementsByShift } from "../shortages/by-shift";
 import { tally } from "../shortages/tally";
 
@@ -27,7 +27,7 @@ export async function getShifts(): Promise<ShiftRow[]> {
   const { data, error } = await supabase
     .from("shifts")
     .select(
-      "id, business_date, status, system_count, system_total, declared_total, variance, collector:app_users!shifts_collector_id_fkey(full_name), device:devices!shifts_device_id_fkey(label)",
+      "id, business_date, status, kind, system_count, system_total, declared_total, variance, collector:app_users!shifts_collector_id_fkey(full_name), device:devices!shifts_device_id_fkey(label)",
     )
     .order("business_date", { ascending: false })
     .limit(200);
@@ -42,10 +42,16 @@ export async function getShifts(): Promise<ShiftRow[]> {
   ]);
   const officeEncoded = officeEncodedCounts(recoveredShiftIds);
 
+  const tickets = await selectByIds(shiftIds, (chunk) =>
+    supabase.from("cash_ticket_sales").select("shift_id, amount").in("shift_id", chunk).is("cancelled_at", null),
+  );
+  const ticketTotal = new Map<string, number>();
+  for (const t of tickets) ticketTotal.set(t.shift_id, (ticketTotal.get(t.shift_id) ?? 0) + fromPesos(Number(t.amount)));
+
   const rows: ShiftRow[] = (data ?? []).map((row) => ({
     id: row.id,
     collectorName: row.collector?.full_name ?? "Unknown collector",
-    deviceLabel: row.device?.label ?? "Unknown device",
+    deviceLabel: row.kind === "office" ? "Office" : (row.device?.label ?? "Unknown device"),
     businessDate: row.business_date,
     status: row.status,
     klass: classifyShift({ status: row.status, businessDate: row.business_date, today }),
@@ -58,6 +64,7 @@ export async function getShifts(): Promise<ShiftRow[]> {
         ? null
         : tally(fromPesos(Number(row.variance)), settlements.get(row.id) ?? []).outstanding,
     officeEncodedCount: officeEncoded.get(row.id) ?? 0,
+    cashTicketTotal: (ticketTotal.get(row.id) ?? 0) as Centavos,
   }));
 
   return rows.sort((a, b) => {

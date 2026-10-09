@@ -88,7 +88,7 @@ const configs: ResourceConfig[] = [
     schema: z.object({
       code: name,
       name,
-      type: z.enum(["market", "terminal", "parking", "slaughterhouse"]),
+      type: z.enum(["market", "terminal", "parking", "slaughterhouse", "other"]),
       active: z.boolean(),
     }),
     fields: [
@@ -103,8 +103,9 @@ const configs: ResourceConfig[] = [
           { value: "terminal", label: "Terminal (IBJT)" },
           { value: "parking", label: "Parking" },
           { value: "slaughterhouse", label: "Slaughterhouse" },
+          { value: "other", label: "Other (gym, cemetery, night market…)" },
         ],
-        help: "Only markets have sections and stalls.",
+        help: "Markets, terminals and other facilities may have sections and stalls; parking and the slaughterhouse do not.",
       },
       { name: "active", label: "Active", type: "boolean" },
     ],
@@ -346,19 +347,19 @@ const configs: ResourceConfig[] = [
       name,
       accrues: z.boolean(),
       surcharge_bps: z.number().int().min(0).max(10000),
-      facility_type: z.enum(["market", "terminal", "parking", "slaughterhouse"]).nullable(),
+      amount_mode: z.enum(["rate", "keyed"]),
+      facility_id: uuid.nullable(),
+      facility_type: z.enum(["market", "terminal", "parking", "slaughterhouse", "other"]).nullable(),
       active: z.boolean(),
     })
-    // An on-the-spot fee with no site would be offered on EVERY tablet (null means
-    // "anywhere" on the device), which is how a test fixture's slaughter fee once appeared
-    // at the bus terminal. Only an accruing fee may leave it blank: it is billed through a
-    // lease, never picked on the fee screen.
+    // An on-the-spot fee with no site would be offered on EVERY tablet. A fee that names its
+    // facility takes that facility's type automatically (migration 0065's trigger).
     .superRefine((value, ctx) => {
-      if (!value.accrues && value.facility_type === null) {
+      if (!value.accrues && value.facility_type === null && value.facility_id === null) {
         ctx.addIssue({
           code: "custom",
           path: ["facility_type"],
-          message: "Choose where this fee is collected. Tablets offer it only there.",
+          message: "Choose the facility, or the kind of facility, where this fee is collected.",
         });
       }
     }),
@@ -367,6 +368,25 @@ const configs: ResourceConfig[] = [
       { name: "name", label: "Name", type: "text" },
       { name: "accrues", label: "Creates a receivable", type: "boolean", help: "Market rentals do. Parking, terminal and slaughter fees do not." },
       { name: "surcharge_bps", label: "Surcharge (basis points)", type: "number", help: "3% is 300. Integer only." },
+      {
+        name: "amount_mode",
+        label: "Amount",
+        type: "select",
+        options: [
+          { value: "rate", label: "From the rate table" },
+          { value: "keyed", label: "Typed on the receipt" },
+        ],
+        help: "Typed: electricity, certification, occupancy and other fees whose amount varies.",
+      },
+      {
+        name: "facility_id",
+        label: "Facility",
+        type: "select",
+        optionsFrom: "facilities",
+        optional: true,
+        emptyLabel: "Any facility of the kind below",
+        help: "For a fee that belongs to one facility, e.g. Public Mall CR.",
+      },
       {
         name: "facility_type",
         label: "Collected at",
@@ -378,6 +398,7 @@ const configs: ResourceConfig[] = [
           { value: "terminal", label: "Terminal" },
           { value: "parking", label: "Parking" },
           { value: "slaughterhouse", label: "Slaughterhouse" },
+          { value: "other", label: "Other" },
         ],
       },
       { name: "active", label: "Active", type: "boolean" },
@@ -385,11 +406,13 @@ const configs: ResourceConfig[] = [
     columns: [
       { key: "code", label: "Code" },
       { key: "name", label: "Name" },
+      { key: "amount_mode", label: "Amount" },
+      { key: "facilities", label: "Facility", emptyText: "Any" },
       { key: "facility_type", label: "Collected at" },
       { key: "accrues", label: "Accrues" },
       { key: "surcharge_bps", label: "Surcharge (bps)" },
     ],
-    select: "id, code, name, facility_type, accrues, surcharge_bps, active",
+    select: "id, code, name, accrues, surcharge_bps, amount_mode, facility_id, facility_type, active, facilities(name)",
     orderBy: "code",
     optionLabel: "name",
     readRoles: BACK_OFFICE,
@@ -595,6 +618,119 @@ const configs: ResourceConfig[] = [
     optionLabel: "id",
     readRoles: BACK_OFFICE,
     writeRoles: SUPERVISOR_UP,
+  },
+  {
+    key: "treasurer-lines",
+    table: "treasurer_lines",
+    title: "Treasurer lines",
+    singular: "Treasurer line",
+    empty:
+      "No Treasurer lines yet. A Treasurer line is one particulars row of the Daily Collection Report sent to the City Treasurer; every account rolls up into exactly one.",
+    schema: z.object({
+      code: name,
+      name,
+      sort_order: z.number().int(),
+      subtotal_group: z.number().int().min(1).max(2),
+      active: z.boolean(),
+    }),
+    fields: [
+      { name: "code", label: "Code", type: "text", help: "e.g. TL_PM" },
+      { name: "name", label: "Particulars", type: "text" },
+      { name: "sort_order", label: "Order", type: "number" },
+      { name: "subtotal_group", label: "Sub-total", type: "number", help: "1 or 2" },
+      { name: "active", label: "Active", type: "boolean" },
+    ],
+    columns: [
+      { key: "sort_order", label: "Order" },
+      { key: "name", label: "Particulars" },
+      { key: "subtotal_group", label: "Sub-total" },
+      { key: "active", label: "Status", status: ACTIVE_STATUS },
+    ],
+    select: "id, code, name, sort_order, subtotal_group, active",
+    orderBy: "sort_order",
+    optionLabel: "name",
+    readRoles: BACK_OFFICE,
+    writeRoles: ADMIN_ONLY,
+  },
+  {
+    key: "rcd-columns",
+    table: "rcd_columns",
+    title: "Collector matrix columns",
+    singular: "column",
+    empty:
+      "No columns yet. These are the columns of the Collections-per-collector matrix; every account rolls up into exactly one.",
+    schema: z.object({ code: name, name, sort_order: z.number().int(), active: z.boolean() }),
+    fields: [
+      { name: "code", label: "Code", type: "text", help: "e.g. RC_PM" },
+      { name: "name", label: "Column", type: "text" },
+      { name: "sort_order", label: "Order", type: "number" },
+      { name: "active", label: "Active", type: "boolean" },
+    ],
+    columns: [
+      { key: "sort_order", label: "Order" },
+      { key: "name", label: "Column" },
+      { key: "active", label: "Status", status: ACTIVE_STATUS },
+    ],
+    select: "id, code, name, sort_order, active",
+    orderBy: "sort_order",
+    optionLabel: "name",
+    readRoles: BACK_OFFICE,
+    writeRoles: ADMIN_ONLY,
+  },
+  {
+    key: "collection-accounts",
+    table: "collection_accounts",
+    title: "Accounts",
+    singular: "account",
+    // The code is how rules, reports and the built-in UNCLASSIFIED name an account.
+    lockedOnEdit: ["code"],
+    empty:
+      "No accounts yet. An account is one line of the Monthly Summary of Collections. Rules place each receipt on one; each account belongs to one Treasurer line and one matrix column.",
+    schema: z.object({
+      code: name,
+      name,
+      facility_id: uuid.nullable(),
+      group_name: name,
+      sort_order: z.number().int(),
+      kind: z.enum(["income", "non_income"]),
+      treasurer_line_id: uuid,
+      rcd_column_id: uuid,
+      active: z.boolean(),
+    }),
+    fields: [
+      { name: "code", label: "Code", type: "text", help: "e.g. CPM-DR-BAKERY" },
+      { name: "name", label: "Name", type: "text" },
+      { name: "facility_id", label: "Facility", type: "select", optionsFrom: "facilities", optional: true, emptyLabel: "None (cross-facility)" },
+      { name: "group_name", label: "Group", type: "text", help: "The summary's sub-heading, e.g. Stall Sections Daily Rent" },
+      { name: "sort_order", label: "Order", type: "number" },
+      {
+        name: "kind",
+        label: "Kind",
+        type: "select",
+        options: [
+          { value: "income", label: "Income" },
+          { value: "non_income", label: "Non-income (regulatory)" },
+        ],
+      },
+      { name: "treasurer_line_id", label: "Treasurer line", type: "select", optionsFrom: "treasurer-lines" },
+      { name: "rcd_column_id", label: "Matrix column", type: "select", optionsFrom: "rcd-columns" },
+      { name: "active", label: "Active", type: "boolean" },
+    ],
+    columns: [
+      { key: "code", label: "Code" },
+      { key: "name", label: "Name" },
+      { key: "facilities", label: "Facility", emptyText: "—" },
+      { key: "group_name", label: "Group" },
+      { key: "treasurer_lines", label: "Treasurer line" },
+      { key: "rcd_columns", label: "Matrix column" },
+      { key: "active", label: "Status", status: ACTIVE_STATUS },
+    ],
+    select:
+      "id, code, name, facility_id, group_name, sort_order, kind, treasurer_line_id, rcd_column_id, active, facilities(name), treasurer_lines(name), rcd_columns(name)",
+    orderBy: "sort_order",
+    optionLabel: "name",
+    readRoles: BACK_OFFICE,
+    writeRoles: ADMIN_ONLY,
   },
   {
     key: "devices",

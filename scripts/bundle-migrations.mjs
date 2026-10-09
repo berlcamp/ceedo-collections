@@ -5,6 +5,7 @@
  *
  *   node scripts/bundle-migrations.mjs                 # every migration (first install)
  *   node scripts/bundle-migrations.mjs --after 20260923000046   # only newer ones
+ *   node scripts/bundle-migrations.mjs --after A --through B   # A < version <= B (hold later ones back)
  *
  * Writes dist-sql/ceedo-<first>-<last>.sql (gitignored). Run it with psql
  * (`psql "$DB_URL" -v ON_ERROR_STOP=1 -f <file>`) or paste it into the SQL Editor.
@@ -27,11 +28,15 @@ const root = new URL("..", import.meta.url).pathname;
 const dir = join(root, "supabase", "migrations");
 const afterIndex = process.argv.indexOf("--after");
 const after = afterIndex > -1 ? process.argv[afterIndex + 1] : null;
+const throughIndex = process.argv.indexOf("--through");
+const through = throughIndex > -1 ? process.argv[throughIndex + 1] : null;
 
 const all = readdirSync(dir)
   .filter((f) => /^\d{14}_.+\.sql$/.test(f))
   .sort();
-const files = all.filter((f) => !after || f.slice(0, 14) > after);
+const files = all.filter(
+  (f) => (!after || f.slice(0, 14) > after) && (!through || f.slice(0, 14) <= through),
+);
 if (files.length === 0) {
   console.error(after ? `Nothing after ${after}.` : "No migrations found.");
   process.exit(1);

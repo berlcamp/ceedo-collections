@@ -68,7 +68,7 @@ describe("the registry's locks", () => {
 
 describe("fee types' Collected at", () => {
   const schema = RESOURCES["fee-types"]!.schema;
-  const cashOnly = { code: "TERMINAL", name: "Terminal fee", accrues: false, surcharge_bps: 0, active: true };
+  const cashOnly = { code: "TERMINAL", name: "Terminal fee", accrues: false, surcharge_bps: 0, amount_mode: "rate", facility_id: null, active: true };
 
   it("stores a facility type as chosen", () => {
     expect(schema.parse({ ...cashOnly, facility_type: "terminal" })).toMatchObject({

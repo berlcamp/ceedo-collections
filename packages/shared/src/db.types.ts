@@ -11,6 +11,110 @@ export type Json =
 export type Database = {
   ceedo_collections: {
     Tables: {
+      account_rule_shares: {
+        Row: {
+          account_id: string
+          id: string
+          rule_id: string
+          share_bps: number
+        }
+        Insert: {
+          account_id: string
+          id?: string
+          rule_id: string
+          share_bps: number
+        }
+        Update: {
+          account_id?: string
+          id?: string
+          rule_id?: string
+          share_bps?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_rule_shares_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "collection_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_rule_shares_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "account_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      account_rules: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          effective_from: string
+          effective_to: string | null
+          facility_id: string | null
+          fee_type_id: string
+          id: string
+          portion: string
+          rate_class: string | null
+          section_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          effective_from: string
+          effective_to?: string | null
+          facility_id?: string | null
+          fee_type_id: string
+          id?: string
+          portion: string
+          rate_class?: string | null
+          section_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          facility_id?: string | null
+          fee_type_id?: string
+          id?: string
+          portion?: string
+          rate_class?: string | null
+          section_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_rules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_rules_facility_id_fkey"
+            columns: ["facility_id"]
+            isOneToOne: false
+            referencedRelation: "facilities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_rules_fee_type_id_fkey"
+            columns: ["fee_type_id"]
+            isOneToOne: false
+            referencedRelation: "fee_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_rules_section_in_facility"
+            columns: ["section_id", "facility_id"]
+            isOneToOne: false
+            referencedRelation: "sections"
+            referencedColumns: ["id", "facility_id"]
+          },
+        ]
+      }
       accrual_runs: {
         Row: {
           business_date: string
@@ -216,6 +320,96 @@ export type Database = {
           },
         ]
       }
+      cash_ticket_sales: {
+        Row: {
+          amount: number
+          business_date: string
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          collector_id: string
+          entered_at: string
+          entered_by: string
+          fee_type_id: string
+          id: string
+          note: string | null
+          row_version: number
+          shift_id: string
+          ticket_from: number | null
+          ticket_to: number | null
+        }
+        Insert: {
+          amount: number
+          business_date: string
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          collector_id: string
+          entered_at?: string
+          entered_by: string
+          fee_type_id: string
+          id?: string
+          note?: string | null
+          row_version?: number
+          shift_id: string
+          ticket_from?: number | null
+          ticket_to?: number | null
+        }
+        Update: {
+          amount?: number
+          business_date?: string
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          collector_id?: string
+          entered_at?: string
+          entered_by?: string
+          fee_type_id?: string
+          id?: string
+          note?: string | null
+          row_version?: number
+          shift_id?: string
+          ticket_from?: number | null
+          ticket_to?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cash_ticket_sales_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_ticket_sales_collector_id_fkey"
+            columns: ["collector_id"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_ticket_sales_entered_by_fkey"
+            columns: ["entered_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_ticket_sales_fee_type_id_fkey"
+            columns: ["fee_type_id"]
+            isOneToOne: false
+            referencedRelation: "fee_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_ticket_sales_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       charge_condonations: {
         Row: {
           amount: number
@@ -354,6 +548,73 @@ export type Database = {
             columns: ["parent_charge_id"]
             isOneToOne: false
             referencedRelation: "charges"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      collection_accounts: {
+        Row: {
+          active: boolean
+          code: string
+          created_at: string
+          facility_id: string | null
+          group_name: string
+          id: string
+          kind: string
+          name: string
+          rcd_column_id: string
+          row_version: number
+          sort_order: number
+          treasurer_line_id: string
+        }
+        Insert: {
+          active?: boolean
+          code: string
+          created_at?: string
+          facility_id?: string | null
+          group_name: string
+          id?: string
+          kind: string
+          name: string
+          rcd_column_id: string
+          row_version?: number
+          sort_order: number
+          treasurer_line_id: string
+        }
+        Update: {
+          active?: boolean
+          code?: string
+          created_at?: string
+          facility_id?: string | null
+          group_name?: string
+          id?: string
+          kind?: string
+          name?: string
+          rcd_column_id?: string
+          row_version?: number
+          sort_order?: number
+          treasurer_line_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collection_accounts_facility_id_fkey"
+            columns: ["facility_id"]
+            isOneToOne: false
+            referencedRelation: "facilities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_accounts_rcd_column_id_fkey"
+            columns: ["rcd_column_id"]
+            isOneToOne: false
+            referencedRelation: "rcd_columns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_accounts_treasurer_line_id_fkey"
+            columns: ["treasurer_line_id"]
+            isOneToOne: false
+            referencedRelation: "treasurer_lines"
             referencedColumns: ["id"]
           },
         ]
@@ -581,11 +842,14 @@ export type Database = {
       }
       collections: {
         Row: {
+          bank: string | null
           booklet_id: string
           business_date: string
+          check_date: string | null
+          check_no: string | null
           collected_at: string
           collector_id: string
-          device_id: string
+          device_id: string | null
           fee_type_id: string
           gross_amount: number
           id: string
@@ -593,6 +857,7 @@ export type Database = {
           notes: string | null
           or_no: number
           payer_ref: string | null
+          payment_mode: string
           posted_at: string
           posted_by: string | null
           row_version: number
@@ -600,11 +865,14 @@ export type Database = {
           synced_at: string | null
         }
         Insert: {
+          bank?: string | null
           booklet_id: string
           business_date: string
+          check_date?: string | null
+          check_no?: string | null
           collected_at: string
           collector_id: string
-          device_id: string
+          device_id?: string | null
           fee_type_id: string
           gross_amount: number
           id: string
@@ -612,6 +880,7 @@ export type Database = {
           notes?: string | null
           or_no: number
           payer_ref?: string | null
+          payment_mode?: string
           posted_at?: string
           posted_by?: string | null
           row_version?: number
@@ -619,11 +888,14 @@ export type Database = {
           synced_at?: string | null
         }
         Update: {
+          bank?: string | null
           booklet_id?: string
           business_date?: string
+          check_date?: string | null
+          check_no?: string | null
           collected_at?: string
           collector_id?: string
-          device_id?: string
+          device_id?: string | null
           fee_type_id?: string
           gross_amount?: number
           id?: string
@@ -631,6 +903,7 @@ export type Database = {
           notes?: string | null
           or_no?: number
           payer_ref?: string | null
+          payment_mode?: string
           posted_at?: string
           posted_by?: string | null
           row_version?: number
@@ -932,8 +1205,10 @@ export type Database = {
         Row: {
           accrues: boolean
           active: boolean
+          amount_mode: string
           code: string
           created_at: string
+          facility_id: string | null
           facility_type:
             | Database["ceedo_collections"]["Enums"]["facility_type"]
             | null
@@ -945,8 +1220,10 @@ export type Database = {
         Insert: {
           accrues?: boolean
           active?: boolean
+          amount_mode?: string
           code: string
           created_at?: string
+          facility_id?: string | null
           facility_type?:
             | Database["ceedo_collections"]["Enums"]["facility_type"]
             | null
@@ -958,8 +1235,10 @@ export type Database = {
         Update: {
           accrues?: boolean
           active?: boolean
+          amount_mode?: string
           code?: string
           created_at?: string
+          facility_id?: string | null
           facility_type?:
             | Database["ceedo_collections"]["Enums"]["facility_type"]
             | null
@@ -968,7 +1247,15 @@ export type Database = {
           row_version?: number
           surcharge_bps?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "fee_types_facility_id_fkey"
+            columns: ["facility_id"]
+            isOneToOne: false
+            referencedRelation: "facilities"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       form_types: {
         Row: {
@@ -1097,6 +1384,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      rcd_columns: {
+        Row: {
+          active: boolean
+          code: string
+          created_at: string
+          id: string
+          name: string
+          row_version: number
+          sort_order: number
+        }
+        Insert: {
+          active?: boolean
+          code: string
+          created_at?: string
+          id?: string
+          name: string
+          row_version?: number
+          sort_order: number
+        }
+        Update: {
+          active?: boolean
+          code?: string
+          created_at?: string
+          id?: string
+          name?: string
+          row_version?: number
+          sort_order?: number
+        }
+        Relationships: []
       }
       remittances: {
         Row: {
@@ -1254,8 +1571,9 @@ export type Database = {
           closed_at: string | null
           collector_id: string
           declared_total: number | null
-          device_id: string
+          device_id: string | null
           id: string
+          kind: string
           opened_at: string
           remittance_id: string | null
           row_version: number
@@ -1269,8 +1587,9 @@ export type Database = {
           closed_at?: string | null
           collector_id: string
           declared_total?: number | null
-          device_id: string
+          device_id?: string | null
           id: string
+          kind?: string
           opened_at: string
           remittance_id?: string | null
           row_version?: number
@@ -1284,8 +1603,9 @@ export type Database = {
           closed_at?: string | null
           collector_id?: string
           declared_total?: number | null
-          device_id?: string
+          device_id?: string | null
           id?: string
+          kind?: string
           opened_at?: string
           remittance_id?: string | null
           row_version?: number
@@ -1566,6 +1886,39 @@ export type Database = {
           full_name?: string
           id?: string
           row_version?: number
+        }
+        Relationships: []
+      }
+      treasurer_lines: {
+        Row: {
+          active: boolean
+          code: string
+          created_at: string
+          id: string
+          name: string
+          row_version: number
+          sort_order: number
+          subtotal_group: number
+        }
+        Insert: {
+          active?: boolean
+          code: string
+          created_at?: string
+          id?: string
+          name: string
+          row_version?: number
+          sort_order: number
+          subtotal_group: number
+        }
+        Update: {
+          active?: boolean
+          code?: string
+          created_at?: string
+          id?: string
+          name?: string
+          row_version?: number
+          sort_order?: number
+          subtotal_group?: number
         }
         Relationships: []
       }
@@ -1858,6 +2211,7 @@ export type Database = {
         Args: { p_reason: string }
         Returns: undefined
       }
+      assert_office_poster: { Args: never; Returns: undefined }
       assert_recovery_admin: { Args: { p_reason: string }; Returns: undefined }
       attach_audit: { Args: { table_name: string }; Returns: undefined }
       authenticate_device: {
@@ -1868,6 +2222,10 @@ export type Database = {
       can_collector_use_device: {
         Args: { collector: string; device: string }
         Returns: boolean
+      }
+      cancel_cash_ticket_sale: {
+        Args: { p_reason: string; p_sale_id: string }
+        Returns: undefined
       }
       cancel_collection: {
         Args: { p_collection_id: string; p_reason: string }
@@ -1883,6 +2241,10 @@ export type Database = {
       }
       claim_my_invite: { Args: never; Returns: boolean }
       clear_all_data: { Args: never; Returns: number }
+      close_office_shift: {
+        Args: { p_declared_total: number; p_shift_id: string }
+        Returns: Json
+      }
       close_shift: {
         Args: {
           p_declared_total: number
@@ -1915,6 +2277,8 @@ export type Database = {
         Args: { roles: Database["ceedo_collections"]["Enums"]["app_role"][] }
         Returns: boolean
       }
+      install_account_catalogue: { Args: never; Returns: undefined }
+      install_chart_builtins: { Args: never; Returns: undefined }
       is_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
       issue_device_credential: { Args: { p_device_id: string }; Returns: Json }
@@ -1983,11 +2347,56 @@ export type Database = {
         Args: { p_declared_total: number; p_reason: string; p_shift_id: string }
         Returns: Json
       }
+      office_shift: {
+        Args: { p_business_date: string; p_collector_id: string }
+        Returns: string
+      }
       open_shift: {
         Args: { p_collector: string; p_device_id: string; p_payload: Json }
         Returns: Json
       }
       post_collection: { Args: { p_payload: Json }; Returns: Json }
+      post_office_receipt: {
+        Args: { p_receipt: Json; p_shift_id: string }
+        Returns: string
+      }
+      receipt_account_lines: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          account_id: string
+          amount: number
+          booklet_id: string
+          business_date: string
+          cancelled: boolean
+          cash_ticket_id: string
+          collection_id: string
+          collector_id: string
+          facility_id: string
+          fee_type_id: string
+          lease_id: string
+          line_id: string
+          or_no: number
+          payer_ref: string
+          payment_mode: string
+          portion: string
+          quantity: number
+          rate_class: string
+          section_id: string
+          shift_id: string
+          source: string
+        }[]
+      }
+      record_cash_ticket_sale: {
+        Args: {
+          p_amount: number
+          p_fee_type_id: string
+          p_note: string
+          p_shift_id: string
+          p_ticket_from: number
+          p_ticket_to: number
+        }
+        Returns: string
+      }
       record_opening_balance: {
         Args: {
           p_amount: number
@@ -2050,6 +2459,18 @@ export type Database = {
         }
         Returns: string
       }
+      replace_account_rule: {
+        Args: {
+          p_effective_from: string
+          p_facility_id: string
+          p_fee_type_id: string
+          p_portion: string
+          p_rate_class: string
+          p_section_id: string
+          p_shares: Json
+        }
+        Returns: string
+      }
       resolve_exception_corrected: {
         Args: { p_exception_id: string; p_payload: Json; p_reason: string }
         Returns: Json
@@ -2057,6 +2478,13 @@ export type Database = {
       resolve_exception_spoiled: {
         Args: { p_exception_id: string; p_reason: string }
         Returns: Json
+      }
+      restate_shift_for_tickets: {
+        Args: {
+          p_delta: number
+          p_shift: Database["ceedo_collections"]["Tables"]["shifts"]["Row"]
+        }
+        Returns: undefined
       }
       revoke_device_credential: {
         Args: { p_device_id: string }
@@ -2073,6 +2501,7 @@ export type Database = {
         Args: { p_collector_id: string; p_pin: string }
         Returns: undefined
       }
+      shift_cash_tickets: { Args: { p_shift_id: string }; Returns: number }
       sync_pull: {
         Args: { p_cursor: number; p_device_id: string }
         Returns: Json
@@ -2112,7 +2541,12 @@ export type Database = {
         | "exhausted"
       charge_source: "accrual" | "opening_balance" | "manual"
       charge_type: "rental" | "surcharge" | "opening_balance"
-      facility_type: "market" | "terminal" | "parking" | "slaughterhouse"
+      facility_type:
+        | "market"
+        | "terminal"
+        | "parking"
+        | "slaughterhouse"
+        | "other"
       lease_status: "active" | "ended" | "terminated"
       rate_basis:
         | "per_day"
@@ -2260,7 +2694,13 @@ export const Constants = {
       ],
       charge_source: ["accrual", "opening_balance", "manual"],
       charge_type: ["rental", "surcharge", "opening_balance"],
-      facility_type: ["market", "terminal", "parking", "slaughterhouse"],
+      facility_type: [
+        "market",
+        "terminal",
+        "parking",
+        "slaughterhouse",
+        "other",
+      ],
       lease_status: ["active", "ended", "terminated"],
       rate_basis: [
         "per_day",

@@ -41,6 +41,8 @@ const SECTIONS: { heading: string; modules: ModuleSpec[] }[] = [
           { href: "/ledger/remittances", label: "Remittances" },
           { href: "/ledger/shortages", label: "Shortages" },
           { href: "/ledger/exceptions", label: "Exceptions" },
+          { href: "/ledger/office-receipt", label: "Office receipt", roles: ["supervisor", "admin"] },
+          { href: "/ledger/cash-tickets", label: "Cash tickets" },
           { href: "/ledger/recovery", label: "Recovery", roles: ["admin"] },
         ],
       },
@@ -76,6 +78,17 @@ const SECTIONS: { heading: string; modules: ModuleSpec[] }[] = [
         tabs: [{ resource: "stalls" }, { resource: "sections" }, { resource: "facilities" }],
       },
       { key: "fees", label: "Fees", tabs: [{ resource: "fee-types" }, { resource: "rates" }] },
+      {
+        key: "accounts",
+        label: "Accounts",
+        tabs: [
+          { resource: "collection-accounts" },
+          { resource: "treasurer-lines" },
+          { resource: "rcd-columns" },
+          { href: "/accounts/rules", label: "Rules" },
+          { href: "/accounts/unclassified", label: "Unclassified" },
+        ],
+      },
       {
         key: "forms",
         label: "Accountable forms",

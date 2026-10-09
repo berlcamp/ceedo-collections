@@ -82,3 +82,10 @@ describe("status columns", () => {
     expect(missing).toEqual([]);
   });
 });
+
+it("lets a non-accruing fee leave 'collected at' blank when it names its facility", () => {
+  const schema = RESOURCES["fee-types"].schema;
+  const base = { code: "X", name: "X", accrues: false, surcharge_bps: 0, amount_mode: "keyed", active: true };
+  expect(schema.safeParse({ ...base, facility_type: null, facility_id: null }).success).toBe(false);
+  expect(schema.safeParse({ ...base, facility_type: null, facility_id: "00000000-0000-0000-0000-000000000001" }).success).toBe(true);
+});

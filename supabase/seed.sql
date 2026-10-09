@@ -3,21 +3,26 @@ insert into ceedo_collections.facilities (code, name, type) values
   ('CPM',  'Central Public Market',          'market'),
   ('IBJT', 'Integrated Bus & Jeepney Terminal', 'terminal'),
   ('SLH',  'City Slaughterhouse',            'slaughterhouse'),
-  ('PRK',  'City Hall Parking',              'parking');
+  ('PRK',  'City Hall Parking',              'parking')
+on conflict (code) do nothing;
 
 insert into ceedo_collections.sections (facility_id, name, default_accrual_period)
 select id, section_name, 'daily'::ceedo_collections.accrual_period
 from ceedo_collections.facilities,
      (values ('Fish'), ('Meat'), ('Vegetable')) as s(section_name)
-where code = 'CPM';
+where code = 'CPM'
+on conflict (facility_id, name) do nothing;
 
 insert into ceedo_collections.sections (facility_id, name, default_accrual_period)
-select id, 'Dry Goods', 'monthly' from ceedo_collections.facilities where code = 'CPM';
+select id, 'Dry Goods', 'monthly' from ceedo_collections.facilities where code = 'CPM'
+on conflict (facility_id, name) do nothing;
 
 insert into ceedo_collections.stalls (section_id, stall_no)
 select s.id, s.name || '-' || lpad(n::text, 2, '0')
 from ceedo_collections.sections s, generate_series(1, 20) n
-where s.facility_id = (select id from ceedo_collections.facilities where code = 'CPM');
+where s.facility_id = (select id from ceedo_collections.facilities where code = 'CPM')
+  and s.name in ('Fish', 'Meat', 'Vegetable', 'Dry Goods')
+on conflict (section_id, stall_no) do nothing;
 
 insert into ceedo_collections.fee_types (code, name, accrues, surcharge_bps, facility_type) values
   ('MKT_DAILY',  'Market stall rental (daily)',   true,  300, 'market'),
@@ -26,7 +31,8 @@ insert into ceedo_collections.fee_types (code, name, accrues, surcharge_bps, fac
   ('AMBULANT',   'Ambulant vendor fee',           false, 0,   'market'),
   ('PARKING',    'Parking fee',                   false, 0,   'parking'),
   ('TERMINAL',   'Terminal fee',                  false, 0,   'terminal'),
-  ('SLAUGHTER',  'Slaughter fee',                 false, 0,   'slaughterhouse');
+  ('SLAUGHTER',  'Slaughter fee',                 false, 0,   'slaughterhouse')
+on conflict (code) do nothing;
 
 -- The first branch casts the date and enum literals explicitly: through a UNION, Postgres
 -- resolves an untyped literal to `text` (no per-column target context survives the union),
