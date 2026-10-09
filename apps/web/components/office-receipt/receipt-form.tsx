@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FieldShell, NativeSelect, TextInput } from "@/components/ui/field";
 import { useSubmit } from "@/components/ui/use-submit";
@@ -27,11 +27,34 @@ export function OfficeReceiptForm({
   const [mode, setMode] = useState<"cash" | "check">("cash");
   const [result, setResult] = useState<SaveResult | null>(null);
   const [formKey, setFormKey] = useState(0); // remounts the form so the uncontrolled fields clear after a post
+  const [leaseError, setLeaseError] = useState<string | null>(null);
+  // The lease whose months are wanted now; a response for any other lease is stale and dropped.
+  const wantedLease = useRef("");
 
   async function chooseLease(id: string) {
+    wantedLease.current = id;
     setLeaseId(id);
     setTicked(0);
-    setGroups(id && kind === "rent" ? await officeUnpaidGroups(id) : []);
+    setGroups([]);
+    setLeaseError(null);
+    if (!id || kind !== "rent") return;
+    try {
+      const loaded = await officeUnpaidGroups(id);
+      if (wantedLease.current === id) setGroups(loaded);
+    } catch {
+      if (wantedLease.current === id) setLeaseError("Could not load this lease's unpaid months. Choose the lease again to retry.");
+    }
+  }
+
+  // Rent and fees share no lease or months: a fee must not post against a rent lease by
+  // accident, and rent needs its months loaded afresh, so a switch starts both over.
+  function chooseKind(next: "rent" | "fees") {
+    setKind(next);
+    wantedLease.current = "";
+    setLeaseId("");
+    setGroups([]);
+    setTicked(0);
+    setLeaseError(null);
   }
 
   const lineTotal = (l: Line) => {
@@ -53,7 +76,8 @@ export function OfficeReceiptForm({
     const outcome = await postOfficeReceipt(formData);
     setResult(outcome);
     if (outcome.ok) {
-      setLines([emptyLine]); setTicked(0); setGroups([]); setLeaseId(""); setFormKey((k) => k + 1);
+      wantedLease.current = "";
+      setLines([emptyLine]); setTicked(0); setGroups([]); setLeaseId(""); setLeaseError(null); setFormKey((k) => k + 1);
       router.refresh();
     }
   });
@@ -75,14 +99,14 @@ export function OfficeReceiptForm({
           <TextInput id="orNo" name="orNo" inputMode="numeric" autoComplete="off" />
         </FieldShell>
         <FieldShell id="kind" label="For">
-          <NativeSelect id="kind" value={kind} onChange={(e) => { setKind(e.target.value as "rent" | "fees"); setGroups([]); setTicked(0); }}>
+          <NativeSelect id="kind" value={kind} onChange={(e) => chooseKind(e.target.value as "rent" | "fees")}>
             <option value="rent">Rent (unpaid months)</option>
             <option value="fees">Fees (electricity, occupancy, certification…)</option>
           </NativeSelect>
         </FieldShell>
       </div>
 
-      <FieldShell id="leaseId" label={kind === "rent" ? "Lease" : "Lease (occupancy fee only)"} error={errors.leaseId}>
+      <FieldShell id="leaseId" label={kind === "rent" ? "Lease" : "Lease (occupancy fee only)"} error={leaseError ?? errors.leaseId}>
         <NativeSelect id="leaseId" name="leaseId" value={leaseId} onChange={(e) => chooseLease(e.target.value)}>
           <option value="">{kind === "rent" ? "Choose…" : "None"}</option>
           {leases.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
