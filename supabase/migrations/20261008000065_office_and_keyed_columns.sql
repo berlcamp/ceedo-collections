@@ -72,6 +72,29 @@ create trigger fee_types_follow_facility
   for each row execute function ceedo_collections.fee_type_follows_facility();
 revoke execute on function ceedo_collections.fee_type_follows_facility() from public;
 
+-- And the other direction: a facility whose type changes carries its own fees with it.
+-- Security definer because whoever may edit a facility need not hold update on fee_types.
+create or replace function ceedo_collections.facility_carries_fee_types()
+returns trigger
+language plpgsql
+security definer
+set search_path = ceedo_collections, pg_temp
+as $$
+begin
+  update ceedo_collections.fee_types
+     set facility_type = new.type
+   where facility_id = new.id
+     and facility_type is distinct from new.type;
+  return null;
+end;
+$$;
+
+create trigger facilities_carry_fee_types
+  after update of type on ceedo_collections.facilities
+  for each row when (old.type is distinct from new.type)
+  execute function ceedo_collections.facility_carries_fee_types();
+revoke execute on function ceedo_collections.facility_carries_fee_types() from public;
+
 -- 3. Office shifts carry no tablet.
 alter table ceedo_collections.shifts
   add column kind text not null default 'device'

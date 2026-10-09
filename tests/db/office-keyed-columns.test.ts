@@ -53,6 +53,18 @@ describe("fee_types", () => {
     expect(rows[0]).toEqual({ amount_mode: "rate", facility_type: "other" });
   });
 
+  it("follows its facility when the facility's type changes", async () => {
+    const fid = await facility("other");
+    const { rows } = await db.query(
+      `insert into ceedo_collections.fee_types (code, name, facility_id) values ($1, 'x', $2) returning id`,
+      [uniqueCode("FT"), fid],
+    );
+    await db.query(`update ceedo_collections.facilities set type = 'terminal' where id = $1`, [fid]);
+    const { rows: after } = await db.query(
+      `select facility_type::text from ceedo_collections.fee_types where id = $1`, [rows[0].id]);
+    expect(after[0]).toEqual({ facility_type: "terminal" });
+  });
+
   it("refuses an unknown amount mode", async () => {
     await expect(
       db.query(`insert into ceedo_collections.fee_types (code, name, amount_mode) values ($1, 'x', 'free')`, [uniqueCode("FT")]),
