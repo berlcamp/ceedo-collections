@@ -50,4 +50,17 @@ describe("nav modules", () => {
     // "/" matches only itself, or the dashboard would claim every route.
     expect(activeModule("/nowhere", sections)).toBeUndefined();
   });
+
+  it("files the account chart under Accounts and the office screens under Collections", () => {
+    const admin = navFor("admin").flatMap((s) => s.modules);
+    const accounts = admin.find((m) => m.key === "accounts");
+    expect(accounts?.tabs.map((t) => t.href)).toEqual([
+      "/collection-accounts", "/treasurer-lines", "/rcd-columns", "/accounts/rules", "/accounts/unclassified",
+    ]);
+    const collections = admin.find((m) => m.key === "collections");
+    expect(collections?.tabs.map((t) => t.href)).toContain("/ledger/office-receipt");
+    const accounting = navFor("accounting").flatMap((s) => s.modules).find((m) => m.key === "collections");
+    expect(accounting?.tabs.map((t) => t.href)).not.toContain("/ledger/office-receipt");
+    expect(accounting?.tabs.map((t) => t.href)).toContain("/ledger/cash-tickets");
+  });
 });

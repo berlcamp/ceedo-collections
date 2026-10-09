@@ -17,7 +17,7 @@ const IN_CHUNK = 200;
 
 type Page<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
 
-async function allPages<T>(page: (from: number, to: number) => Page<T>): Promise<T[]> {
+export async function allPages<T>(page: (from: number, to: number) => Page<T>): Promise<T[]> {
   const out: T[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await page(from, from + PAGE - 1);
