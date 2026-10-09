@@ -210,7 +210,9 @@ declare
   v_system_count integer;
   v_system_total numeric(14,2);
 begin
-  select * into v_shift from ceedo_collections.shifts where id = p_shift_id;
+  -- Locked: record/cancel_cash_ticket_sale lock this row, so a ticket entered while the
+  -- close runs either lands before the close's sum or sees the shift closed.
+  select * into v_shift from ceedo_collections.shifts where id = p_shift_id for update;
   if not found then
     raise exception 'No such shift';
   end if;

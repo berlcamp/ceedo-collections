@@ -116,6 +116,40 @@ describe("close_shift", () => {
     expect(rows[0].r.status).toBe("closed");
     expect(await totals(id)).toEqual({ s: "250.00", v: "0.00" });
   });
+
+  it("waits for a ticket entry holding the shift lock, then counts the ticket", async () => {
+    const fx = await createCollectionFixture(db);
+    const id = await shift(fx, { status: "open" });
+    const fee = await ticketFee();
+    const ticketTxn = new Client({ connectionString: POSTGRES_URL });
+    const closer = new Client({ connectionString: POSTGRES_URL });
+    await ticketTxn.connect();
+    await closer.connect();
+    try {
+      // What record_cash_ticket_sale does: lock the shift, insert the ticket, commit later.
+      await ticketTxn.query("begin");
+      await ticketTxn.query(`select 1 from ceedo_collections.shifts where id = $1 for update`, [id]);
+      await ticketTxn.query(
+        `insert into ceedo_collections.cash_ticket_sales (shift_id, collector_id, business_date, fee_type_id, amount, entered_by)
+         values ($1, $2, '2026-10-05', $3, 300, $2)`,
+        [id, fx.collectorId, fee],
+      );
+      const { rows: [{ pid }] } = await closer.query(`select pg_backend_pid() pid`);
+      const closing = closer.query(`select ceedo_collections.close_shift($1, $2, 300, 0, 0) r`, [id, fx.deviceId]);
+      for (let i = 0; i < 100; i++) {
+        const { rows } = await db.query(
+          `select 1 from pg_stat_activity where pid = $1 and wait_event_type = 'Lock'`, [pid]);
+        if (rows.length) break;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      await ticketTxn.query("commit");
+      expect((await closing).rows[0].r.status).toBe("closed");
+      expect(await totals(id)).toEqual({ s: "300.00", v: "0.00" });
+    } finally {
+      await ticketTxn.end();
+      await closer.end();
+    }
+  });
 });
 
 describe("role and ownership", () => {
