@@ -24,6 +24,7 @@ export async function getRuleSets(): Promise<RuleSetRow[]> {
         "id, rate_class, portion, effective_from, effective_to, fee_types(name), facilities(name), sections!account_rules_section_in_facility(name), account_rule_shares(share_bps, collection_accounts(code, name))",
       )
       .order("effective_from", { ascending: false })
+      .order("id")
       .range(from, to),
   );
   return rows
@@ -93,6 +94,7 @@ export async function getUnclassified(from: string, to: string): Promise<Unclass
     supabase.rpc("receipt_account_lines", { p_from: from, p_to: to })
       .eq("account_id", unc.id).eq("cancelled", false)
       .order("business_date").order("or_no")
+      .order("collection_id").order("cash_ticket_id").order("line_id").order("portion")
       .range(a, b),
   );
   const [fees, facilities, sections] = await Promise.all([

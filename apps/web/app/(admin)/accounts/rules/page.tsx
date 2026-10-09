@@ -25,7 +25,7 @@ export default async function RulesPage({
       <ScreenHeader
         title="Account rules"
         note="Which account each fee's receipts land on. A section rule beats a facility rule, which beats a fee-only rule; a rule naming a rate class beats one that does not. Changing a rule starts a new one from a date; months already reported are never restated."
-        actions={staff.role === "admin" ? <RuleDialog choices={choices} today={manilaToday()} prefill={prefill} /> : null}
+        actions={staff.role === "admin" ? <RuleDialog key={JSON.stringify(prefill)} choices={choices} today={manilaToday()} prefill={prefill} /> : null}
       />
       <RulesTable rows={rows} />
     </div>
