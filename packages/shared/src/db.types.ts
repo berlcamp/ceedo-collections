@@ -2277,6 +2277,7 @@ export type Database = {
         Args: { roles: Database["ceedo_collections"]["Enums"]["app_role"][] }
         Returns: boolean
       }
+      install_account_catalogue: { Args: never; Returns: undefined }
       install_chart_builtins: { Args: never; Returns: undefined }
       is_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
