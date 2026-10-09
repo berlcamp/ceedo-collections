@@ -111,24 +111,34 @@ as $$
     ) as rule_id
     from numbered n
   ),
+  -- Largest remainder, in centavos: each share is floored to the centavo, then the
+  -- centavos left over go one each to the shares with the largest fractional remainder
+  -- (ties: the larger share, then the account code). The rows sum exactly to the portion
+  -- and none moves more than one centavo from its exact share, so none goes negative.
   split as (
     select n.*, sh.account_id,
-           round(n.amount * sh.share_bps / 10000.0, 2) as raw,
-           row_number() over (partition by n.pk order by sh.share_bps desc, a.code) as rk,
-           sum(round(n.amount * sh.share_bps / 10000.0, 2)) over (partition by n.pk) as raw_total
+           floor(n.amount * 100 * sh.share_bps / 10000) as cents,
+           n.amount * 100 * sh.share_bps / 10000 - floor(n.amount * 100 * sh.share_bps / 10000) as frac,
+           sh.share_bps, a.code as account_code
       from numbered n
       join chosen c on c.pk = n.pk
       join ceedo_collections.account_rule_shares sh on sh.rule_id = c.rule_id
       join ceedo_collections.collection_accounts a on a.id = sh.account_id
+  ),
+  ranked as (
+    select s.*,
+           row_number() over (partition by s.pk order by s.frac desc, s.share_bps desc, s.account_code) as rk,
+           round(s.amount * 100) - sum(s.cents) over (partition by s.pk) as leftover
+      from split s
   ),
   placed as (
     select s.source, s.collection_id, s.cash_ticket_id, s.line_id, s.or_no, s.booklet_id,
            s.shift_id, s.business_date, s.collector_id, s.lease_id, s.payer_ref, s.fee_type_id,
            s.facility_id, s.section_id, s.rate_class, s.quantity, s.portion, s.account_id,
            s.payment_mode,
-           (s.raw + case when s.rk = 1 then s.amount - s.raw_total else 0 end)::numeric(14,2) as amount,
+           ((s.cents + case when s.rk <= s.leftover then 1 else 0 end) / 100)::numeric(14,2) as amount,
            s.cancelled
-      from split s
+      from ranked s
     union all
     select n.source, n.collection_id, n.cash_ticket_id, n.line_id, n.or_no, n.booklet_id,
            n.shift_id, n.business_date, n.collector_id, n.lease_id, n.payer_ref, n.fee_type_id,

@@ -169,6 +169,19 @@ describe("line receipts", () => {
     expect((await linesOf(id)).map((r) => [r.account_id, r.amount])).toEqual([[big, "0.01"]]);
   });
 
+  it("hands leftover centavos one each by largest remainder, never a negative row", async () => {
+    const fee = await ownFee("rate", "0.05");
+    const accounts: string[] = [];
+    for (let i = 0; i < 10; i++) accounts.push(await createAccount(db));
+    await createRule(db, { feeTypeId: fee, shares: accounts.map((a) => [a, 1000] as [string, number]) });
+    const id = await postCollectionAsOwner(db, fx, {
+      leaseId: null, groupRanks: [], feeTypeId: fee, lines: [{ fee_type_id: fee, quantity: 1 }],
+    });
+    const rows = await linesOf(id);
+    expect(rows.map((r) => r.amount)).toEqual(["0.01", "0.01", "0.01", "0.01", "0.01"]);
+    expect(new Set(rows.map((r) => r.account_id)).size).toBe(5);
+  });
+
   it("places an occupancy fee on a lease by the lease's section, once, and keeps it out of the rent grid", async () => {
     const fee = await ownFee("keyed");
     await charge("2026-10-01");
