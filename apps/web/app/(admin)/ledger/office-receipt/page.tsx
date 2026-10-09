@@ -8,6 +8,7 @@ import { OfficeReceiptForm } from "@/components/office-receipt/receipt-form";
 import { Money } from "@/components/ledger/money";
 import { fromCentavos } from "@ceedo/shared";
 import { getAllActiveLeases, getOfficeFees, getOfficers, getOfficeShift } from "@/lib/office-receipt/queries";
+import { officeShiftTotal } from "@/lib/office-receipt/total";
 import { getHeldBooklets } from "@/lib/recovery/queries";
 import { manilaToday } from "@/lib/reports/params";
 import { requireStaff } from "@/lib/supabase/session";
@@ -42,7 +43,8 @@ export default async function OfficeReceiptPage({ searchParams }: { searchParams
     getAllActiveLeases(),
     getOfficeFees(shift.businessDate),
   ]);
-  const total = shift.receipts.reduce((a, r) => a + r.amount, 0);
+  // What close_office_shift counts: live receipts plus live cash tickets on this shift.
+  const total = officeShiftTotal(shift.receipts, shift.cashTickets);
 
   return (
     <div>
@@ -53,9 +55,16 @@ export default async function OfficeReceiptPage({ searchParams }: { searchParams
         </thead>
         <tbody className="divide-y divide-rule">
           {shift.receipts.map((r) => (
-            <tr key={r.id}>
-              <td className="py-2 tabular-nums">{r.orNo}</td><td>{r.payer}</td><td>{r.mode}</td>
-              <td className="text-right"><Money amount={fromCentavos(r.amount)} /></td>
+            <tr key={r.id} className={r.cancelled ? "text-ink-3" : undefined}>
+              <td className="py-2 tabular-nums">{r.orNo}</td>
+              <td>{r.payer}{r.cancelled ? " · Cancelled (not counted)" : ""}</td><td>{r.mode}</td>
+              <td className={r.cancelled ? "text-right line-through" : "text-right"}><Money amount={r.amount} /></td>
+            </tr>
+          ))}
+          {shift.cashTickets.map((t) => (
+            <tr key={t.id}>
+              <td className="py-2">—</td><td>{t.feeName} · cash ticket</td><td>cash</td>
+              <td className="text-right"><Money amount={t.amount} /></td>
             </tr>
           ))}
         </tbody>

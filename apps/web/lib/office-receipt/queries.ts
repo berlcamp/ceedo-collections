@@ -1,5 +1,5 @@
 import { fromPesos, type Centavos } from "@ceedo/shared";
-import { ledgerClient } from "@/lib/ledger/queries";
+import { ledgerClient, selectByIds } from "@/lib/ledger/queries";
 import { allPages } from "@/lib/reports/data";
 
 export interface OfficeFee {
@@ -64,7 +64,10 @@ export interface OfficeShift {
   status: string;
   declaredTotal: Centavos | null;
   variance: Centavos | null;
-  receipts: { id: string; orNo: number; payer: string; mode: string; amount: Centavos }[];
+  /** Every receipt on the shift; a standing-cancelled one is listed, flagged, and not counted. */
+  receipts: { id: string; orNo: number; payer: string; mode: string; amount: Centavos; cancelled: boolean }[];
+  /** Live (uncancelled) cash tickets entered on the shift: part of the cash handed over. */
+  cashTickets: { id: string; feeName: string; amount: Centavos }[];
 }
 
 export async function getOfficeShift(shiftId: string): Promise<OfficeShift | null> {
@@ -80,6 +83,16 @@ export async function getOfficeShift(shiftId: string): Promise<OfficeShift | nul
       .select("id, or_no, payer_ref, payment_mode, gross_amount, leases(tenants(full_name))")
       .eq("shift_id", shiftId).order("or_no").order("id").range(from, to),
   );
+  const [cancellations, tickets] = await Promise.all([
+    selectByIds(rows.map((r) => r.id), (chunk) =>
+      supabase.from("standing_cancellations").select("collection_id").in("collection_id", chunk),
+    ),
+    allPages((from, to) =>
+      supabase.from("cash_ticket_sales").select("id, amount, fee_types(name)")
+        .eq("shift_id", shiftId).is("cancelled_at", null).order("entered_at").order("id").range(from, to),
+    ),
+  ]);
+  const cancelled = new Set(cancellations.map((c) => c.collection_id));
   return {
     id: s.id,
     collectorId: s.collector_id,
@@ -94,6 +107,12 @@ export async function getOfficeShift(shiftId: string): Promise<OfficeShift | nul
       payer: r.leases?.tenants?.full_name ?? r.payer_ref ?? "Walk-in",
       mode: r.payment_mode,
       amount: fromPesos(Number(r.gross_amount)),
+      cancelled: cancelled.has(r.id),
+    })),
+    cashTickets: tickets.map((t) => ({
+      id: t.id,
+      feeName: t.fee_types?.name ?? "Cash ticket",
+      amount: fromPesos(Number(t.amount)),
     })),
   };
 }
