@@ -2359,6 +2359,32 @@ export type Database = {
         Args: { p_receipt: Json; p_shift_id: string }
         Returns: string
       }
+      receipt_account_lines: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          account_id: string
+          amount: number
+          booklet_id: string
+          business_date: string
+          cancelled: boolean
+          cash_ticket_id: string
+          collection_id: string
+          collector_id: string
+          facility_id: string
+          fee_type_id: string
+          lease_id: string
+          line_id: string
+          or_no: number
+          payer_ref: string
+          payment_mode: string
+          portion: string
+          quantity: number
+          rate_class: string
+          section_id: string
+          shift_id: string
+          source: string
+        }[]
+      }
       record_cash_ticket_sale: {
         Args: {
           p_amount: number
