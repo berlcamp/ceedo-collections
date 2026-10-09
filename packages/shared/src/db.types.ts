@@ -2121,6 +2121,7 @@ export type Database = {
         Args: { p_reason: string }
         Returns: undefined
       }
+      assert_office_poster: { Args: never; Returns: undefined }
       assert_recovery_admin: { Args: { p_reason: string }; Returns: undefined }
       attach_audit: { Args: { table_name: string }; Returns: undefined }
       authenticate_device: {
@@ -2146,6 +2147,10 @@ export type Database = {
       }
       claim_my_invite: { Args: never; Returns: boolean }
       clear_all_data: { Args: never; Returns: number }
+      close_office_shift: {
+        Args: { p_declared_total: number; p_shift_id: string }
+        Returns: Json
+      }
       close_shift: {
         Args: {
           p_declared_total: number
@@ -2247,11 +2252,19 @@ export type Database = {
         Args: { p_declared_total: number; p_reason: string; p_shift_id: string }
         Returns: Json
       }
+      office_shift: {
+        Args: { p_business_date: string; p_collector_id: string }
+        Returns: string
+      }
       open_shift: {
         Args: { p_collector: string; p_device_id: string; p_payload: Json }
         Returns: Json
       }
       post_collection: { Args: { p_payload: Json }; Returns: Json }
+      post_office_receipt: {
+        Args: { p_receipt: Json; p_shift_id: string }
+        Returns: string
+      }
       record_opening_balance: {
         Args: {
           p_amount: number
