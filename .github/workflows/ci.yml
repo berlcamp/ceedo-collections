@@ -58,8 +58,11 @@ jobs:
                      -H "apikey: $ANON_KEY" \
                      -H "Authorization: Bearer $ANON_KEY" \
                      -H 'content-type: application/json' -d '{}' || true)
+            # Our Function answers in its own `{"error":...}` shape (Kong's errors carry
+            # "message"). Since request bodies are validated first, the empty `{}` here gets
+            # `invalid_body` before auth is checked; either answer proves it is serving.
             case "$body" in
-              *'"error":"unauthorized"'*) exit 0 ;;
+              *'"error":"unauthorized"'*|*'"error":"invalid_body"'*) exit 0 ;;
             esac
             sleep 2
           done
