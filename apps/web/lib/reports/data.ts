@@ -27,7 +27,7 @@ export async function allPages<T>(page: (from: number, to: number) => Page<T>): 
   }
 }
 
-async function byIds<T>(ids: string[], read: (chunk: string[]) => Page<T>): Promise<T[]> {
+export async function byIds<T>(ids: string[], read: (chunk: string[]) => Page<T>): Promise<T[]> {
   const unique = [...new Set(ids)];
   const out: T[] = [];
   for (let i = 0; i < unique.length; i += IN_CHUNK) {
