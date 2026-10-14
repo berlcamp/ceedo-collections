@@ -21,6 +21,7 @@ const TABLES = [
   "treasurer_lines",
   "rcd_columns",
   "collection_accounts",
+  "report_signatories",
 ];
 
 describe("admin registry parity", () => {
