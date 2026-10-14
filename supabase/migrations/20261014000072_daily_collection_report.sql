@@ -18,6 +18,7 @@ create table ceedo_collections.report_signatories (
 );
 
 select ceedo_collections.apply_master_data_policies('report_signatories');
+select ceedo_collections.attach_audit('report_signatories');
 
 insert into ceedo_collections.report_signatories (report_key, label, sort_order) values
   ('daily-collection', 'Prepared by', 10),

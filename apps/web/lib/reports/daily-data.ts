@@ -79,7 +79,7 @@ export async function dailyCollectionData(date: string): Promise<DailyInput> {
     byIds(ids((p) => p.shiftId), (chunk) =>
       supabase.from("shifts").select("id, remittances(deposited_at, verified_at, cancelled_at)").in("id", chunk),
     ),
-    byIds(ids((p) => p.bookletId), (chunk) => supabase.from("booklets").select("id, serial_prefix").in("id", chunk)),
+    byIds(ids((p) => p.bookletId), (chunk) => supabase.from("booklets").select("id, serial_prefix, start_no, end_no").in("id", chunk)),
     byIds(ids((p) => p.leaseId), (chunk) =>
       supabase.from("leases").select("id, stalls(stall_no), tenants(full_name)").in("id", chunk),
     ),
@@ -127,7 +127,7 @@ export async function dailyCollectionData(date: string): Promise<DailyInput> {
     facilities: facilities.map((f) => ({ id: f.id, name: f.name, type: f.type })),
     sections,
     feeTypes,
-    booklets: bookletRows.map((b) => ({ id: b.id, label: b.serial_prefix })),
+    booklets: bookletRows.map((b) => ({ id: b.id, label: `${b.serial_prefix} ${b.start_no}–${b.end_no}`.trim() })),
     leases: leaseRows.map((l) => ({ id: l.id, tenantName: l.tenants.full_name, stallNo: l.stalls.stall_no })),
     rentCover: [...cover.values()],
     cashTickets: ticketRows.map((t) => ({ id: t.id, ticketFrom: t.ticket_from, ticketTo: t.ticket_to, note: t.note })),

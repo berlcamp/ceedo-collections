@@ -1,7 +1,7 @@
 // apps/web/lib/reports/builders/daily-collection/treasurer.test.ts
 import { describe, expect, it } from "vitest";
 import { sept30 } from "./fixture";
-import { depositLabel, treasurerSection } from "./treasurer";
+import { depositLabel, shortDate, treasurerSection } from "./treasurer";
 
 const rowsOf = () => treasurerSection(sept30()).rows;
 const line = (name: string) => rowsOf().find((r) => r.particulars === name)!;
@@ -30,8 +30,8 @@ describe("treasurerSection", () => {
   });
 
   it("dates each line's collection and its deposit", () => {
-    expect(line("Slaughterhouse fees")).toMatchObject({ collected: "2026-09-30", deposited: "2026-10-01 (unverified)" });
-    expect(line("Public Mall stall rentals/misc").deposited).toBe("2026-10-02");
+    expect(line("Slaughterhouse fees")).toMatchObject({ collected: "9/30/2026", deposited: "10/1/2026 (unverified)" });
+    expect(line("Public Mall stall rentals/misc").deposited).toBe("10/2/2026");
     expect(line("Public cemetery")).toMatchObject({ collected: null, deposited: null });
   });
 
@@ -63,9 +63,16 @@ describe("depositLabel", () => {
     ["s2", { id: "s2", deposit: { on: "2026-10-03", verified: true } }],
     ["s3", { id: "s3", deposit: null }],
   ]);
-  it("takes the latest deposit date", () => expect(depositLabel(["s1", "s2"], shifts)).toBe("2026-10-03"));
+  it("takes the latest deposit date", () => expect(depositLabel(["s1", "s2"], shifts)).toBe("10/3/2026"));
   it("is Undeposited for a receipt on no shift", () => expect(depositLabel(["s1", null], shifts)).toBe("Undeposited"));
   it("is Undeposited for an unknown shift", () => expect(depositLabel(["zz"], shifts)).toBe("Undeposited"));
   it("is null with no shifts", () => expect(depositLabel([], shifts)).toBeNull());
   it("is Undeposited when one is not deposited", () => expect(depositLabel(["s1", "s3"], shifts)).toBe("Undeposited"));
+});
+
+describe("shortDate", () => {
+  it("writes an ISO date as M/D/YYYY", () => {
+    expect(shortDate("2026-09-30")).toBe("9/30/2026");
+    expect(shortDate("2026-10-01")).toBe("10/1/2026");
+  });
 });

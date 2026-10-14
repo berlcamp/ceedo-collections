@@ -51,10 +51,28 @@ describe("dailyCollectionReport", () => {
   });
 
   it("signs with the configured signatories, blank where no name is set", () => {
-    expect(dailyCollectionReport(sept30()).signatures).toEqual([
+    const r = dailyCollectionReport(sept30());
+    expect(r.signatures).toBeUndefined();
+    expect(r.sections[0]!.signatures).toEqual([
       { label: "Prepared by", name: "Signer One", title: "LRCO-I" },
       { label: "Noted by", name: undefined, title: undefined },
     ]);
+  });
+
+  it("puts the CC line and deposit-date note on the Treasurer page, only the cancelled note on the report", () => {
+    const r = dailyCollectionReport(sept30());
+    expect(r.sections[0]!.notes!.some((n) => n.startsWith("CC: City Mayor's Office"))).toBe(true);
+    expect(r.sections[0]!.notes!.some((n) => n.startsWith("Date of deposit is"))).toBe(true);
+    expect(r.notes).toHaveLength(1);
+    expect(r.notes![0]).toMatch(/^Cancelled receipts/);
+  });
+
+  it("names the Treasurer line the unclassified account maps to in the warning", () => {
+    const input = sept30();
+    const acc = input.accounts.find((a) => a.id === "acc-unc")!;
+    const line = input.treasurerLines.find((l) => l.id === acc.treasurerLineId)!;
+    line.name = "Miscellaneous";
+    expect(dailyCollectionReport(input).warnings![0]!.text).toContain("shown under “Miscellaneous”.");
   });
 
   it("renders a day with no receipts: blank lines, zero sub-totals, empty abstracts", async () => {

@@ -5,6 +5,12 @@ import { accountOf, byId, type DailyInput, type DailyShift } from "./types";
 /** The built-in holding line for accounts the office has not placed (migration 066). */
 export const OTHER_LINE = "TL_OTHER";
 
+/** `2026-09-30` → `9/30/2026`, the office's own form. Anything not an ISO date is returned as is. */
+export function shortDate(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${Number(m[2])}/${Number(m[3])}/${m[1]}` : iso;
+}
+
 /**
  * Date of deposit for money collected on these shifts: the latest live deposit covering
  * them, "(unverified)" if any covering deposit is not yet verified, and "Undeposited" while
@@ -22,7 +28,8 @@ export function depositLabel(shiftIds: Iterable<string | null>, shifts: Map<stri
     if (!deposit.verified) unverified = true;
   }
   if (!any) return null;
-  return unverified ? `${latest} (unverified)` : latest;
+  if (latest === null) return null;
+  return unverified ? `${shortDate(latest)} (unverified)` : shortDate(latest);
 }
 
 /**
@@ -56,7 +63,7 @@ export function treasurerSection(input: DailyInput): ReportSection {
       sum += a;
       rows.push({
         particulars: l.name,
-        collected: a ? input.date : null,
+        collected: a ? shortDate(input.date) : null,
         amount: a || null,
         deposited: a ? depositLabel(shiftsOf.get(l.id) ?? [], shifts) : null,
       });
@@ -72,10 +79,15 @@ export function treasurerSection(input: DailyInput): ReportSection {
     sheet: "Treasurer",
     columns: [
       { key: "particulars", label: "Particulars", kind: "text" },
-      { key: "collected", label: "Date of collection", kind: "date" },
+      { key: "collected", label: "Date of collection", kind: "text" },
       { key: "amount", label: "Amount", kind: "money" },
       { key: "deposited", label: "Date of deposit", kind: "text" },
     ],
     rows,
+    notes: [
+      "Date of deposit is the latest deposit covering the shifts behind a line; “Undeposited” while any of them is not yet deposited.",
+      "CC: City Mayor's Office · City Administrator's Office · City Budget Office · City Accounting Office · City Treasurer's Office · File",
+    ],
+    signatures: input.signatories.map((s) => ({ label: s.label, name: s.name ?? undefined, title: s.title ?? undefined })),
   };
 }

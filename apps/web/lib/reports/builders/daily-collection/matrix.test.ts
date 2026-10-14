@@ -13,8 +13,8 @@ describe("matrixSections", () => {
   it("puts each collector's live money in the RCD columns and totals the row", () => {
     const [matrix] = matrixSections(sept30());
     const a = matrix.rows[0]!;
-    expect(a).toMatchObject({ RC_PM: 160_000, RC_SUR: 1_800, RC_ELEC: 172_200, RC_ELEC_SUR: 3_444, total: 337_444 });
-    expect(a.RC_SLH).toBeNull();
+    expect(a).toMatchObject({ "col:RC_PM": 160_000, "col:RC_SUR": 1_800, "col:RC_ELEC": 172_200, "col:RC_ELEC_SUR": 3_444, total: 337_444 });
+    expect(a["col:RC_SLH"]).toBeNull();
     const c = matrix.rows[2]!;
     expect(c.total).toBeNull();
   });
@@ -22,11 +22,11 @@ describe("matrixSections", () => {
   it("shows active columns in order, Other collections only when it holds money", () => {
     const [matrix] = matrixSections(sept30());
     expect(matrix.columns.map((c) => c.key)).toEqual([
-      "collector", "RC_PM", "RC_SUR", "RC_SLH", "RC_NMIS", "RC_IBJT", "RC_CEM", "RC_ELEC", "RC_ELEC_SUR", "RC_OTHER", "total",
+      "collector", "col:RC_PM", "col:RC_SUR", "col:RC_SLH", "col:RC_NMIS", "col:RC_IBJT", "col:RC_CEM", "col:RC_ELEC", "col:RC_ELEC_SUR", "col:RC_OTHER", "total",
     ]);
     const input = sept30();
     input.portions = input.portions.filter((p) => p.accountId !== "acc-unc");
-    expect(matrixSections(input)[0].columns.map((c) => c.key)).not.toContain("RC_OTHER");
+    expect(matrixSections(input)[0].columns.map((c) => c.key)).not.toContain("col:RC_OTHER");
   });
 
   it("totals to the grand total", () => {

@@ -51,7 +51,7 @@ export function matrixSections(input: DailyInput): [ReportSection, ReportSection
       let sum = 0;
       for (const c of shown) {
         const v = cells?.get(c.id) ?? 0;
-        row[c.code] = v || null;
+        row[`col:${c.code}`] = v || null;
         sum += v;
       }
       row.total = sum || null;
@@ -60,7 +60,7 @@ export function matrixSections(input: DailyInput): [ReportSection, ReportSection
 
   const columns: ReportColumn[] = [
     { key: "collector", label: "Collector", kind: "text" },
-    ...shown.map((c) => ({ key: c.code, label: columnsById.get(c.id)!.name, kind: "money" as const, total: true })),
+    ...shown.map((c) => ({ key: `col:${c.code}`, label: columnsById.get(c.id)!.name, kind: "money" as const, total: true })),
     { key: "total", label: "Total", kind: "money", total: true },
   ];
 

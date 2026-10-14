@@ -53,6 +53,11 @@ describe("report_signatories", () => {
       .select("title");
     expect(ok.error).toBeNull();
     expect(ok.data).toEqual([{ title: "LRCO-I" }]);
+    const { rows: audit } = await db.query(
+      `select action, after->>'title' as title from ceedo_collections.audit_log
+        where entity = 'report_signatories' and action = 'update' and after->>'title' = 'LRCO-I'`,
+    );
+    expect(audit.length).toBeGreaterThanOrEqual(1);
     await db.query(`update ceedo_collections.report_signatories set title = null where label = 'Prepared by'`);
   });
 

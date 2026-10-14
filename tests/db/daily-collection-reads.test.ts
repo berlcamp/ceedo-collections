@@ -46,7 +46,7 @@ describe("Daily Collection Report reads resolve against the live schema", () => 
     const supabase = await client();
     const results = await Promise.all([
       supabase.from("shifts").select("id, remittances(deposited_at, verified_at, cancelled_at)").in("id", nil),
-      supabase.from("booklets").select("id, serial_prefix").in("id", nil),
+      supabase.from("booklets").select("id, serial_prefix, start_no, end_no").in("id", nil),
       supabase.from("leases").select("id, stalls(stall_no), tenants(full_name)").in("id", nil),
       supabase.from("collection_allocations")
         .select("id, collection_id, amount, charges(charge_type, period_start, period_end)")

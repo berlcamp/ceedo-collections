@@ -28,7 +28,7 @@ export function dailyCollectionReport(input: DailyInput): Report {
       unclassified !== 0
         ? [
             {
-              text: `${pesos(unclassified)} of this day's collections is on no account and is shown under “Other collections”.`,
+              text: `${pesos(unclassified)} of this day's collections is on no account and is shown under “${unclassifiedLine(input)}”.`,
               href: `/accounts/unclassified?month=${input.date.slice(0, 7)}`,
               linkText: "Classify it",
             },
@@ -36,9 +36,12 @@ export function dailyCollectionReport(input: DailyInput): Report {
         : [],
     notes: [
       "Cancelled receipts are listed in the abstracts at zero and left out of every total.",
-      "Date of deposit is the latest deposit covering the shifts behind a line; “Undeposited” while any of them is not yet deposited.",
-      "CC: City Mayor's Office · City Administrator's Office · City Budget Office · City Accounting Office · City Treasurer's Office · File",
     ],
-    signatures: input.signatories.map((s) => ({ label: s.label, name: s.name ?? undefined, title: s.title ?? undefined })),
   };
+}
+
+/** The Treasurer line the UNCLASSIFIED account maps to, by its current name. */
+function unclassifiedLine(input: DailyInput): string {
+  const account = input.accounts.find((a) => a.id === input.unclassifiedAccountId);
+  return input.treasurerLines.find((l) => l.id === account?.treasurerLineId)?.name ?? "Other collections";
 }

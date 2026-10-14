@@ -16,11 +16,17 @@ export interface Report {
   /** Printed under the last section: basis of figures, caveats. */
   notes?: string[];
   /** Signature blocks, e.g. the COA forms' "Certified correct". */
-  signatures?: { label: string; name?: string; title?: string }[];
+  signatures?: Signature[];
   /** Default page orientation. Landscape when unset, as every report before phase 4. */
   layout?: Orientation;
   /** Screen-only notices shown above the report (never printed): e.g. unclassified money. */
   warnings?: { text: string; href?: string; linkText?: string }[];
+}
+
+export interface Signature {
+  label: string;
+  name?: string;
+  title?: string;
 }
 
 export type ColumnKind = "text" | "money" | "int" | "date";
@@ -70,6 +76,10 @@ export interface ReportSection {
   sheet?: string;
   /** Start a new printed page before this section. */
   breakBefore?: boolean;
+  /** Printed (and written to Excel) right after this section's table. */
+  notes?: string[];
+  /** Signature blocks that close this section, e.g. the Treasurer page's "Prepared by". */
+  signatures?: Signature[];
 }
 
 /**

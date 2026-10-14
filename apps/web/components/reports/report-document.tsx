@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { cellText, rowIndent, rowStyle, sectionTotals, type Report, type ReportColumn } from "@/lib/reports/report";
+import { cellText, rowIndent, rowStyle, sectionTotals, type Report, type ReportColumn, type Signature, type Orientation } from "@/lib/reports/report";
 
 /**
  * The printable form of a report, and what "Save as PDF" in Chrome produces. Parent §10
@@ -8,6 +8,8 @@ import { cellText, rowIndent, rowStyle, sectionTotals, type Report, type ReportC
  */
 export function ReportDocument({ report, generatedAt }: { report: Report; generatedAt: string }) {
   const layout = report.layout ?? "landscape";
+  const first = report.sections[0]?.orientation;
+  const last = report.sections.at(-1)?.orientation;
   const margin = report.sections.some((s) => s.dense) ? 6 : 12;
   return (
     <article className="bg-white px-8 py-7 text-black shadow-sm ring-1 ring-rule print:p-0 print:shadow-none print:ring-0">
@@ -15,7 +17,7 @@ export function ReportDocument({ report, generatedAt }: { report: Report; genera
 @page portrait { size: A4 portrait; margin: ${margin}mm; }
 @page landscape { size: A4 landscape; margin: ${margin}mm; }`}</style>
 
-      <header className="mb-5 border-b-2 border-black pb-3">
+      <header className="mb-5 border-b-2 border-black pb-3" style={pageStyle(first)}>
         <p className="text-xs uppercase tracking-wider">City Economic Enterprise and Development Office</p>
         <h1 className="text-xl font-bold">{report.title}</h1>
         <p className="text-sm">{report.scope}</p>
@@ -27,7 +29,7 @@ export function ReportDocument({ report, generatedAt }: { report: Report; genera
           <section
             key={i}
             className={`mb-6 ${section.breakBefore ? "break-before-page" : ""} ${section.dense ? "" : "break-inside-avoid-page"}`}
-            style={section.orientation ? ({ page: section.orientation } as CSSProperties) : undefined}
+            style={pageStyle(section.orientation)}
           >
             {section.title ? (
               <h2 className="mb-1.5 text-sm font-bold uppercase tracking-wide">{section.title}</h2>
@@ -94,33 +96,15 @@ export function ReportDocument({ report, generatedAt }: { report: Report; genera
                 ) : null}
               </table>
             )}
+            <Closing notes={section.notes} signatures={section.signatures} />
           </section>
         );
       })}
 
-      {report.notes?.length ? (
-        <ul className="mb-4 space-y-0.5 text-[11px] italic">
-          {report.notes.map((n) => (
-            <li key={n}>{n}</li>
-          ))}
-        </ul>
-      ) : null}
-
-      {report.signatures?.length ? (
-        <div className="mt-10 grid grid-cols-2 gap-x-16 gap-y-10 break-inside-avoid">
-          {report.signatures.map((s) => (
-            <div key={s.label}>
-              <p className="text-xs">{s.label}</p>
-              <p className="mt-8 border-t border-black pt-1 text-center text-sm font-semibold">
-                {s.name ?? " "}
-              </p>
-              {s.title ? <p className="text-center text-xs">{s.title}</p> : null}
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      <p className="mt-6 text-[10px] text-black/60">Generated {generatedAt} · CEEDO Collections</p>
+      <div style={pageStyle(last)}>
+        <Closing notes={report.notes} signatures={report.signatures} />
+        <p className="mt-6 text-[10px] text-black/60">Generated {generatedAt} · CEEDO Collections</p>
+      </div>
     </article>
   );
 }
@@ -129,3 +113,33 @@ function numeric(c: ReportColumn) {
   return c.kind === "money" || c.kind === "int";
 }
 
+
+function pageStyle(orientation: Orientation | undefined): CSSProperties | undefined {
+  return orientation ? ({ page: orientation } as CSSProperties) : undefined;
+}
+
+function Closing({ notes, signatures }: { notes?: string[]; signatures?: Signature[] }) {
+  return (
+    <>
+      {notes?.length ? (
+        <ul className="mb-4 space-y-0.5 text-[11px] italic">
+          {notes.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+      ) : null}
+
+      {signatures?.length ? (
+        <div className="mt-10 grid grid-cols-2 gap-x-16 gap-y-10 break-inside-avoid">
+          {signatures.map((s) => (
+            <div key={s.label}>
+              <p className="text-xs">{s.label}</p>
+              <p className="mt-8 border-t border-black pt-1 text-center text-sm font-semibold">{s.name ?? " "}</p>
+              {s.title ? <p className="text-center text-xs">{s.title}</p> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+}

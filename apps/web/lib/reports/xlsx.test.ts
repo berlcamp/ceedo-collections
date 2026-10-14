@@ -196,4 +196,27 @@ describe("styled rows, sheets and layout", () => {
     await book.xlsx.load((await toXlsx(report)) as unknown as ArrayBuffer);
     expect(book.worksheets.map((s) => s.name)).toEqual(["Abstract of Collections"]);
   });
+
+  it("writes a section's notes and signatures on that section's own sheet, not the last", async () => {
+    const col = [{ key: "a", label: "A", kind: "text" as const }];
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load(
+      (await toXlsx({
+        title: "R",
+        scope: "S",
+        sections: [
+          { sheet: "One", columns: col, rows: [{ a: "x" }], notes: ["CC: Somebody"], signatures: [{ label: "Prepared by", name: "N", title: "T" }] },
+          { sheet: "Two", columns: col, rows: [{ a: "y" }] },
+        ],
+      })) as unknown as ArrayBuffer,
+    );
+    const text = (name: string) => {
+      const out: string[] = [];
+      book.getWorksheet(name)!.eachRow((r) => out.push(String(r.getCell(1).value)));
+      return out;
+    };
+    expect(text("One")).toContain("CC: Somebody");
+    expect(text("One")).toContain("Prepared by: N, T");
+    expect(text("Two")).not.toContain("Prepared by: N, T");
+  });
 });

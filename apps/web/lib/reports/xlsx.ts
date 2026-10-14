@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import { rowIndent, rowStyle, sectionTotals, type Report, type ReportColumn, type ReportSection } from "./report";
+import { rowIndent, rowStyle, sectionTotals, type Report, type ReportColumn, type ReportSection, type Signature } from "./report";
 
 const MONEY = "#,##0.00;[Red]-#,##0.00";
 
@@ -79,21 +79,12 @@ function writeSheet(sheet: ExcelJS.Worksheet, report: Report, sections: ReportSe
       });
       format(added, section.columns);
     }
+    writeClosing(sheet, section.notes, section.signatures);
     sheet.addRow([]);
   }
 
-  // Notes and signatures close the document, so they go on its last sheet only.
-  if (last) {
-    for (const note of report.notes ?? []) sheet.addRow([note]).font = { italic: true, size: 9 };
-    if (report.signatures?.length) {
-      sheet.addRow([]);
-      sheet.addRow(
-        report.signatures.map(
-          (s) => `${s.label}: ${s.name ?? "________________"}${s.title ? `, ${s.title}` : ""}`,
-        ),
-      );
-    }
-  }
+  // Report-level notes and signatures close the document, so they go on its last sheet only.
+  if (last) writeClosing(sheet, report.notes, report.signatures);
 
   const dense = sections.some((s) => s.dense);
   for (let i = 1; i <= width; i++) sheet.getColumn(i).width = i === 1 ? 26 : dense ? 10 : 16;
@@ -103,6 +94,16 @@ function writeSheet(sheet: ExcelJS.Worksheet, report: Report, sections: ReportSe
     ? "landscape"
     : "portrait";
   sheet.pageSetup = { orientation, fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
+}
+
+function writeClosing(sheet: ExcelJS.Worksheet, notes?: string[], signatures?: Signature[]) {
+  for (const note of notes ?? []) sheet.addRow([note]).font = { italic: true, size: 9 };
+  if (signatures?.length) {
+    sheet.addRow([]);
+    sheet.addRow(
+      signatures.map((s) => `${s.label}: ${s.name ?? "________________"}${s.title ? `, ${s.title}` : ""}`),
+    );
+  }
 }
 
 function value(column: ReportColumn, raw: unknown): string | number | null {
