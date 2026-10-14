@@ -85,6 +85,7 @@ const SECTIONS: { heading: string; modules: ModuleSpec[] }[] = [
           { resource: "collection-accounts" },
           { resource: "treasurer-lines" },
           { resource: "rcd-columns" },
+          { resource: "report-signatories" },
           { href: "/accounts/rules", label: "Rules" },
           { href: "/accounts/unclassified", label: "Unclassified" },
         ],

@@ -55,7 +55,7 @@ describe("nav modules", () => {
     const admin = navFor("admin").flatMap((s) => s.modules);
     const accounts = admin.find((m) => m.key === "accounts");
     expect(accounts?.tabs.map((t) => t.href)).toEqual([
-      "/collection-accounts", "/treasurer-lines", "/rcd-columns", "/accounts/rules", "/accounts/unclassified",
+      "/collection-accounts", "/treasurer-lines", "/rcd-columns", "/report-signatories", "/accounts/rules", "/accounts/unclassified",
     ]);
     const collections = admin.find((m) => m.key === "collections");
     expect(collections?.tabs.map((t) => t.href)).toContain("/ledger/office-receipt");

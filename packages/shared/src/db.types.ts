@@ -1495,6 +1495,42 @@ export type Database = {
           },
         ]
       }
+      report_signatories: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          label: string
+          name: string | null
+          report_key: string
+          row_version: number
+          sort_order: number
+          title: string | null
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          label: string
+          name?: string | null
+          report_key: string
+          row_version?: number
+          sort_order?: number
+          title?: string | null
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          label?: string
+          name?: string | null
+          report_key?: string
+          row_version?: number
+          sort_order?: number
+          title?: string | null
+        }
+        Relationships: []
+      }
       sections: {
         Row: {
           active: boolean

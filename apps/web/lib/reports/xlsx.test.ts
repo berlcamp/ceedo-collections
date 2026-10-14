@@ -116,3 +116,107 @@ describe("cellText", () => {
     expect(cellText({ key: "n", label: "N", kind: "int" }, 1234, false)).toBe("1,234");
   });
 });
+
+describe("styled rows, sheets and layout", () => {
+  const styled: Report = {
+    title: "Daily Collection Report",
+    scope: "30 September 2026",
+    layout: "landscape",
+    sections: [
+      {
+        title: "Daily Collection Report",
+        sheet: "Treasurer",
+        orientation: "portrait",
+        columns: [
+          { key: "item", label: "Particulars", kind: "text" },
+          { key: "amount", label: "Amount", kind: "money", total: true },
+        ],
+        rows: [
+          { item: "Slaughterhouse fees", amount: 10_000 },
+          { item: "Sub-total 1", amount: 10_000, $style: "subtotal" },
+          { item: "Electricity", amount: 5_000, $indent: 1 },
+          { item: "Grand total", amount: 15_000, $style: "total" },
+        ],
+      },
+      {
+        title: "Per collector",
+        sheet: "Per collector",
+        totalLabel: "Overall total",
+        columns: [
+          { key: "who", label: "Collector", kind: "text" },
+          { key: "amount", label: "Amount", kind: "money", total: true },
+        ],
+        rows: [{ who: "A", amount: 15_000 }],
+      },
+    ],
+    signatures: [{ label: "Prepared by", name: "Someone", title: "LRCO-I" }],
+  };
+
+  it("leaves styled rows out of the section's totals", () => {
+    expect(sectionTotals(styled.sections[0]!)).toEqual({ amount: 15_000 });
+  });
+
+  it("puts each sheet's sections on their own worksheet", async () => {
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load((await toXlsx(styled)) as unknown as ArrayBuffer);
+    expect(book.worksheets.map((s) => s.name)).toEqual(["Treasurer", "Per collector"]);
+    expect(book.getWorksheet("Treasurer")!.pageSetup.orientation).toBe("portrait");
+    expect(book.getWorksheet("Per collector")!.pageSetup.orientation).toBe("landscape");
+    expect(book.getWorksheet("Per collector")!.pageSetup.fitToWidth).toBe(1);
+  });
+
+  it("bolds sub-total and total rows, indents, and labels the totals row", async () => {
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load((await toXlsx(styled)) as unknown as ArrayBuffer);
+    const treasurer = book.getWorksheet("Treasurer")!;
+    let sub: ExcelJS.Row | undefined;
+    let indented: ExcelJS.Row | undefined;
+    treasurer.eachRow((row) => {
+      if (row.getCell(1).value === "Sub-total 1") sub = row;
+      if (row.getCell(1).value === "Electricity") indented = row;
+    });
+    expect(sub!.font?.bold).toBe(true);
+    expect(indented!.getCell(1).alignment?.indent).toBe(1);
+
+    const rows: unknown[][] = [];
+    book.getWorksheet("Per collector")!.eachRow((row) => rows.push((row.values as unknown[]).slice(1)));
+    expect(rows).toContainEqual(["Overall total", 150]);
+  });
+
+  it("prints a signatory's title after the name", async () => {
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load((await toXlsx(styled)) as unknown as ArrayBuffer);
+    const text: string[] = [];
+    book.worksheets.forEach((s) => s.eachRow((row) => text.push((row.values as unknown[]).join(" "))));
+    expect(text.join(" | ")).toContain("Prepared by: Someone, LRCO-I");
+  });
+
+  it("keeps a report without sheets on one worksheet named after the title", async () => {
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load((await toXlsx(report)) as unknown as ArrayBuffer);
+    expect(book.worksheets.map((s) => s.name)).toEqual(["Abstract of Collections"]);
+  });
+
+  it("writes a section's notes and signatures on that section's own sheet, not the last", async () => {
+    const col = [{ key: "a", label: "A", kind: "text" as const }];
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load(
+      (await toXlsx({
+        title: "R",
+        scope: "S",
+        sections: [
+          { sheet: "One", columns: col, rows: [{ a: "x" }], notes: ["CC: Somebody"], signatures: [{ label: "Prepared by", name: "N", title: "T" }] },
+          { sheet: "Two", columns: col, rows: [{ a: "y" }] },
+        ],
+      })) as unknown as ArrayBuffer,
+    );
+    const text = (name: string) => {
+      const out: string[] = [];
+      book.getWorksheet(name)!.eachRow((r) => out.push(String(r.getCell(1).value)));
+      return out;
+    };
+    expect(text("One")).toContain("CC: Somebody");
+    expect(text("One")).toContain("Prepared by: N, T");
+    expect(text("Two")).not.toContain("Prepared by: N, T");
+  });
+});

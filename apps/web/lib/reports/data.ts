@@ -27,13 +27,30 @@ export async function allPages<T>(page: (from: number, to: number) => Page<T>): 
   }
 }
 
-async function byIds<T>(ids: string[], read: (chunk: string[]) => Page<T>): Promise<T[]> {
+export async function byIds<T>(ids: string[], read: (chunk: string[]) => Page<T>): Promise<T[]> {
   const unique = [...new Set(ids)];
   const out: T[] = [];
   for (let i = 0; i < unique.length; i += IN_CHUNK) {
     const { data, error } = await read(unique.slice(i, i + IN_CHUNK));
     if (error) throw new Error(error.message);
     out.push(...(data ?? []));
+  }
+  return out;
+}
+
+/**
+ * Like `byIds`, for reads that can return many rows per id: chunks the ids AND pages each
+ * chunk. Each page query must carry a stable `.order(...)` so pages do not overlap.
+ */
+export async function byIdsPaged<T>(
+  ids: string[],
+  read: (chunk: string[], from: number, to: number) => Page<T>,
+): Promise<T[]> {
+  const unique = [...new Set(ids)];
+  const out: T[] = [];
+  for (let i = 0; i < unique.length; i += IN_CHUNK) {
+    const chunk = unique.slice(i, i + IN_CHUNK);
+    out.push(...(await allPages((a, b) => read(chunk, a, b))));
   }
   return out;
 }

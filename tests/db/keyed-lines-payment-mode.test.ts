@@ -101,7 +101,7 @@ describe("sync_push", () => {
     ]);
     const results = rows[0].result as { status: string; reason?: string; detail?: string }[];
     expect(results[0]).toMatchObject({ status: "rejected", reason: "server_error" });
-    expect(results[0].detail).toMatch(/office only/);
-    expect(results[1].status).toBe("accepted");
+    expect(results[0]!.detail).toMatch(/office only/);
+    expect(results[1]!.status).toBe("accepted");
   });
 });

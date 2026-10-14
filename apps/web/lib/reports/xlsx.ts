@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import { sectionTotals, type Report, type ReportColumn } from "./report";
+import { rowIndent, rowStyle, sectionTotals, type Report, type ReportColumn, type ReportSection, type Signature } from "./report";
 
 const MONEY = "#,##0.00;[Red]-#,##0.00";
 
@@ -7,19 +7,40 @@ const MONEY = "#,##0.00;[Red]-#,##0.00";
  * The Excel form of a report. Money goes in as a NUMBER of pesos with a money format, not
  * as text: accounting sums and re-keys these cells, and a figure stored as "1,234.56" text
  * is one they would have to retype. Parent §10.
+ *
+ * Sections go on the worksheet their `sheet` names, in order of first appearance; those
+ * without one go on the first sheet, named after the report.
  */
 export async function toXlsx(report: Report): Promise<Buffer> {
   const book = new ExcelJS.Workbook();
   book.creator = "CEEDO Collections";
-  const sheet = book.addWorksheet(report.title.slice(0, 31));
-  const width = Math.max(...report.sections.map((s) => s.columns.length), 1);
+
+  const sheets = new Map<string, ReportSection[]>();
+  for (const section of report.sections) {
+    const name = (section.sheet ?? report.title).slice(0, 31);
+    sheets.set(name, [...(sheets.get(name) ?? []), section]);
+  }
+  if (sheets.size === 0) sheets.set(report.title.slice(0, 31), []);
+
+  const names = [...sheets.keys()];
+  names.forEach((name, index) => {
+    const sections = sheets.get(name)!;
+    const sheet = book.addWorksheet(name);
+    writeSheet(sheet, report, sections, index === names.length - 1);
+  });
+
+  return Buffer.from(await book.xlsx.writeBuffer());
+}
+
+function writeSheet(sheet: ExcelJS.Worksheet, report: Report, sections: ReportSection[], last: boolean) {
+  const width = Math.max(...sections.map((s) => s.columns.length), 1);
 
   const title = sheet.addRow([report.title]);
   title.font = { bold: true, size: 14 };
   sheet.addRow([report.scope]).font = { italic: true };
   sheet.addRow([]);
 
-  for (const section of report.sections) {
+  for (const section of sections) {
     if (section.title) sheet.addRow([section.title]).font = { bold: true };
 
     const header = sheet.addRow(section.columns.map((c) => c.label));
@@ -34,13 +55,22 @@ export async function toXlsx(report: Report): Promise<Buffer> {
     for (const row of section.rows) {
       const added = sheet.addRow(section.columns.map((c) => value(c, row[c.key])));
       format(added, section.columns);
+      const style = rowStyle(row);
+      if (style) added.font = { bold: true };
+      if (style === "total") {
+        added.eachCell((cell) => {
+          cell.border = { top: { style: "thin" }, bottom: { style: "double" } };
+        });
+      }
+      const indent = rowIndent(row);
+      if (indent > 0) added.getCell(1).alignment = { indent };
     }
 
     const totals = sectionTotals(section);
     if (totals) {
       const added = sheet.addRow(
         section.columns.map((c, i) =>
-          c.key in totals ? value(c, totals[c.key]!) : i === 0 ? "Total" : null,
+          c.key in totals ? value(c, totals[c.key]!) : i === 0 ? (section.totalLabel ?? "Total") : null,
         ),
       );
       added.font = { bold: true };
@@ -49,20 +79,31 @@ export async function toXlsx(report: Report): Promise<Buffer> {
       });
       format(added, section.columns);
     }
+    writeClosing(sheet, section.notes, section.signatures);
     sheet.addRow([]);
   }
 
-  for (const note of report.notes ?? []) sheet.addRow([note]).font = { italic: true, size: 9 };
-  if (report.signatures?.length) {
-    sheet.addRow([]);
-    sheet.addRow(report.signatures.map((s) => `${s.label}: ${s.name ?? "________________"}`));
-  }
+  // Report-level notes and signatures close the document, so they go on its last sheet only.
+  if (last) writeClosing(sheet, report.notes, report.signatures);
 
-  const dense = report.sections.some((s) => s.dense);
+  const dense = sections.some((s) => s.dense);
   for (let i = 1; i <= width; i++) sheet.getColumn(i).width = i === 1 ? 26 : dense ? 10 : 16;
   if (dense) sheet.views = [{ state: "frozen", xSplit: 1, ySplit: 0 }];
 
-  return Buffer.from(await book.xlsx.writeBuffer());
+  const orientation = sections.some((s) => (s.orientation ?? report.layout ?? "landscape") === "landscape")
+    ? "landscape"
+    : "portrait";
+  sheet.pageSetup = { orientation, fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
+}
+
+function writeClosing(sheet: ExcelJS.Worksheet, notes?: string[], signatures?: Signature[]) {
+  for (const note of notes ?? []) sheet.addRow([note]).font = { italic: true, size: 9 };
+  if (signatures?.length) {
+    sheet.addRow([]);
+    sheet.addRow(
+      signatures.map((s) => `${s.label}: ${s.name ?? "________________"}${s.title ? `, ${s.title}` : ""}`),
+    );
+  }
 }
 
 function value(column: ReportColumn, raw: unknown): string | number | null {

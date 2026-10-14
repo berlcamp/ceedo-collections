@@ -2,6 +2,8 @@ import { getAging, getDelinquency, getLeaseBalance, getSubsidiaryLedger } from "
 import { longDate, type ReportParams } from "./params";
 import type { Report } from "./report";
 import { ReportInputError } from "./errors";
+import { dailyCollectionReport } from "./builders/daily-collection/report";
+import { dailyCollectionData } from "./daily-data";
 import { balancesReport } from "./builders/balances";
 import { buildRcd } from "./builders/rcd";
 import { tenantPaymentsReport } from "./builders/tenant-payments";
@@ -29,6 +31,13 @@ export interface ReportEntry {
  * Excel export and the printed/PDF page render, so every report gets both for free.
  */
 export const REPORTS: ReportEntry[] = [
+  {
+    key: "daily-collection",
+    title: "Daily Collection Report",
+    purpose: "The day's page for the City Treasurer, collections per collector with deposits, and each collector's abstract.",
+    params: ["date"],
+    build: async (p) => dailyCollectionReport(await dailyCollectionData(p.date)),
+  },
   {
     key: "rcd",
     title: "Report of Collections and Deposits",
