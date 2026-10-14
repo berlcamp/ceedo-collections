@@ -2,7 +2,7 @@
 import { fromPesos, type Centavos } from "@ceedo/shared";
 import { getServerClient } from "@/lib/supabase/server";
 import type { DailyInput, DailyPortion, RentCover } from "./builders/daily-collection/types";
-import { allPages, byIds } from "./data";
+import { allPages, byIds, byIdsPaged } from "./data";
 
 const centavos = (v: string | number | null): Centavos => fromPesos(Number(v ?? 0));
 
@@ -83,9 +83,10 @@ export async function dailyCollectionData(date: string): Promise<DailyInput> {
     byIds(ids((p) => p.leaseId), (chunk) =>
       supabase.from("leases").select("id, stalls(stall_no), tenants(full_name)").in("id", chunk),
     ),
-    byIds(leaseReceiptIds, (chunk) =>
+    byIdsPaged(leaseReceiptIds, (chunk, a, b) =>
       supabase.from("collection_allocations")
-        .select("collection_id, amount, charges(charge_type, period_start, period_end)").in("collection_id", chunk),
+        .select("id, collection_id, amount, charges(charge_type, period_start, period_end)")
+        .in("collection_id", chunk).order("id").range(a, b),
     ),
     byIds(ids((p) => p.cashTicketId), (chunk) =>
       supabase.from("cash_ticket_sales").select("id, ticket_from, ticket_to, note").in("id", chunk),
