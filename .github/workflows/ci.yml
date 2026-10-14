@@ -27,7 +27,7 @@ jobs:
       # `(X extends {` where the committed file has `X extends {`. Bump this deliberately,
       # and regenerate db.types.ts with the same version in the same commit.
       - uses: supabase/setup-cli@v1
-        with: { version: 2.116.0 }
+        with: { version: 2.117.0 }
       - run: supabase start
       # Exports API_URL, ANON_KEY, SERVICE_ROLE_KEY and DB_URL, which the test helpers read.
       # The sed is load-bearing: `supabase status -o env` emits KEY="value" with literal
