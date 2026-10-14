@@ -1,5 +1,7 @@
 import type { Centavos } from "@ceedo/shared";
 
+export type Orientation = "portrait" | "landscape";
+
 /**
  * One report, as data. Parent spec §10: every report exports to Excel AND to PDF, so a
  * report is built once, here, and rendered twice: `toXlsx` for the workbook accounting
@@ -14,7 +16,11 @@ export interface Report {
   /** Printed under the last section: basis of figures, caveats. */
   notes?: string[];
   /** Signature blocks, e.g. the COA forms' "Certified correct". */
-  signatures?: { label: string; name?: string }[];
+  signatures?: { label: string; name?: string; title?: string }[];
+  /** Default page orientation. Landscape when unset, as every report before phase 4. */
+  layout?: Orientation;
+  /** Screen-only notices shown above the report (never printed): e.g. unclassified money. */
+  warnings?: { text: string; href?: string; linkText?: string }[];
 }
 
 export type ColumnKind = "text" | "money" | "int" | "date";
@@ -30,23 +36,53 @@ export interface ReportColumn {
 /** Money cells are integer centavos; the renderers turn them into pesos. */
 export type Cell = string | number | Centavos | null;
 
+/**
+ * A row's look. Sub-total and total rows are figures the builder computed; they are
+ * printed bold and left out of `sectionTotals`, so a section can carry its own
+ * sub-totals and still have an ordinary totals row.
+ */
+export type RowStyle = "heading" | "subtotal" | "total";
+
+/** Cells by column key, plus two reserved keys the renderers read and no column uses. */
+export type ReportRow = Record<string, Cell> & { $style?: RowStyle; $indent?: number };
+
+export function rowStyle(row: ReportRow): RowStyle | null {
+  return row.$style ?? null;
+}
+
+export function rowIndent(row: ReportRow): number {
+  return Math.max(0, Math.floor(Number(row.$indent ?? 0)));
+}
+
 export interface ReportSection {
   title?: string;
   columns: ReportColumn[];
-  rows: Record<string, Cell>[];
+  rows: ReportRow[];
   /** Shown instead of an empty table. */
   empty?: string;
   /** A wide grid (e.g. one column per day): small print, narrow Excel columns. */
   dense?: boolean;
+  /** The totals row's label; "Total" when unset. */
+  totalLabel?: string;
+  /** This section's page orientation; `Report.layout` when unset. */
+  orientation?: Orientation;
+  /** The xlsx worksheet this section goes on (≤ 31 chars); the first sheet when unset. */
+  sheet?: string;
+  /** Start a new printed page before this section. */
+  breakBefore?: boolean;
 }
 
-/** The totals row of a section: each `total` column summed, as integers (centavos). */
+/**
+ * The totals row of a section: each `total` column summed over its plain rows (styled
+ * sub-total/total rows are already sums), as integers (centavos).
+ */
 export function sectionTotals(section: ReportSection): Record<string, number> | null {
   const totalled = section.columns.filter((c) => c.total);
-  if (totalled.length === 0 || section.rows.length === 0) return null;
+  const plain = section.rows.filter((r) => rowStyle(r) === null);
+  if (totalled.length === 0 || plain.length === 0) return null;
   const out: Record<string, number> = {};
   for (const column of totalled) {
-    out[column.key] = section.rows.reduce((acc, row) => acc + Number(row[column.key] ?? 0), 0);
+    out[column.key] = plain.reduce((acc, row) => acc + Number(row[column.key] ?? 0), 0);
   }
   return out;
 }

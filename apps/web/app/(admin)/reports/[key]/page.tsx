@@ -67,6 +67,19 @@ export default async function ReportPage({
           </Link>
         </p>
       ) : null}
+      {(report.warnings ?? []).map((w) => (
+        <p
+          key={w.text}
+          className="mb-4 rounded-lg border border-amber/40 bg-amber-soft px-3 py-2 text-sm text-amber print:hidden"
+        >
+          {w.text}{" "}
+          {w.href ? (
+            <Link href={w.href} className="font-semibold underline">
+              {w.linkText ?? "Review"}
+            </Link>
+          ) : null}
+        </p>
+      ))}
       <ReportDocument
         report={report}
         generatedAt={new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" })}

@@ -1,14 +1,19 @@
-import { cellText, sectionTotals, type Report, type ReportColumn } from "@/lib/reports/report";
+import type { CSSProperties } from "react";
+import { cellText, rowIndent, rowStyle, sectionTotals, type Report, type ReportColumn } from "@/lib/reports/report";
 
 /**
  * The printable form of a report, and what "Save as PDF" in Chrome produces. Parent §10
  * asks for PDF; like the tenant cards (§9.1), that is a print layout rather than a PDF
- * library. Black on white, A4 landscape, figures right-aligned in tabular numerals.
+ * library. Black on white, A4, landscape unless the report or a section says portrait, figures right-aligned in tabular numerals.
  */
 export function ReportDocument({ report, generatedAt }: { report: Report; generatedAt: string }) {
+  const layout = report.layout ?? "landscape";
+  const margin = report.sections.some((s) => s.dense) ? 6 : 12;
   return (
     <article className="bg-white px-8 py-7 text-black shadow-sm ring-1 ring-rule print:p-0 print:shadow-none print:ring-0">
-      <style>{`@page { size: A4 landscape; margin: ${report.sections.some((s) => s.dense) ? 6 : 12}mm; }`}</style>
+      <style>{`@page { size: A4 ${layout}; margin: ${margin}mm; }
+@page portrait { size: A4 portrait; margin: ${margin}mm; }
+@page landscape { size: A4 landscape; margin: ${margin}mm; }`}</style>
 
       <header className="mb-5 border-b-2 border-black pb-3">
         <p className="text-xs uppercase tracking-wider">City Economic Enterprise and Development Office</p>
@@ -19,7 +24,11 @@ export function ReportDocument({ report, generatedAt }: { report: Report; genera
       {report.sections.map((section, i) => {
         const totals = sectionTotals(section);
         return (
-          <section key={i} className="mb-6 break-inside-avoid-page">
+          <section
+            key={i}
+            className={`mb-6 ${section.breakBefore ? "break-before-page" : ""} ${section.dense ? "" : "break-inside-avoid-page"}`}
+            style={section.orientation ? ({ page: section.orientation } as CSSProperties) : undefined}
+          >
             {section.title ? (
               <h2 className="mb-1.5 text-sm font-bold uppercase tracking-wide">{section.title}</h2>
             ) : null}
@@ -40,18 +49,34 @@ export function ReportDocument({ report, generatedAt }: { report: Report; genera
                   </tr>
                 </thead>
                 <tbody>
-                  {section.rows.map((row, r) => (
-                    <tr key={r} className="break-inside-avoid border-b border-black/15">
-                      {section.columns.map((c) => (
-                        <td
-                          key={c.key}
-                          className={`${section.dense ? "px-0.5" : "px-1.5"} py-0.5 ${numeric(c) ? "text-right tabular-nums" : ""}`}
-                        >
-                          {cellText(c, row[c.key], section.dense)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
+                  {section.rows.map((row, r) => {
+                    const style = rowStyle(row);
+                    const indent = rowIndent(row);
+                    return (
+                      <tr
+                        key={r}
+                        className={`break-inside-avoid border-b border-black/15 ${
+                          style === "total"
+                            ? "border-y-2 border-black font-bold"
+                            : style === "subtotal"
+                              ? "border-t border-black font-semibold"
+                              : style === "heading"
+                                ? "font-semibold uppercase"
+                                : ""
+                        }`}
+                      >
+                        {section.columns.map((c, n) => (
+                          <td
+                            key={c.key}
+                            className={`${section.dense ? "px-0.5" : "px-1.5"} py-0.5 ${numeric(c) ? "text-right tabular-nums" : ""}`}
+                            style={n === 0 && indent > 0 ? { paddingLeft: `${0.375 + indent}rem` } : undefined}
+                          >
+                            {cellText(c, row[c.key], section.dense)}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
                 {totals ? (
                   <tfoot>
@@ -61,7 +86,7 @@ export function ReportDocument({ report, generatedAt }: { report: Report; genera
                           key={c.key}
                           className={`${section.dense ? "px-0.5" : "px-1.5"} py-1 ${numeric(c) ? "text-right tabular-nums" : ""}`}
                         >
-                          {c.key in totals ? cellText(c, totals[c.key]!, section.dense) : n === 0 ? "Total" : ""}
+                          {c.key in totals ? cellText(c, totals[c.key]!, section.dense) : n === 0 ? (section.totalLabel ?? "Total") : ""}
                         </td>
                       ))}
                     </tr>
@@ -89,6 +114,7 @@ export function ReportDocument({ report, generatedAt }: { report: Report; genera
               <p className="mt-8 border-t border-black pt-1 text-center text-sm font-semibold">
                 {s.name ?? " "}
               </p>
+              {s.title ? <p className="text-center text-xs">{s.title}</p> : null}
             </div>
           ))}
         </div>
