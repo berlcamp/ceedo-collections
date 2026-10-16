@@ -313,12 +313,13 @@ export const PAYER_ACCOUNT_CODES = ["NM-FEE", "TABO-FEE"];
 /**
  * The tenant grid's inputs for a month: the leases (optionally one facility's) with their
  * home account, the month's live portions summed per lease or payer, account, portion and
- * day (tenant_payment_portions over receipt_account_lines), and the chart.
+ * day (tenant_payment_portions over receipt_account_lines), and the chart. The portions are
+ * read after the chart, so that only lease portions and the payer accounts' come back.
  */
 export async function tenantPaymentData(month: string, facilityId: string | null): Promise<TenantPaymentsInput> {
   const { from, to } = monthBounds(month);
   const supabase = await getServerClient();
-  const [leaseRows, homes, portions, accounts, facilities] = await Promise.all([
+  const [leaseRows, homes, accounts, facilities] = await Promise.all([
     allPages((a, b) => {
       let q = supabase.rpc("leases_active_between", { p_from: from, p_to: to });
       if (facilityId) q = q.eq("facility_id", facilityId);
@@ -326,15 +327,20 @@ export async function tenantPaymentData(month: string, facilityId: string | null
     }),
     allPages((a, b) => supabase.rpc("lease_home_accounts", { p_from: from, p_to: to }).order("lease_id").range(a, b)),
     allPages((a, b) =>
-      supabase.rpc("tenant_payment_portions", { p_from: from, p_to: to })
-        .order("lease_id").order("payer_ref").order("account_id").order("portion").order("business_date")
-        .range(a, b),
-    ),
-    allPages((a, b) =>
       supabase.from("collection_accounts").select("id, code, name, facility_id, sort_order").order("sort_order").order("id").range(a, b),
     ),
     allPages((a, b) => supabase.from("facilities").select("id, name").order("name").order("id").range(a, b)),
   ]);
+
+  const payerAccountIds = accounts
+    .filter((a) => PAYER_ACCOUNT_CODES.includes(a.code) && (!facilityId || a.facility_id === facilityId))
+    .map((a) => a.id);
+  // Only the portions the grid shows: every lease's, and lease-less ones on a payer account.
+  const portions = await allPages((a, b) =>
+    supabase.rpc("tenant_payment_portions", { p_from: from, p_to: to, p_payer_accounts: payerAccountIds })
+      .order("lease_id").order("payer_ref").order("account_id").order("portion").order("business_date")
+      .range(a, b),
+  );
 
   const home = new Map(homes.map((h) => [h.lease_id, h.account_id]));
   const unclassified = accounts.find((a) => a.code === "UNCLASSIFIED")?.id ?? "";
@@ -365,8 +371,6 @@ export async function tenantPaymentData(month: string, facilityId: string | null
       facilityName: a.facility_id ? (facilityName.get(a.facility_id) ?? null) : null,
       sortOrder: a.sort_order,
     })),
-    payerAccountIds: accounts
-      .filter((a) => PAYER_ACCOUNT_CODES.includes(a.code) && (!facilityId || a.facility_id === facilityId))
-      .map((a) => a.id),
+    payerAccountIds,
   };
 }

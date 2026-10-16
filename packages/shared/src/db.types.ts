@@ -2679,7 +2679,7 @@ export type Database = {
         Returns: Json
       }
       tenant_payment_portions: {
-        Args: { p_from: string; p_to: string }
+        Args: { p_from: string; p_payer_accounts: string[]; p_to: string }
         Returns: {
           account_id: string
           amount: number

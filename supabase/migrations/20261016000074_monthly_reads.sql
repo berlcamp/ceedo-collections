@@ -18,8 +18,12 @@ as $$
    group by 1, 2;
 $$;
 
--- Per lease (rent, surcharge, occupancy) or, without a lease, per payer name.
-create or replace function ceedo_collections.tenant_payment_portions(p_from date, p_to date)
+-- Per lease (rent, surcharge, occupancy) or, without a lease, per payer name. Lease-less
+-- portions come back only on p_payer_accounts (the grid's payer rows); the rest of the
+-- walk-in money is not in the grid, and leaving it out keeps the read small.
+create or replace function ceedo_collections.tenant_payment_portions(
+  p_from date, p_to date, p_payer_accounts uuid[]
+)
 returns table (
   lease_id      uuid,
   payer_ref     text,
@@ -38,6 +42,7 @@ as $$
          r.account_id, r.portion, r.business_date, sum(r.amount)::numeric(14,2)
     from ceedo_collections.receipt_account_lines(p_from, p_to) r
    where not r.cancelled
+     and (r.lease_id is not null or r.account_id = any(p_payer_accounts))
    group by 1, 2, 3, 4, 5;
 $$;
 
@@ -94,8 +99,8 @@ as $$
 $$;
 
 revoke execute on function ceedo_collections.monthly_account_totals(date, date) from public;
-revoke execute on function ceedo_collections.tenant_payment_portions(date, date) from public;
+revoke execute on function ceedo_collections.tenant_payment_portions(date, date, uuid[]) from public;
 revoke execute on function ceedo_collections.lease_home_accounts(date, date) from public;
 grant execute on function ceedo_collections.monthly_account_totals(date, date) to authenticated;
-grant execute on function ceedo_collections.tenant_payment_portions(date, date) to authenticated;
+grant execute on function ceedo_collections.tenant_payment_portions(date, date, uuid[]) to authenticated;
 grant execute on function ceedo_collections.lease_home_accounts(date, date) to authenticated;

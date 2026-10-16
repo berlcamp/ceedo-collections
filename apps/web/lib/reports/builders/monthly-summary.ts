@@ -55,6 +55,16 @@ export interface SummaryInput {
 
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+/**
+ * The months of `year` the summary fills in: from the cutover (or January, for a later year)
+ * through the last month that ended before `today` (YYYY-MM-DD). The reader fetches only these.
+ */
+export function shownMonths(year: string, today: string): string[] {
+  const current = today.slice(0, 7);
+  return MONTH_LABELS.map((_, i) => `${year}-${String(i + 1).padStart(2, "0")}`)
+    .filter((m) => m >= CUTOVER_MONTH && m < current);
+}
+
 /** The control total in force per month: the one entered last. */
 export function latestControls(rows: ControlTotal[]): Map<string, ControlTotal> {
   const out = new Map<string, ControlTotal>();
@@ -89,8 +99,7 @@ function blocksOf(accounts: SummaryAccount[], key: (a: SummaryAccount) => string
  */
 export function monthlySummaryReport(input: SummaryInput): Report {
   const months = MONTH_LABELS.map((_, i) => `${input.year}-${String(i + 1).padStart(2, "0")}`);
-  const current = input.today.slice(0, 7);
-  const shown = new Set(months.filter((m) => m >= CUTOVER_MONTH && m < current));
+  const shown = new Set(shownMonths(input.year, input.today));
 
   const byAccount = new Map<string, Map<string, number>>();
   const add = (accountId: string, month: string, amount: number) => {

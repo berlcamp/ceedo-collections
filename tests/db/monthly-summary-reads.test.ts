@@ -14,7 +14,7 @@ describe("Monthly summary reads resolve against the live schema", () => {
   it("summary reads", async () => {
     const supabase = await client();
     const results = await Promise.all([
-      supabase.rpc("monthly_account_totals", { p_from: "2026-01-01", p_to: "2026-12-31" })
+      supabase.rpc("monthly_account_totals", { p_from: "2026-10-01", p_to: "2026-10-31" })
         .order("month").order("account_id").range(0, 0),
       supabase.from("collection_accounts")
         .select("id, code, name, facility_id, group_name, sort_order, kind, active").order("sort_order").order("id").range(0, 0),
@@ -35,7 +35,7 @@ describe("Monthly summary reads resolve against the live schema", () => {
     const results = await Promise.all([
       supabase.rpc("leases_active_between", { p_from: "2026-10-01", p_to: "2026-10-31" }).order("lease_id").range(0, 0),
       supabase.rpc("lease_home_accounts", { p_from: "2026-10-01", p_to: "2026-10-31" }).order("lease_id").range(0, 0),
-      supabase.rpc("tenant_payment_portions", { p_from: "2026-10-01", p_to: "2026-10-31" })
+      supabase.rpc("tenant_payment_portions", { p_from: "2026-10-01", p_to: "2026-10-31", p_payer_accounts: [] })
         .order("lease_id").order("payer_ref").order("account_id").order("portion").order("business_date").range(0, 0),
       supabase.from("collection_accounts").select("id, code, name, facility_id, sort_order").order("sort_order").order("id").range(0, 0),
     ]);

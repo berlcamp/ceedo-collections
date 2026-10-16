@@ -92,10 +92,25 @@ describe("tenant_payment_portions", () => {
     }
     const { rows } = await db.query(
       `select lease_id, payer_ref, portion, business_date::text as d, amount::text
-         from ceedo_collections.tenant_payment_portions('2026-10-01', '2026-10-31') where account_id = $1`,
+         from ceedo_collections.tenant_payment_portions('2026-10-01', '2026-10-31', array[$1]::uuid[]) where account_id = $1`,
       [nm],
     );
     expect(rows).toEqual([{ lease_id: null, payer_ref: payer, portion: "base", d: "2026-10-07", amount: "30.00" }]);
+  });
+
+  it("leaves out a lease-less portion on an account that is not a payer account", async () => {
+    const fee = await walkInFee();
+    const other = await createAccount(db);
+    await createRule(db, { feeTypeId: fee, shares: [[other, 10000]] });
+    await postCollectionAsOwner(db, fx, {
+      leaseId: null, groupRanks: [], feeTypeId: fee, lines: [{ fee_type_id: fee, quantity: 1 }],
+      payerRef: uniqueCode("Vendor"), collectedAt: "2026-10-07T02:00:00+00:00",
+    });
+    const { rows } = await db.query(
+      `select 1 from ceedo_collections.tenant_payment_portions('2026-10-01', '2026-10-31', '{}'::uuid[]) where account_id = $1`,
+      [other],
+    );
+    expect(rows).toEqual([]);
   });
 
   it("keys a lease receipt by its lease, with no payer name", async () => {
@@ -104,7 +119,7 @@ describe("tenant_payment_portions", () => {
     await charge("2026-10-01");
     await postCollectionAsOwner(db, fx, { groupRanks: [1], payerRef: "ignored", collectedAt: "2026-10-05T02:00:00+00:00" });
     const { rows } = await db.query(
-      `select lease_id, payer_ref, amount::text from ceedo_collections.tenant_payment_portions('2026-10-01', '2026-10-31')
+      `select lease_id, payer_ref, amount::text from ceedo_collections.tenant_payment_portions('2026-10-01', '2026-10-31', '{}'::uuid[])
         where account_id = $1`,
       [acct],
     );
@@ -142,7 +157,7 @@ describe("access", () => {
     const range = { p_from: "2026-10-01", p_to: "2026-10-31" };
     for (const { data, error } of [
       await outsider.rpc("monthly_account_totals", range),
-      await outsider.rpc("tenant_payment_portions", range),
+      await outsider.rpc("tenant_payment_portions", { ...range, p_payer_accounts: [] }),
       await outsider.rpc("lease_home_accounts", range),
     ]) {
       expect(error).toBeNull();
