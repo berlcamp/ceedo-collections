@@ -145,6 +145,31 @@ export function tenantPaymentsReport(
     rows: [...b.rows].sort(byStallThenName).map(toRow),
   }));
 
+  const blockTotals = (b: { rows: GridRow[] }) => {
+    const rent = b.rows.reduce((acc, r) => acc + rentOf(r), 0);
+    const surcharge = b.rows.reduce((acc, r) => acc + r.surcharge, 0);
+    return { rows: b.rows.length, rent, surcharge, total: rent + surcharge };
+  };
+  const byFacility = new Map<string, typeof blocks>();
+  for (const b of blocks) {
+    const label = b.account?.facilityName ?? "All facilities";
+    byFacility.set(label, [...(byFacility.get(label) ?? []), b]);
+  }
+  const summaryRows: ReportRow[] = [];
+  for (const [label, group] of byFacility) {
+    for (const b of group) {
+      summaryRows.push({ facility: label, account: b.account?.name ?? "Unknown account", ...blockTotals(b) });
+    }
+    const sub = group.reduce(
+      (acc, b) => {
+        const t = blockTotals(b);
+        return { rows: acc.rows + t.rows, rent: acc.rent + t.rent, surcharge: acc.surcharge + t.surcharge, total: acc.total + t.total };
+      },
+      { rows: 0, rent: 0, surcharge: 0, total: 0 },
+    );
+    summaryRows.push({ facility: label, account: `Total ${label}`, ...sub, $style: "subtotal" });
+  }
+
   sections.push({
     title: "Summary by account",
     columns: [
@@ -155,18 +180,7 @@ export function tenantPaymentsReport(
       { key: "surcharge", label: "Surcharge", kind: "money", total: true },
       { key: "total", label: "Total", kind: "money", total: true },
     ],
-    rows: blocks.map((b) => {
-      const rent = b.rows.reduce((acc, r) => acc + rentOf(r), 0);
-      const surcharge = b.rows.reduce((acc, r) => acc + r.surcharge, 0);
-      return {
-        facility: b.account?.facilityName ?? "All facilities",
-        account: b.account?.name ?? "Unknown account",
-        rows: b.rows.length,
-        rent,
-        surcharge,
-        total: rent + surcharge,
-      };
-    }),
+    rows: summaryRows,
     empty: "No lease was active or paid in this month.",
   });
 

@@ -100,15 +100,21 @@ describe("tenantPaymentsReport", () => {
       "Public Mall · Bakery Section - Daily Rent", "IBJT · Kiosk Rentals - IBJT", "Night Market · Night Market", "Summary by account",
     ]);
     const summary = r.sections.at(-1)!;
-    expect(summary.rows.map((x) => [x.account, x.rent])).toEqual([
+    expect(summary.rows.filter((x) => !x.$style).map((x) => [x.account, x.rent])).toEqual([
       ["Bakery Section - Daily Rent", 20000], ["Kiosk Rentals - IBJT", 10000], ["Night Market", 4000],
     ]);
-    for (const row of summary.rows) {
+    for (const row of summary.rows.filter((x) => !x.$style)) {
       const account = ACCOUNTS.find((a) => a.name === row.account)!;
       const expected = portions.filter((p) => p.portion === "base" && p.accountId === account.id).reduce((s, p) => s + p.amount, 0);
       expect(row.rent).toBe(expected);
     }
     expect(sectionTotals(summary)).toEqual({ rows: 3, rent: 34000, surcharge: 600, total: 34600 });
+    expect(summary.rows.find((x) => x.account === "Total Public Mall")).toMatchObject({
+      rent: 20000, surcharge: 600, total: 20600, $style: "subtotal",
+    });
+    expect(summary.rows.filter((x) => x.$style).map((x) => x.account)).toEqual([
+      "Total Public Mall", "Total IBJT", "Total Night Market",
+    ]);
     expect(r.scope).toBe("All facilities · October 2026");
   });
 
