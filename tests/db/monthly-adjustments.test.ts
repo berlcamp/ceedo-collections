@@ -51,6 +51,12 @@ describe("record_monthly_adjustment", () => {
     expect((await record(accounting, account, "2999-01-01", 5)).error?.message).toMatch(/not started/);
   });
 
+  it("refuses a month before the system started, for an adjustment and a control total", async () => {
+    const account = await createAccount(db);
+    expect((await record(accounting, account, "2026-09-01", 5)).error?.message).toMatch(/October 2026/);
+    expect((await control(accounting, "2026-09-01", 5, "x")).error?.message).toMatch(/October 2026/);
+  });
+
   it("refuses UNCLASSIFIED and an inactive account", async () => {
     const unc = await accountId(db, "UNCLASSIFIED");
     expect((await record(accounting, unc, "2026-10-01", 5)).error?.message).toMatch(/Unclassified/);

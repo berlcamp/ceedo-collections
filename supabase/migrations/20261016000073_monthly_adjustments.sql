@@ -52,7 +52,8 @@ revoke insert, update, delete on ceedo_collections.monthly_control_totals from a
 grant select on ceedo_collections.monthly_adjustments, ceedo_collections.monthly_control_totals
   to authenticated, service_role;
 
--- A month is "started" once its first day has come in Manila.
+-- A month is "started" once its first day has come in Manila. Months before the cutover
+-- (October 2026) are refused too: they belong to the office's earlier records.
 create or replace function ceedo_collections.assert_month_started(p_month date)
 returns date
 language plpgsql
@@ -60,13 +61,17 @@ stable
 set search_path = ceedo_collections, pg_temp
 as $$
 declare
-  v_month date := date_trunc('month', p_month)::date;
+  v_month date;
 begin
   if p_month is null then
     raise exception 'Choose the month';
   end if;
+  v_month := date_trunc('month', p_month)::date;
   if v_month > date_trunc('month', now() at time zone 'Asia/Manila')::date then
     raise exception '% has not started yet', to_char(v_month, 'FMMonth YYYY');
+  end if;
+  if v_month < date '2026-10-01' then
+    raise exception 'The system starts in October 2026; % is kept in the office''s earlier records', to_char(v_month, 'FMMonth YYYY');
   end if;
   return v_month;
 end;
