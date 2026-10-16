@@ -81,6 +81,23 @@ describe("lease receipts", () => {
     ]);
   });
 
+  it("keeps the rent of a receipt that also carries a fee line: lines by line, the rest by the lease", async () => {
+    await charge("2026-10-01");
+    const fee = await ownFee();
+    const rent = await createAccount(db);
+    const feeAcct = await createAccount(db);
+    await createRule(db, { feeTypeId: fx.feeTypeId, facilityId, sectionId, shares: [[rent, 10000]] });
+    await createRule(db, { feeTypeId: fee, shares: [[feeAcct, 10000]] });
+    const id = await postCollectionAsOwner(db, fx, { groupRanks: [1], lines: [{ fee_type_id: fee, quantity: 2 }] });
+    const rows = await linesOf(id);
+    expect(rows).toEqual([
+      { portion: "base", account_id: feeAcct, amount: "20.00", cancelled: false },
+      { portion: "base", account_id: rent, amount: "50.00", cancelled: false },
+    ]);
+    const { rows: g } = await db.query(`select gross_amount::text as g from ceedo_collections.collections where id = $1`, [id]);
+    expect(g[0].g).toBe("70.00");
+  });
+
   it("emits no zero base row for a surcharge-only receipt", async () => {
     // A rent already paid by an earlier receipt, its surcharge raised later and paid alone.
     const rent = await charge("2026-10-01");
