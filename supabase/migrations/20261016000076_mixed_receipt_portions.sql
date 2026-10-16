@@ -46,8 +46,6 @@ as $$
            s.facility_id as lease_facility_id, st.section_id as lease_section_id,
            exists (select 1 from ceedo_collections.standing_cancellations x
                     where x.collection_id = c.id) as cancelled,
-           exists (select 1 from ceedo_collections.collection_lines li
-                    where li.collection_id = c.id) as has_lines,
            coalesce((select sum(li.amount) from ceedo_collections.collection_lines li
                         where li.collection_id = c.id), 0) as lines_total
       from ceedo_collections.collections c
