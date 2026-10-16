@@ -31,6 +31,12 @@ const build = (over: Partial<TenantPaymentsInput>, month = "2026-10") =>
   tenantPaymentsReport({ leases: [], portions: [], accounts: ACCOUNTS, payerAccountIds: ["a-nm"], ...over }, { month, facilityName: null });
 
 describe("tenantPaymentsReport", () => {
+  it("says, second among its notes, what reconciles with the Monthly summary", () => {
+    expect(build({}).notes?.[1]).toBe(
+      "“Received” in the summary by account equals that line in the Monthly summary; surcharges belong to the Rental Surcharge lines there.",
+    );
+  });
+
   it("has one money column per day of the month, February included", () => {
     const feb = build({ leases: [lease("a")] }, "2028-02");
     const dayCols = feb.sections[0]!.columns.filter((c) => /^d\d+$/.test(c.key));

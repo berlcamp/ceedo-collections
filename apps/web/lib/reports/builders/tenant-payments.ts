@@ -53,10 +53,13 @@ interface GridRow {
 
 /**
  * Spec report 2, the April "Rentable Income Collections" grid, in blocks by account line
- * (facility → account) so each block's day columns add up to that line of the Monthly
- * summary. One row per lease per block it paid into, plus its home block always (a lease
- * that paid nothing keeps its row); surcharges on the home row only, so they count once.
- * Night Market and Tabo vendors without a lease get one row per payer name.
+ * (facility → account). Each block's day columns (its "Received") equal that account's line
+ * in the Monthly summary. One row per lease per block it paid into, plus its home block
+ * always (a lease that paid nothing keeps its row). The Surcharge column shows a lease's
+ * surcharges, on its home row only so they count once; the summary carries them on the
+ * Rental Surcharge lines. Night Market and Tabo vendors without a lease get one row per
+ * payer name. Money on an account that is neither a lease's nor a payer account (walk-in
+ * fees) is not in this grid.
  */
 export function tenantPaymentsReport(
   input: TenantPaymentsInput,
@@ -190,6 +193,7 @@ export function tenantPaymentsReport(
     sections,
     notes: [
       "Blocks follow the account chart. Each day shows what the row paid to that line on that business date.",
+      "“Received” in the summary by account equals that line in the Monthly summary; surcharges belong to the Rental Surcharge lines there.",
       "A lease that paid to more than one line appears in each; its surcharges are on its row in its home line.",
       "Night Market and Tabo vendors without a lease appear as one row per payer name.",
       "Cancelled receipts are excluded; a reinstated receipt counts again.",
