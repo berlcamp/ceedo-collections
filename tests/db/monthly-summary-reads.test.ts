@@ -40,7 +40,9 @@ describe("Monthly summary reads resolve against the live schema", () => {
       supabase.from("collection_accounts").select("id, code, name, facility_id, sort_order").order("sort_order").order("id").range(0, 0),
     ]);
     for (const r of results) expect(r.error).toBeNull();
-  }, 30_000); // tenant_payment_portions takes ~6s on the local stack; the default 5s is too tight
+    // 30s: the slow part is the test's user setup, not the SQL (tenant_payment_portions runs
+    // in tens of milliseconds locally); the default 5s is too tight for the setup.
+  }, 30_000);
 
   it("a cancelled adjustment is not read", async () => {
     const db = new Client({ connectionString: POSTGRES_URL });
