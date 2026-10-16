@@ -106,6 +106,8 @@ export function abstractSections(input: DailyInput): ReportSection[] {
     // Receipts: items keyed by receipt + line; receipt totals; booklets in OR order.
     const items = new Map<string, Item>();
     const receiptTotal = new Map<string, number>();
+    // The lease's own portions (no line): what `remarks` compares with the rent it settled.
+    const leaseTotal = new Map<string, number>();
     for (const p of mine) {
       if (p.source !== "receipt" || !p.collectionId) continue;
       const key = `${p.collectionId}\u0000${p.lineId ?? ""}`;
@@ -113,6 +115,7 @@ export function abstractSections(input: DailyInput): ReportSection[] {
       item.amount += p.amount;
       items.set(key, item);
       receiptTotal.set(p.collectionId, (receiptTotal.get(p.collectionId) ?? 0) + p.amount);
+      if (!p.lineId) leaseTotal.set(p.collectionId, (leaseTotal.get(p.collectionId) ?? 0) + p.amount);
     }
     const byBooklet = new Map<string, Item[]>();
     for (const item of items.values()) {
@@ -128,7 +131,7 @@ export function abstractSections(input: DailyInput): ReportSection[] {
       if (p.lineId) return feeName(p.feeTypeId);
       if (!p.leaseId || !p.collectionId) return null;
       const c = cover.get(p.collectionId);
-      const gross = receiptTotal.get(p.collectionId) ?? 0;
+      const gross = leaseTotal.get(p.collectionId) ?? 0;
       const parts = [formatPeriods(c?.periods ?? []), gross > (c?.allocated ?? 0) ? "advance" : null];
       return parts.filter(Boolean).join("; ") || null;
     };
