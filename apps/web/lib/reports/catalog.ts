@@ -10,6 +10,8 @@ import { tenantPaymentsReport } from "./builders/tenant-payments";
 import { balancesAsOf, tenantPaymentData } from "./data";
 import { facilityLabel } from "./options";
 import { buildAbstract, buildExceptions, buildRaaf, buildReconciliation } from "./builders/monthly";
+import { monthlySummaryReport } from "./builders/monthly-summary";
+import { monthlySummaryData } from "./summary-data";
 
 /**
  * Which inputs a report asks for; the hub renders exactly these. `asOf` is a date read
@@ -37,6 +39,13 @@ export const REPORTS: ReportEntry[] = [
     purpose: "The day's page for the City Treasurer, collections per collector with deposits, and each collector's abstract.",
     params: ["date"],
     build: async (p) => dailyCollectionReport(await dailyCollectionData(p.date)),
+  },
+  {
+    key: "monthly-summary",
+    title: "Monthly summary of collections",
+    purpose: "Every account line by month for a year, with adjustments, totals by facility, and the cashier's control total.",
+    params: ["year"],
+    build: async (p) => monthlySummaryReport(await monthlySummaryData(p.year)),
   },
   {
     key: "rcd",
