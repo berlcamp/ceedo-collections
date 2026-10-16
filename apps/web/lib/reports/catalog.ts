@@ -64,14 +64,14 @@ export const REPORTS: ReportEntry[] = [
   {
     key: "tenant-payments",
     title: "Monthly tenant payments",
-    purpose: "Every lease's rent received on each day of a month, with surcharges and totals, by facility and section.",
+    purpose: "What every lease paid on each day of a month, by facility and account line, with surcharges, Night Market and Tabo payers, and totals.",
     params: ["month", "facility"],
     build: async (p) => {
-      const [{ leases, days }, facilityName] = await Promise.all([
+      const [input, facilityName] = await Promise.all([
         tenantPaymentData(p.month, p.facilityId),
         facilityLabel(p.facilityId),
       ]);
-      return tenantPaymentsReport(leases, days, { month: p.month, facilityName });
+      return tenantPaymentsReport(input, { month: p.month, facilityName });
     },
   },
   {

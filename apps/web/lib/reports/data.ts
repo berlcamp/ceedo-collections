@@ -3,7 +3,7 @@ import { recoveredCollectionIds } from "@/lib/ledger/queries";
 import { getServerClient } from "@/lib/supabase/server";
 import type { BookletInput, Consumption } from "./accountability";
 import type { BalanceRow } from "./builders/balances";
-import type { PaymentDay, PaymentLease } from "./builders/tenant-payments";
+import type { TenantPaymentsInput } from "./builders/tenant-payments";
 import type { OpenException } from "./open-exceptions";
 import { monthBounds } from "./params";
 
@@ -307,26 +307,39 @@ export async function balancesAsOf(date: string, facilityId: string | null): Pro
   }));
 }
 
-/** The grid's leases and per-day receipts for a month; optionally one facility. */
-export async function tenantPaymentData(
-  month: string,
-  facilityId: string | null,
-): Promise<{ leases: PaymentLease[]; days: PaymentDay[] }> {
+/** Accounts whose lease-less payers get a row each in the tenant grid (spec report 2). */
+export const PAYER_ACCOUNT_CODES = ["NM-FEE", "TABO-FEE"];
+
+/**
+ * The tenant grid's inputs for a month: the leases (optionally one facility's) with their
+ * home account, the month's live portions summed per lease or payer, account, portion and
+ * day (tenant_payment_portions over receipt_account_lines), and the chart.
+ */
+export async function tenantPaymentData(month: string, facilityId: string | null): Promise<TenantPaymentsInput> {
   const { from, to } = monthBounds(month);
   const supabase = await getServerClient();
-  const leaseRows = await allPages((a, b) => {
-    let q = supabase.rpc("leases_active_between", { p_from: from, p_to: to });
-    if (facilityId) q = q.eq("facility_id", facilityId);
-    return q.order("lease_id").range(a, b);
-  });
-  const ids = new Set(leaseRows.map((l) => l.lease_id));
-  const dayRows = await allPages((a, b) =>
-    supabase
-      .rpc("lease_receipts_by_day", { p_from: from, p_to: to })
-      .order("lease_id")
-      .order("business_date")
-      .range(a, b),
-  );
+  const [leaseRows, homes, portions, accounts, facilities] = await Promise.all([
+    allPages((a, b) => {
+      let q = supabase.rpc("leases_active_between", { p_from: from, p_to: to });
+      if (facilityId) q = q.eq("facility_id", facilityId);
+      return q.order("lease_id").range(a, b);
+    }),
+    allPages((a, b) => supabase.rpc("lease_home_accounts", { p_from: from, p_to: to }).order("lease_id").range(a, b)),
+    allPages((a, b) =>
+      supabase.rpc("tenant_payment_portions", { p_from: from, p_to: to })
+        .order("lease_id").order("payer_ref").order("account_id").order("portion").order("business_date")
+        .range(a, b),
+    ),
+    allPages((a, b) =>
+      supabase.from("collection_accounts").select("id, code, name, facility_id, sort_order").order("sort_order").order("id").range(a, b),
+    ),
+    allPages((a, b) => supabase.from("facilities").select("id, name").order("name").order("id").range(a, b)),
+  ]);
+
+  const home = new Map(homes.map((h) => [h.lease_id, h.account_id]));
+  const unclassified = accounts.find((a) => a.code === "UNCLASSIFIED")?.id ?? "";
+  const facilityName = new Map(facilities.map((f) => [f.id, f.name]));
+
   return {
     leases: leaseRows.map((l) => ({
       leaseId: l.lease_id,
@@ -336,14 +349,24 @@ export async function tenantPaymentData(
       tenantName: l.tenant_name,
       rate: centavos(l.rate_amount),
       accrualPeriod: l.accrual_period,
+      homeAccountId: home.get(l.lease_id) ?? unclassified,
     })),
-    days: dayRows
-      .filter((d) => ids.has(d.lease_id))
-      .map((d) => ({
-        leaseId: d.lease_id,
-        businessDate: d.business_date,
-        base: centavos(d.base),
-        surcharge: centavos(d.surcharge),
-      })),
+    portions: portions.map((p) => ({
+      leaseId: p.lease_id,
+      payerRef: p.payer_ref,
+      accountId: p.account_id,
+      portion: p.portion === "surcharge" ? "surcharge" : "base",
+      businessDate: p.business_date,
+      amount: centavos(p.amount),
+    })),
+    accounts: accounts.map((a) => ({
+      id: a.id,
+      name: a.name,
+      facilityName: a.facility_id ? (facilityName.get(a.facility_id) ?? null) : null,
+      sortOrder: a.sort_order,
+    })),
+    payerAccountIds: accounts
+      .filter((a) => PAYER_ACCOUNT_CODES.includes(a.code) && (!facilityId || a.facility_id === facilityId))
+      .map((a) => a.id),
   };
 }
