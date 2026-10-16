@@ -57,7 +57,14 @@ const SECTIONS: { heading: string; modules: ModuleSpec[] }[] = [
         // The subsidiary ledger is reached by drilling in from Aging or Delinquency.
         also: ["/ledger/leases"],
       },
-      { key: "reports", label: "Reports", tabs: [{ href: "/reports", label: "Reports" }] },
+      {
+        key: "reports",
+        label: "Reports",
+        tabs: [
+          { href: "/reports", label: "Reports" },
+          { href: "/ledger/adjustments", label: "Adjustments" },
+        ],
+      },
     ],
   },
   {
