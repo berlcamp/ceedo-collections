@@ -2444,6 +2444,13 @@ export type Database = {
           unpaid_charges: number
         }[]
       }
+      lease_home_accounts: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          account_id: string
+          lease_id: string
+        }[]
+      }
       lease_periods: {
         Args: {
           p_accrual_period: Database["ceedo_collections"]["Enums"]["accrual_period"]
@@ -2480,6 +2487,14 @@ export type Database = {
           section_name: string
           stall_no: string
           tenant_name: string
+        }[]
+      }
+      monthly_account_totals: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          account_id: string
+          amount: number
+          month: string
         }[]
       }
       next_row_version: { Args: never; Returns: number }
@@ -2662,6 +2677,17 @@ export type Database = {
       sync_push: {
         Args: { p_device_id: string; p_entries: Json }
         Returns: Json
+      }
+      tenant_payment_portions: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          account_id: string
+          amount: number
+          business_date: string
+          lease_id: string
+          payer_ref: string
+          portion: string
+        }[]
       }
       unpaid_period_groups: {
         Args: { p_lease_id: string }
