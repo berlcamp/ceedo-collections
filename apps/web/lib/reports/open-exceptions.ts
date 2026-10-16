@@ -42,6 +42,7 @@ export function exceptionsInScope(
 
     // A balance as of D is moved by every receipt dated on or before D.
     if (kinds.includes("asOf")) return on <= p.date;
+    if (kinds.includes("year")) return on.slice(0, 4) === p.year;
     if (kinds.includes("date")) return on === p.date;
     if (kinds.includes("month")) {
       const { from, to } = monthBounds(p.month);

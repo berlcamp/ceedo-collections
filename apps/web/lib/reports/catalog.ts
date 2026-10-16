@@ -15,7 +15,7 @@ import { buildAbstract, buildExceptions, buildRaaf, buildReconciliation } from "
  * Which inputs a report asks for; the hub renders exactly these. `asOf` is a date read
  * as "on or before" (balances); `date` is one business day.
  */
-export type ParamKind = "date" | "asOf" | "month" | "collector" | "lease" | "facility";
+export type ParamKind = "date" | "asOf" | "month" | "year" | "collector" | "lease" | "facility";
 
 export interface ReportEntry {
   key: string;

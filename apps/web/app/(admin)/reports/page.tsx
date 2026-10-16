@@ -65,6 +65,21 @@ export default async function ReportsPage() {
                   <TextInput type="month" name="month" defaultValue={today.slice(0, 7)} className="mt-1 w-40" required />
                 </label>
               ) : null}
+              {report.params.includes("year") ? (
+                <label className="text-xs text-ink-2">
+                  Year
+                  <TextInput
+                    type="number"
+                    name="year"
+                    min={2026}
+                    max={2100}
+                    step={1}
+                    defaultValue={today.slice(0, 4)}
+                    className="mt-1 w-28"
+                    required
+                  />
+                </label>
+              ) : null}
               {report.params.includes("collector") ? (
                 <label className="text-xs text-ink-2">
                   Collector
