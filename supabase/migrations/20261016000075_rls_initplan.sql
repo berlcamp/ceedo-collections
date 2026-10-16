@@ -83,3 +83,45 @@ end;
 $$;
 
 revoke execute on function ceedo_collections.apply_master_data_policies(text) from public;
+
+-- 4. The installer for ledger tables (from 0011) creates a wrapped read policy from now on.
+--    Body copied verbatim from 20260918000011_ledger_charges.sql; only the policy
+--    expression changes.
+create or replace function ceedo_collections.apply_ledger_policies(table_name text)
+returns void
+language plpgsql
+set search_path = ceedo_collections, pg_temp
+as $$
+begin
+  execute format('alter table ceedo_collections.%I enable row level security', table_name);
+
+  -- Read is gated on app_users membership, never on `authenticated` alone: auth.users is
+  -- shared with unrelated systems on this Supabase project, so `authenticated` includes
+  -- every person who ever signed up for any of them.
+  execute format(
+    'create policy %I on ceedo_collections.%I for select to authenticated
+       using ((select ceedo_collections.has_role(''supervisor'', ''accounting'', ''admin'')))',
+    table_name || '_read', table_name);
+
+  -- SELECT only. No INSERT: every write goes through a SECURITY DEFINER function that
+  -- validates first, so there is no way to create a row that skipped validation.
+  execute format(
+    'grant select on ceedo_collections.%I to authenticated', table_name);
+
+  -- Migration 0001 set ALTER DEFAULT PRIVILEGES to grant service_role SELECT and INSERT
+  -- on every table this schema will ever contain. For an append-only table that INSERT is
+  -- a direct write path into the ledger for the break-glass key, so it is revoked here
+  -- rather than inherited. UPDATE and DELETE were never in that default and so need no
+  -- revoking -- the guarantee holds because nothing granted them, not because something
+  -- took them away.
+  execute format(
+    'revoke insert on ceedo_collections.%I from service_role', table_name);
+
+  execute format(
+    'create trigger %I before insert or update on ceedo_collections.%I
+       for each row execute function ceedo_collections.bump_row_version()',
+    table_name || '_row_version', table_name);
+end;
+$$;
+
+revoke execute on function ceedo_collections.apply_ledger_policies(text) from public;

@@ -47,4 +47,23 @@ describe("RLS role gates", () => {
       await db.query("rollback");
     }
   });
+
+  it("are wrapped in the policies apply_ledger_policies creates", async () => {
+    await db.query("begin");
+    try {
+      await db.query(`create table ceedo_collections._initplan_ledger_probe (id uuid primary key, row_version bigint not null default 0)`);
+      await db.query(`select ceedo_collections.apply_ledger_policies('_initplan_ledger_probe')`);
+      const { rows } = await db.query(
+        `select qual, with_check from pg_policies where schemaname = 'ceedo_collections' and tablename = '_initplan_ledger_probe'`,
+      );
+      expect(rows).toHaveLength(1);
+      for (const p of rows) {
+        expect(count(p.qual, CALL)).toBeGreaterThan(0);
+        expect(count(p.qual, CALL)).toBe(count(p.qual, WRAPPED));
+        expect(count(p.with_check, CALL)).toBe(count(p.with_check, WRAPPED));
+      }
+    } finally {
+      await db.query("rollback");
+    }
+  });
 });
