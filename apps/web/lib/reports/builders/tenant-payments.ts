@@ -1,7 +1,8 @@
+// apps/web/lib/reports/builders/tenant-payments.ts
 import type { Centavos } from "@ceedo/shared";
 import { longMonth, monthBounds } from "../params";
-import type { Cell, Report, ReportColumn, ReportSection } from "../report";
-import { compareStall, groupBySection, rateLabel, type AccrualPeriod } from "./grouping";
+import type { Report, ReportColumn, ReportRow, ReportSection } from "../report";
+import { compareStall, rateLabel, type AccrualPeriod } from "./grouping";
 
 export interface PaymentLease {
   leaseId: string;
@@ -11,33 +12,107 @@ export interface PaymentLease {
   tenantName: string;
   rate: Centavos;
   accrualPeriod: AccrualPeriod;
+  /** The rent account the lease belongs to (lease_home_accounts): its row when it paid nothing. */
+  homeAccountId: string;
 }
 
-export interface PaymentDay {
-  leaseId: string;
+/** Live receipt portions summed per lease (or payer), account, portion and day. */
+export interface PaymentPortion {
+  leaseId: string | null;
+  payerRef: string | null;
+  accountId: string;
+  portion: "base" | "surcharge";
   businessDate: string;
-  base: Centavos;
-  surcharge: Centavos;
+  amount: Centavos;
+}
+
+export interface PaymentAccount {
+  id: string;
+  name: string;
+  facilityName: string | null;
+  sortOrder: number;
+}
+
+export interface TenantPaymentsInput {
+  leases: PaymentLease[];
+  portions: PaymentPortion[];
+  accounts: PaymentAccount[];
+  /** Accounts whose lease-less payers get a row each (Night Market, Tabo). */
+  payerAccountIds: string[];
+}
+
+interface GridRow {
+  accountId: string;
+  tenant: string;
+  stall: string | null;
+  rate: string | null;
+  isLease: boolean;
+  days: number[];
+  surcharge: number;
 }
 
 /**
- * Spec report 2, the April "Rentable Income Collections" grid: one row per lease, one
- * column per day holding the rent received that day, surcharges totalled apart.
+ * Spec report 2, the April "Rentable Income Collections" grid, in blocks by account line
+ * (facility → account) so each block's day columns add up to that line of the Monthly
+ * summary. One row per lease per block it paid into, plus its home block always (a lease
+ * that paid nothing keeps its row); surcharges on the home row only, so they count once.
+ * Night Market and Tabo vendors without a lease get one row per payer name.
  */
 export function tenantPaymentsReport(
-  leases: PaymentLease[],
-  days: PaymentDay[],
+  input: TenantPaymentsInput,
   opts: { month: string; facilityName: string | null },
 ): Report {
   const { from, to } = monthBounds(opts.month);
   const dayCount = Number(to.slice(8));
   const dayKeys = Array.from({ length: dayCount }, (_, i) => `d${i + 1}`);
+  const leaseById = new Map(input.leases.map((l) => [l.leaseId, l]));
+  const payerAccounts = new Set(input.payerAccountIds);
 
-  const byLease = new Map<string, PaymentDay[]>();
-  for (const d of days) {
-    if (d.businessDate < from || d.businessDate > to) continue;
-    byLease.set(d.leaseId, [...(byLease.get(d.leaseId) ?? []), d]);
+  const grid = new Map<string, GridRow>();
+  const rowFor = (accountId: string, key: string, init: Pick<GridRow, "tenant" | "stall" | "rate" | "isLease">) => {
+    const k = `${accountId}\u0000${key}`;
+    let row = grid.get(k);
+    if (!row) {
+      row = { accountId, ...init, days: Array.from({ length: dayCount }, () => 0), surcharge: 0 };
+      grid.set(k, row);
+    }
+    return row;
+  };
+  const leaseRow = (accountId: string, l: PaymentLease) =>
+    rowFor(accountId, `lease:${l.leaseId}`, {
+      tenant: l.tenantName, stall: l.stallNo, rate: rateLabel(l.rate, l.accrualPeriod), isLease: true,
+    });
+
+  for (const l of input.leases) leaseRow(l.homeAccountId, l);
+  for (const p of input.portions) {
+    if (p.businessDate < from || p.businessDate > to) continue;
+    const day = Number(p.businessDate.slice(8)) - 1;
+    if (p.leaseId) {
+      const l = leaseById.get(p.leaseId);
+      if (!l) continue; // a lease outside the chosen facility
+      if (p.portion === "surcharge") {
+        leaseRow(l.homeAccountId, l).surcharge += p.amount;
+      } else {
+        const row = leaseRow(p.accountId, l);
+        row.days[day] = (row.days[day] ?? 0) + p.amount;
+      }
+    } else if (p.portion === "base" && payerAccounts.has(p.accountId)) {
+      const name = p.payerRef ?? "(no name)";
+      const row = rowFor(p.accountId, `payer:${name}`, { tenant: name, stall: null, rate: null, isLease: false });
+      row.days[day] = (row.days[day] ?? 0) + p.amount;
+    }
   }
+
+  const accountById = new Map(input.accounts.map((a) => [a.id, a]));
+  const byAccount = new Map<string, GridRow[]>();
+  for (const row of grid.values()) byAccount.set(row.accountId, [...(byAccount.get(row.accountId) ?? []), row]);
+  const blocks = [...byAccount]
+    .map(([id, rows]) => ({ account: accountById.get(id), rows }))
+    .sort(
+      (a, b) =>
+        (a.account?.sortOrder ?? Number.MAX_SAFE_INTEGER) - (b.account?.sortOrder ?? Number.MAX_SAFE_INTEGER) ||
+        (a.account?.name ?? "").localeCompare(b.account?.name ?? ""),
+    );
 
   const columns: ReportColumn[] = [
     { key: "tenant", label: "Tenant", kind: "text" },
@@ -48,46 +123,49 @@ export function tenantPaymentsReport(
     { key: "total", label: "Total", kind: "money", total: true },
   ];
 
-  const totals = new Map<string, { rent: number; surcharge: number }>();
-  const toRow = (l: PaymentLease): Record<string, Cell> => {
-    const row: Record<string, Cell> = { tenant: l.tenantName, stall: l.stallNo, rate: rateLabel(l.rate, l.accrualPeriod) };
-    for (const key of dayKeys) row[key] = null;
-    let rent = 0;
-    let surcharge = 0;
-    for (const d of byLease.get(l.leaseId) ?? []) {
-      const key = `d${Number(d.businessDate.slice(8))}`;
-      if (d.base > 0) row[key] = ((row[key] as number | null) ?? 0) + d.base;
-      rent += d.base;
-      surcharge += d.surcharge;
-    }
-    totals.set(l.leaseId, { rent, surcharge });
-    row.surcharge = surcharge > 0 ? surcharge : null;
-    row.total = rent + surcharge;
+  const rentOf = (r: GridRow) => r.days.reduce((acc, v) => acc + v, 0);
+  const toRow = (r: GridRow): ReportRow => {
+    const row: ReportRow = { tenant: r.tenant, stall: r.stall, rate: r.rate };
+    r.days.forEach((v, i) => {
+      row[dayKeys[i]!] = v !== 0 ? v : null;
+    });
+    row.surcharge = r.surcharge !== 0 ? r.surcharge : null;
+    row.total = rentOf(r) + r.surcharge;
     return row;
   };
+  const byStallThenName = (a: GridRow, b: GridRow) =>
+    a.isLease !== b.isLease
+      ? a.isLease ? -1 : 1
+      : compareStall(a.stall ?? "", b.stall ?? "") || a.tenant.localeCompare(b.tenant);
 
-  const groups = groupBySection(leases);
-  const sections: ReportSection[] = groups.map((g) => ({
-    title: `${g.facilityName} · ${g.sectionName}`,
+  const sections: ReportSection[] = blocks.map((b) => ({
+    title: b.account ? `${b.account.facilityName ?? "All facilities"} · ${b.account.name}` : "Unknown account",
     columns,
     dense: true,
-    rows: [...g.rows].sort((a, b) => compareStall(a.stallNo, b.stallNo)).map(toRow),
+    rows: [...b.rows].sort(byStallThenName).map(toRow),
   }));
 
   sections.push({
-    title: "Summary by section",
+    title: "Summary by account",
     columns: [
       { key: "facility", label: "Facility", kind: "text" },
-      { key: "section", label: "Section", kind: "text" },
-      { key: "leases", label: "Tenants", kind: "int", total: true },
-      { key: "rent", label: "Rent", kind: "money", total: true },
+      { key: "account", label: "Account", kind: "text" },
+      { key: "rows", label: "Rows", kind: "int", total: true },
+      { key: "rent", label: "Received", kind: "money", total: true },
       { key: "surcharge", label: "Surcharge", kind: "money", total: true },
       { key: "total", label: "Total", kind: "money", total: true },
     ],
-    rows: groups.map((g) => {
-      const rent = g.rows.reduce((acc, l) => acc + (totals.get(l.leaseId)?.rent ?? 0), 0);
-      const surcharge = g.rows.reduce((acc, l) => acc + (totals.get(l.leaseId)?.surcharge ?? 0), 0);
-      return { facility: g.facilityName, section: g.sectionName, leases: g.rows.length, rent, surcharge, total: rent + surcharge };
+    rows: blocks.map((b) => {
+      const rent = b.rows.reduce((acc, r) => acc + rentOf(r), 0);
+      const surcharge = b.rows.reduce((acc, r) => acc + r.surcharge, 0);
+      return {
+        facility: b.account?.facilityName ?? "All facilities",
+        account: b.account?.name ?? "Unknown account",
+        rows: b.rows.length,
+        rent,
+        surcharge,
+        total: rent + surcharge,
+      };
     }),
     empty: "No lease was active or paid in this month.",
   });
@@ -97,7 +175,9 @@ export function tenantPaymentsReport(
     scope: `${opts.facilityName ?? "All facilities"} · ${longMonth(opts.month)}`,
     sections,
     notes: [
-      "Each day shows the rent received on that business date; surcharges are totalled in their own column.",
+      "Blocks follow the account chart. Each day shows what the row paid to that line on that business date.",
+      "A lease that paid to more than one line appears in each; its surcharges are on its row in its home line.",
+      "Night Market and Tabo vendors without a lease appear as one row per payer name.",
       "Cancelled receipts are excluded; a reinstated receipt counts again.",
     ],
   };
