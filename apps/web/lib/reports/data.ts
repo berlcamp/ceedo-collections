@@ -55,6 +55,23 @@ export async function byIdsPaged<T>(
   return out;
 }
 
+/**
+ * `fn` over every item, at most `limit` calls in flight, results in input order. The first
+ * rejection rejects the whole call. Bounds how many PostgREST requests one report opens.
+ */
+export async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
 const centavos = (v: string | number | null): Centavos => fromPesos(Number(v ?? 0));
 
 /** A Manila calendar date from a timestamp. */

@@ -12,12 +12,16 @@ import { facilityLabel } from "./options";
 import { buildAbstract, buildExceptions, buildRaaf, buildReconciliation } from "./builders/monthly";
 import { monthlySummaryReport } from "./builders/monthly-summary";
 import { monthlySummaryData } from "./summary-data";
+import { collectionsDetailReport } from "./builders/collections-detail";
+import { collectionsDetailData } from "./detail-data";
 
 /**
  * Which inputs a report asks for; the hub renders exactly these. `asOf` is a date read
  * as "on or before" (balances); `date` is one business day.
  */
-export type ParamKind = "date" | "asOf" | "month" | "year" | "collector" | "lease" | "facility";
+export type ParamKind =
+  | "date" | "asOf" | "month" | "year" | "collector" | "lease" | "facility"
+  | "account" | "tenant" | "customer";
 
 export interface ReportEntry {
   key: string;
@@ -25,6 +29,8 @@ export interface ReportEntry {
   /** One line on the hub: what it is for. */
   purpose: string;
   params: ParamKind[];
+  /** Parameters the hub offers with an "All …" choice; the rest are required. */
+  optional?: ParamKind[];
   build: (p: ReportParams) => Promise<Report>;
 }
 
@@ -73,6 +79,18 @@ export const REPORTS: ReportEntry[] = [
       ]);
       return tenantPaymentsReport(input, { month: p.month, facilityName });
     },
+  },
+  {
+    key: "collections-detail",
+    title: "Collections detail",
+    purpose: "Every collection in a month, one line per account, with each tenant's payments and totals by account. Replaces the QuickBooks entry log.",
+    params: ["month", "facility", "collector", "account", "tenant", "customer"],
+    optional: ["collector"],
+    build: async (p) =>
+      collectionsDetailReport(await collectionsDetailData(p.month, p.tenantId), {
+        facilityId: p.facilityId, collectorId: p.collectorId, accountId: p.accountId,
+        tenantId: p.tenantId, customer: p.customer,
+      }),
   },
   {
     key: "raaf",

@@ -14,6 +14,9 @@ describe("report params", () => {
       collectorId: null,
       leaseId: null,
       facilityId: null,
+      accountId: null,
+      tenantId: null,
+      customer: "",
     });
   });
 
@@ -29,6 +32,9 @@ describe("report params", () => {
       collectorId: "11111111-1111-4111-8111-111111111111",
       leaseId: null,
       facilityId: null,
+      accountId: null,
+      tenantId: null,
+      customer: "",
     });
     expect(readParams({ date: "31/08/2026", month: "2026-7" }, lateUtc).date).toBe("2026-09-24");
   });
@@ -52,5 +58,15 @@ describe("report params", () => {
     expect(readParams({ year: "2027" }, lateUtc).year).toBe("2027");
     expect(readParams({ year: "27" }, lateUtc).year).toBe("2026");
     expect(yearBounds("2026")).toEqual({ from: "2026-01-01", to: "2026-12-31" });
+  });
+  it("reads the optional detail filters", () => {
+    const p = readParams(
+      { account: "22222222-2222-4222-8222-222222222222", tenant: "nope", q: "  santos  " },
+      lateUtc,
+    );
+    expect(p.accountId).toBe("22222222-2222-4222-8222-222222222222");
+    expect(p.tenantId).toBeNull();
+    expect(p.customer).toBe("santos");
+    expect(readParams({ q: "x".repeat(150) }, lateUtc).customer).toHaveLength(100);
   });
 });
