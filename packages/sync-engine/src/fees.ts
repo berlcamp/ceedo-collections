@@ -16,6 +16,11 @@ const ENTER_AN_AMOUNT = "Enter an amount above zero, in pesos (for example 1,234
  * garbage or too much come back as a refusal the screen shows as it is.
  */
 export function keyedAmount(input: string): { amount: Centavos } | { refusal: string } {
+  // A comma is accepted only as a thousands separator. parsePesoInput strips every comma,
+  // so a decimal comma ("1234,50", which some Android keyboards offer on decimal-pad)
+  // would otherwise be read as 123,450.00 on an official receipt.
+  const bare = input.replace(/[₱\s]/g, "");
+  if (bare.includes(",") && !/^\d{1,3}(,\d{3})+(\.\d*)?$/.test(bare)) return { refusal: ENTER_AN_AMOUNT };
   let amount: Centavos;
   try {
     amount = parsePesoInput(input);

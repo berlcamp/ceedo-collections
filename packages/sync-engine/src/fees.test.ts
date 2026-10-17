@@ -14,6 +14,15 @@ describe("keyedAmount", () => {
     expect(keyedAmount("12.345")).toEqual({ amount: 1235 });
   });
 
+  it("refuses a comma that is not a thousands separator, rather than reading 100x too much", () => {
+    // A decimal comma ("1234,50") must not become 123,450.00 on an official receipt.
+    for (const s of ["1234,50", "12,,3", "1,23", ",5", "1,2345.00"]) {
+      expect(keyedAmount(s)).toEqual({ refusal: expect.stringMatching(/^Enter an amount/) });
+    }
+    expect(keyedAmount("12,345,678.90")).toEqual({ amount: 1234567890 });
+    expect(keyedAmount("₱ 1,234")).toEqual({ amount: 123400 });
+  });
+
   it("refuses zero, negatives, garbage and too much", () => {
     for (const s of ["", "0", "0.00", "-5", "abc", "1000000000000"]) {
       expect(keyedAmount(s)).toEqual({ refusal: expect.stringMatching(/^Enter an amount/) });
