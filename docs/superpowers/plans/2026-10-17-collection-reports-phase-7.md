@@ -417,7 +417,7 @@ If no device is attached, say so in the hand-over. Do not claim the screen was c
 Report to the user:
 - what was built, and decisions 1–4 for the PR description;
 - **the release order:**
-  1. Deploy the Edge Functions to production. `sync-push` and `closeout` import `_shared/contract.ts`; `sync-push` is the one that matters.
+  1. Deploy the Edge Functions to production (`sync-push`, `sync-pull` and `closeout` all import `_shared/contract.ts`; `sync-push` is the one that matters).
   2. Then OTA: `pnpm ota:production --platform android --message "Typed amounts and facility fees"` from `apps/collector`.
 - that the OTA carries local migration 0007, which rewinds every tablet's cursor. Each tablet's next sync is a full re-pull, the same as after 0002.
 - that there is no server migration, so no SQL bundle.
