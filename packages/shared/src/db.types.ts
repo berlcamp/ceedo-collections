@@ -1341,6 +1341,105 @@ export type Database = {
           },
         ]
       }
+      monthly_adjustments: {
+        Row: {
+          account_id: string
+          amount: number
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          entered_at: string
+          entered_by: string
+          id: string
+          month: string
+          note: string
+          row_version: number
+        }
+        Insert: {
+          account_id: string
+          amount: number
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          entered_at?: string
+          entered_by: string
+          id?: string
+          month: string
+          note: string
+          row_version?: number
+        }
+        Update: {
+          account_id?: string
+          amount?: number
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          entered_at?: string
+          entered_by?: string
+          id?: string
+          month?: string
+          note?: string
+          row_version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "monthly_adjustments_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "collection_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "monthly_adjustments_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "monthly_adjustments_entered_by_fkey"
+            columns: ["entered_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      monthly_control_totals: {
+        Row: {
+          amount: number
+          entered_at: string
+          entered_by: string
+          id: string
+          month: string
+          note: string | null
+        }
+        Insert: {
+          amount: number
+          entered_at?: string
+          entered_by: string
+          id?: string
+          month: string
+          note?: string | null
+        }
+        Update: {
+          amount?: number
+          entered_at?: string
+          entered_by?: string
+          id?: string
+          month?: string
+          note?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "monthly_control_totals_entered_by_fkey"
+            columns: ["entered_by"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rates: {
         Row: {
           amount: number
@@ -2247,6 +2346,7 @@ export type Database = {
         Args: { p_reason: string }
         Returns: undefined
       }
+      assert_month_started: { Args: { p_month: string }; Returns: string }
       assert_office_poster: { Args: never; Returns: undefined }
       assert_recovery_admin: { Args: { p_reason: string }; Returns: undefined }
       attach_audit: { Args: { table_name: string }; Returns: undefined }
@@ -2266,6 +2366,10 @@ export type Database = {
       cancel_collection: {
         Args: { p_collection_id: string; p_reason: string }
         Returns: string
+      }
+      cancel_monthly_adjustment: {
+        Args: { p_adjustment_id: string; p_reason: string }
+        Returns: undefined
       }
       cancel_remittance: {
         Args: { p_reason: string; p_remittance_id: string }
@@ -2340,6 +2444,13 @@ export type Database = {
           unpaid_charges: number
         }[]
       }
+      lease_home_accounts: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          account_id: string
+          lease_id: string
+        }[]
+      }
       lease_periods: {
         Args: {
           p_accrual_period: Database["ceedo_collections"]["Enums"]["accrual_period"]
@@ -2376,6 +2487,14 @@ export type Database = {
           section_name: string
           stall_no: string
           tenant_name: string
+        }[]
+      }
+      monthly_account_totals: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          account_id: string
+          amount: number
+          month: string
         }[]
       }
       next_row_version: { Args: never; Returns: number }
@@ -2431,6 +2550,19 @@ export type Database = {
           p_ticket_from: number
           p_ticket_to: number
         }
+        Returns: string
+      }
+      record_monthly_adjustment: {
+        Args: {
+          p_account_id: string
+          p_amount: number
+          p_month: string
+          p_note: string
+        }
+        Returns: string
+      }
+      record_monthly_control_total: {
+        Args: { p_amount: number; p_month: string; p_note: string }
         Returns: string
       }
       record_opening_balance: {
@@ -2545,6 +2677,17 @@ export type Database = {
       sync_push: {
         Args: { p_device_id: string; p_entries: Json }
         Returns: Json
+      }
+      tenant_payment_portions: {
+        Args: { p_from: string; p_payer_accounts: string[]; p_to: string }
+        Returns: {
+          account_id: string
+          amount: number
+          business_date: string
+          lease_id: string
+          payer_ref: string
+          portion: string
+        }[]
       }
       unpaid_period_groups: {
         Args: { p_lease_id: string }

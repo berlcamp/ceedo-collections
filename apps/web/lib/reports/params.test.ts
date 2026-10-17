@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { longDate, longMonth, manilaToday, monthBounds, readParams } from "./params";
+import { longDate, longMonth, manilaToday, monthBounds, readParams, yearBounds } from "./params";
 
 describe("report params", () => {
   // 23 Sep 2026, 17:30 UTC is already 24 Sep in Manila (UTC+8).
@@ -10,6 +10,7 @@ describe("report params", () => {
     expect(readParams({}, lateUtc)).toEqual({
       date: "2026-09-24",
       month: "2026-09",
+      year: "2026",
       collectorId: null,
       leaseId: null,
       facilityId: null,
@@ -24,6 +25,7 @@ describe("report params", () => {
     expect(p).toEqual({
       date: "2026-08-31",
       month: "2026-07",
+      year: "2026",
       collectorId: "11111111-1111-4111-8111-111111111111",
       leaseId: null,
       facilityId: null,
@@ -45,5 +47,10 @@ describe("report params", () => {
     expect(readParams({ facility: id }, lateUtc).facilityId).toBe(id);
     expect(readParams({ facility: "all" }, lateUtc).facilityId).toBeNull();
     expect(readParams({}, lateUtc).facilityId).toBeNull();
+  });
+  it("reads a four-digit year and bounds it", () => {
+    expect(readParams({ year: "2027" }, lateUtc).year).toBe("2027");
+    expect(readParams({ year: "27" }, lateUtc).year).toBe("2026");
+    expect(yearBounds("2026")).toEqual({ from: "2026-01-01", to: "2026-12-31" });
   });
 });

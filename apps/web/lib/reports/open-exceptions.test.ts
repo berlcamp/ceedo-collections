@@ -6,7 +6,7 @@ const ALICE = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
 const LEASE = "33333333-3333-4333-8333-333333333333";
 
-const params: ReportParams = { date: "2026-09-29", month: "2026-09", collectorId: ALICE, leaseId: LEASE, facilityId: null };
+const params: ReportParams = { date: "2026-09-29", month: "2026-09", year: "2026", collectorId: ALICE, leaseId: LEASE, facilityId: null };
 
 function ex(collectorId: string, collectedAt: string | null, leaseId: string | null = null): OpenException {
   return { collectorId, collectedAt, leaseId };
@@ -54,5 +54,10 @@ describe("exceptionsInScope", () => {
       ex(BOB, "2026-09-29T16:00:00Z"), // 00:00 on the 30th in Manila
     ];
     expect(exceptionsInScope(rows, ["asOf", "facility"], params)).toEqual([rows[0], rows[1]]);
+  });
+
+  it("scopes a yearly report to the Manila year", () => {
+    const rows = [ex(ALICE, "2026-12-31T15:30:00Z"), ex(BOB, "2026-12-31T16:30:00Z")]; // 23:30 Dec 31; 00:30 Jan 1
+    expect(exceptionsInScope(rows, ["year"], params)).toEqual([rows[0]]);
   });
 });

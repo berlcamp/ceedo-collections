@@ -276,9 +276,7 @@ source text  -- 'receipt' | 'cash_ticket'
 - **Cash-fee receipts:** each `collection_lines` row is a base portion, matched on its
   fee type and rate class. When the receipt also carries a `lease_id` (a keyed occupancy
   fee), the lease's facility and section are used for matching as well.
-- **Which branch applies:** the branches are exclusive. A receipt with
-  `collection_lines` is classified only through its lines. The lease branch applies only
-  to lease receipts that have no lines. This way no receipt is counted twice.
+- **Which branch applies:** every collection_lines row is a base portion of its own. A lease receipt also gives its surcharge portion (its surcharge allocations) and a base portion of gross − lines − surcharge, which is zero, and so not emitted, for a lease receipt that carries only lines (an occupancy fee). A receipt may carry both allocations and lines (post_collection accepts it); each peso still lands on exactly one portion, and a receipt's portions sum to its gross.
 - **Rule choice:** the most specific rule set in force on `business_date`.
 - **Splits:** a rule set with several accounts divides the amount by `share_bps`, rounded
   to the centavo. The rounding remainder goes to the largest share, so the portions sum

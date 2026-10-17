@@ -7,6 +7,8 @@ export interface ReportParams {
   date: string;
   /** A month, YYYY-MM. */
   month: string;
+  /** A calendar year, YYYY. */
+  year: string;
   collectorId: string | null;
   leaseId: string | null;
   /** Narrows a report to one facility; null means every facility. */
@@ -15,6 +17,7 @@ export interface ReportParams {
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH = /^\d{4}-\d{2}$/;
+const YEAR = /^\d{4}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Today in Manila: the office's business date, whatever timezone the server runs in. */
@@ -33,6 +36,7 @@ export function readParams(
   return {
     date,
     month,
+    year: YEAR.test(one("year")) ? one("year") : today.slice(0, 4),
     collectorId: UUID.test(one("collector")) ? one("collector") : null,
     leaseId: UUID.test(one("lease")) ? one("lease") : null,
     facilityId: UUID.test(one("facility")) ? one("facility") : null,
@@ -44,6 +48,11 @@ export function monthBounds(month: string): { from: string; to: string } {
   const [y, m] = month.split("-").map(Number) as [number, number];
   const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
   return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, "0")}` };
+}
+
+/** The first and last day of a YYYY year. */
+export function yearBounds(year: string): { from: string; to: string } {
+  return { from: `${year}-01-01`, to: `${year}-12-31` };
 }
 
 const MONTHS = [

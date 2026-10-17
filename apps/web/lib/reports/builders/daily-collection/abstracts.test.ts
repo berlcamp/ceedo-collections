@@ -2,9 +2,10 @@
 import { describe, expect, it } from "vitest";
 import { sectionTotals } from "../../report";
 import { abstractSections, formatPeriods } from "./abstracts";
-import { sept30 } from "./fixture";
+import { fromPesos } from "@ceedo/shared";
+import { ID, sept30 } from "./fixture";
 
-const titled = (title: string) => abstractSections(sept30()).find((s) => s.title === title)!;
+const titled = (title: string, input = sept30()) => abstractSections(input).find((s) => s.title === title)!;
 
 describe("abstractSections", () => {
   it("gives each collector who collected their booklets, tickets and summary, by name", () => {
@@ -40,6 +41,22 @@ describe("abstractSections", () => {
       [null, null, 3_444, null, "Electricity surcharge (Public Mall)"],
     ]);
     expect(rows[2]).toMatchObject({ or: "2002", amount: 100_000, remarks: "Oct 1–5; advance" });
+  });
+
+  it("does not call a mixed receipt's rent an advance because of its fee line", () => {
+    const input = sept30();
+    const base = input.portions[0]!;
+    const mixed = { ...base, collectionId: "c8", orNo: 1003, leaseId: ID.lease1 };
+    input.portions.push(
+      { ...mixed, lineId: "l8", feeTypeId: ID.ftMisc, accountId: ID.accUnc, amount: fromPesos(170) },
+      { ...mixed, lineId: null, accountId: ID.accPmRent, amount: fromPesos(50) },
+    );
+    input.rentCover.push({ collectionId: "c8", allocated: fromPesos(50), periods: [{ start: "2026-09-30", end: "2026-09-30" }] });
+    const rows = titled("Collector A · Booklet A1 (1/2)", input).rows.filter((r) => r.or === "1003" || r.or === null);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.total)).toEqual([fromPesos(220), null]);
+    const lease = rows.find((r) => r.remarks !== "Miscellaneous fee")!;
+    expect(String(lease.remarks)).not.toContain("advance");
   });
 
   it("is one row for a line split across accounts, with slaughterhouse and terminal columns", () => {

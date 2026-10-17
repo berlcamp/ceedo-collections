@@ -10,12 +10,14 @@ import { tenantPaymentsReport } from "./builders/tenant-payments";
 import { balancesAsOf, tenantPaymentData } from "./data";
 import { facilityLabel } from "./options";
 import { buildAbstract, buildExceptions, buildRaaf, buildReconciliation } from "./builders/monthly";
+import { monthlySummaryReport } from "./builders/monthly-summary";
+import { monthlySummaryData } from "./summary-data";
 
 /**
  * Which inputs a report asks for; the hub renders exactly these. `asOf` is a date read
  * as "on or before" (balances); `date` is one business day.
  */
-export type ParamKind = "date" | "asOf" | "month" | "collector" | "lease" | "facility";
+export type ParamKind = "date" | "asOf" | "month" | "year" | "collector" | "lease" | "facility";
 
 export interface ReportEntry {
   key: string;
@@ -39,6 +41,13 @@ export const REPORTS: ReportEntry[] = [
     build: async (p) => dailyCollectionReport(await dailyCollectionData(p.date)),
   },
   {
+    key: "monthly-summary",
+    title: "Monthly summary of collections",
+    purpose: "Every account line by month for a year, with adjustments, totals by facility, and the cashier's control total.",
+    params: ["year"],
+    build: async (p) => monthlySummaryReport(await monthlySummaryData(p.year)),
+  },
+  {
     key: "rcd",
     title: "Report of Collections and Deposits",
     purpose: "One collector's day: every OR, the deposits, the forms accountability, and what is still undeposited.",
@@ -55,14 +64,14 @@ export const REPORTS: ReportEntry[] = [
   {
     key: "tenant-payments",
     title: "Monthly tenant payments",
-    purpose: "Every lease's rent received on each day of a month, with surcharges and totals, by facility and section.",
+    purpose: "What every lease paid on each day of a month, by facility and account line, with surcharges, Night Market and Tabo payers, and totals.",
     params: ["month", "facility"],
     build: async (p) => {
-      const [{ leases, days }, facilityName] = await Promise.all([
+      const [input, facilityName] = await Promise.all([
         tenantPaymentData(p.month, p.facilityId),
         facilityLabel(p.facilityId),
       ]);
-      return tenantPaymentsReport(leases, days, { month: p.month, facilityName });
+      return tenantPaymentsReport(input, { month: p.month, facilityName });
     },
   },
   {
