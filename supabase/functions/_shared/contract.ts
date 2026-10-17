@@ -115,6 +115,13 @@ export const CollectionPayload = z
         fee_type_id: uuid,
         rate_class: z.string().optional(),
         quantity: z.number().int().positive(),
+        /**
+         * Present exactly on a keyed fee's line (electricity, certification, misc...): the
+         * price typed at the receipt, which no rate table holds. post_collection takes it
+         * from here instead of the rate table (migration 067) and refuses a keyed line
+         * without one as amount_mismatch. Never the receipt's gross, which stays forbidden.
+         */
+        amount: z.string().regex(/^\d{1,12}\.\d{2}$/).optional(),
       }),
     ),
     ...forbidden,

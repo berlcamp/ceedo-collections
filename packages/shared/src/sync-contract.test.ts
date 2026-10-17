@@ -31,6 +31,30 @@ describe("PushEntry", () => {
     expect(PushEntry.safeParse({ ...rest, payload: rest2 }).success).toBe(false);
   });
 
+  it("accepts a keyed line's amount as a 2dp decimal string", () => {
+    const feeTypeId = randomUUID();
+    const parsed = PushEntry.parse({
+      ...collection,
+      payload: { ...collection.payload, lines: [{ fee_type_id: feeTypeId, quantity: 1, amount: "1234.50" }] },
+    });
+    expect(parsed.type === "collection" && parsed.payload.lines[0]).toEqual({
+      fee_type_id: feeTypeId,
+      quantity: 1,
+      amount: "1234.50",
+    });
+  });
+
+  it("refuses a line amount that is not a 2dp decimal string", () => {
+    for (const amount of ["12.5", "abc", "-1.00", "1e3", 12.5, "1000000000000.00"]) {
+      expect(
+        PushEntry.safeParse({
+          ...collection,
+          payload: { ...collection.payload, lines: [{ fee_type_id: randomUUID(), quantity: 1, amount }] },
+        }).success,
+      ).toBe(false);
+    }
+  });
+
   it("rejects an amount in the payload", () => {
     // Invariant 3. The device proposes WHICH periods and HOW MANY units; the server decides
     // what that costs. A schema that tolerated an amount field would invite a client to
