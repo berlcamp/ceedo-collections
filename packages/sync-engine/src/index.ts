@@ -41,6 +41,7 @@ export {
   type FacilityType,
   type FeeChoice,
 } from "./site";
+export { addFeeRefusal, keyedAmount, MAX_KEYED_CENTAVOS } from "./fees";
 export {
   orEntryContext,
   commitReceipt,

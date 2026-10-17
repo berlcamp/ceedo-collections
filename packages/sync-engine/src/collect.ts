@@ -13,6 +13,11 @@ export interface DraftLine {
   quantity: number;
   unitRate: Centavos;
   amount: Centavos;
+  /**
+   * A keyed fee's line: quantity 1 at the typed amount. Its amount is sent with it, since
+   * no rate table holds the price (spec, fee_types.amount_mode).
+   */
+  keyed?: boolean;
 }
 
 /**
@@ -231,8 +236,10 @@ export async function commitReceipt(
       );
     }
 
-    // The payload carries no amount at all. Invariant #3 is enforced by never accepting
-    // the figure, and CollectionPayload declares gross_amount and device_id as `never`.
+    // The payload never carries the gross. Invariant #3 is enforced by never accepting the
+    // figure, and CollectionPayload declares gross_amount and device_id as `never`. The one
+    // amount it carries is a keyed line's typed price, which no rate table holds; the
+    // server still computes the gross itself from the lines.
     await enqueue(tx, {
       id: draft.id,
       type: "collection",
@@ -252,6 +259,7 @@ export async function commitReceipt(
           fee_type_id: line.feeTypeId,
           ...(line.rateClass === null ? {} : { rate_class: line.rateClass }),
           quantity: line.quantity,
+          ...(line.keyed ? { amount: toDecimalString(line.amount) } : {}),
         })),
       },
       collectorId: draft.collectorId,

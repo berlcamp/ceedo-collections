@@ -99,7 +99,7 @@ export default function Ambulant() {
     // the signed-in collector's, since every tablet holds every facility.
     const here = collector ? await collectorSites(driver, collector.id) : [];
     setSites(here);
-    setChoices(await feeChoices(driver, [...new Set(here.map((site) => site.type))]));
+    setChoices(await feeChoices(driver, here));
     setRates(
       (
         await driver.select<{

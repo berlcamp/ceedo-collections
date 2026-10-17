@@ -208,6 +208,29 @@ describe("commitReceipt", () => {
     ]);
   });
 
+  it("sends a keyed line's amount, and no amount on a rate line", async () => {
+    // A keyed fee (electricity and its surcharge, as the abstracts show them on one OR):
+    // the typed price is the one figure the server cannot know, so it travels on the line.
+    // The receipt's gross still never does.
+    const lines = [
+      { feeTypeId: "f-elec", rateClass: null, quantity: 1, unitRate: fromCentavos(123_450), amount: fromCentavos(123_450), keyed: true },
+      { feeTypeId: "f-sur", rateClass: null, quantity: 1, unitRate: fromCentavos(3_700), amount: fromCentavos(3_700), keyed: true },
+    ];
+    await commitReceipt(
+      driver,
+      draft({ leaseId: null, ranks: [], allocations: [], lines, grossAmount: fromCentavos(127_150) }),
+      ["line-1", "line-2"],
+    );
+    const payload = JSON.parse(
+      (db.prepare("select payload from outbox where id = 'k1'").get() as { payload: string }).payload,
+    );
+    expect(payload.lines).toEqual([
+      { fee_type_id: "f-elec", quantity: 1, amount: "1234.50" },
+      { fee_type_id: "f-sur", quantity: 1, amount: "37.00" },
+    ]);
+    expect(payload).not.toHaveProperty("gross_amount");
+  });
+
   it("omits rate_class from the payload when the line has none", async () => {
     // CollectionPayload declares `rate_class: z.string().optional()` -- optional, NOT
     // nullable. Sending `rate_class: null` would be refused by the server's `.strict()`
@@ -321,6 +344,28 @@ describe("commitReceipt", () => {
     );
     const row = db.prepare("select payload from outbox").get() as { payload: string };
     expect(() => CollectionPayload.parse(JSON.parse(row.payload))).not.toThrow();
+  });
+
+  it("produces a keyed payload the shared contract accepts", async () => {
+    const feeTypeId = "550e8400-e29b-41d4-a716-446655440005";
+    await commitReceipt(
+      driver,
+      draft({
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        bookletId: "550e8400-e29b-41d4-a716-446655440001",
+        collectorId: "550e8400-e29b-41d4-a716-446655440002",
+        shiftId: "550e8400-e29b-41d4-a716-446655440003",
+        feeTypeId,
+        leaseId: null,
+        ranks: [],
+        allocations: [],
+        lines: [{ feeTypeId, rateClass: null, quantity: 1, unitRate: fromCentavos(123_450), amount: fromCentavos(123_450), keyed: true }],
+        grossAmount: fromCentavos(123_450),
+      }),
+      ["550e8400-e29b-41d4-a716-446655440006"],
+    );
+    const row = db.prepare("select payload from outbox").get() as { payload: string };
+    expect(CollectionPayload.parse(JSON.parse(row.payload)).lines[0]).toMatchObject({ amount: "1234.50" });
   });
 
   it("requires an id per line", async () => {
