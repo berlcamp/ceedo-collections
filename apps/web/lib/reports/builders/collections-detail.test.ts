@@ -212,14 +212,22 @@ describe("collectionsDetailReport", () => {
     );
   });
 
-  it("warns when the list holds unclassified money, and not otherwise", () => {
+  it("warns when the month holds unclassified money, and not otherwise", () => {
     const r = build({ lines: [line({ accountId: "a-unc", amount: fromPesos(40) })] });
     expect(r.warnings).toEqual([{
-      text: "40.00 of this month's collections is on no account (UNCLASSIFIED).",
+      text: "40.00 of this month's collections is on no account (Unclassified).",
       href: "/accounts/unclassified?month=2026-10",
-      linkText: "Review unclassified receipts",
+      linkText: "Classify it",
     }]);
     expect(build().warnings ?? []).toEqual([]);
+  });
+
+  it("keeps the month's unclassified warning when a filter hides those lines", () => {
+    const month = [line({ amount: fromPesos(100) }), line({ facilityId: null, accountId: "a-unc", amount: fromPesos(40) })];
+    for (const f of [{ accountId: "a-rent" }, { facilityId: "f-pm" }, { customer: "santos" }]) {
+      const r = build({ lines: month }, { ...NO_FILTERS, ...f });
+      expect(r.warnings?.map((w) => w.text)).toEqual(["40.00 of this month's collections is on no account (Unclassified)."]);
+    }
   });
 
   it("says what is left out and what reconciles", () => {

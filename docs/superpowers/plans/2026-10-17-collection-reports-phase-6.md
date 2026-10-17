@@ -326,7 +326,7 @@ Expected: FAIL. The module does not exist.
   - `account`, `facility` (`text`); `amount` (`money`, total).
   - One row per account with money, in account `sortOrder`.
 - **Filtering:** filter once, in this order: facility (decision 3), collector, account, tenant (via `leases[].tenantId`), customer (lower-cased `includes`). Then build all three sections from the filtered list.
-- **Unclassified warning:** the total of filtered lines whose account has code `UNCLASSIFIED`.
+- **Unclassified warning:** the whole month's total on `UNCLASSIFIED`, filters or not (final review).
 - **Scope:** `longMonth(month)`, then each set filter's name joined by " · ", and `customer “…”` last.
 
 - [ ] **Step 4: Run them and see them pass**

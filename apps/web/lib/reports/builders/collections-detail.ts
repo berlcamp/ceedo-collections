@@ -134,8 +134,10 @@ export function collectionsDetailReport(input: DetailInput, filters: DetailFilte
       amount,
     }));
 
+  // The whole month's, not the filtered list's (spec: "when the period has a non-zero
+  // UNCLASSIFIED total"): a rule gap must still show while one account is reconciled.
   const unclassifiedIds = new Set(input.accounts.filter((a) => a.code === UNCLASSIFIED).map((a) => a.id));
-  const unclassified = sorted.filter((l) => unclassifiedIds.has(l.accountId)).reduce((s, l) => s + l.amount, 0);
+  const unclassified = input.lines.filter((l) => unclassifiedIds.has(l.accountId)).reduce((s, l) => s + l.amount, 0);
 
   return {
     title: "Collections detail",
@@ -145,9 +147,9 @@ export function collectionsDetailReport(input: DetailInput, filters: DetailFilte
       unclassified !== 0
         ? [
             {
-              text: `${pesos(unclassified)} of this month's collections is on no account (UNCLASSIFIED).`,
+              text: `${pesos(unclassified)} of this month's collections is on no account (Unclassified).`,
               href: `/accounts/unclassified?month=${input.month}`,
-              linkText: "Review unclassified receipts",
+              linkText: "Classify it",
             },
           ]
         : [],
