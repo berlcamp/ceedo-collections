@@ -13,6 +13,12 @@ export interface ReportParams {
   leaseId: string | null;
   /** Narrows a report to one facility; null means every facility. */
   facilityId: string | null;
+  /** Narrows a report to one account; null means every account. */
+  accountId: string | null;
+  /** Narrows a report to one tenant's leases; null means every tenant. */
+  tenantId: string | null;
+  /** A customer-name search (URL `q`), trimmed; "" means no search. */
+  customer: string;
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -40,6 +46,9 @@ export function readParams(
     collectorId: UUID.test(one("collector")) ? one("collector") : null,
     leaseId: UUID.test(one("lease")) ? one("lease") : null,
     facilityId: UUID.test(one("facility")) ? one("facility") : null,
+    accountId: UUID.test(one("account")) ? one("account") : null,
+    tenantId: UUID.test(one("tenant")) ? one("tenant") : null,
+    customer: one("q").trim().slice(0, 100),
   };
 }
 

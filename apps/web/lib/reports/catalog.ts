@@ -17,7 +17,9 @@ import { monthlySummaryData } from "./summary-data";
  * Which inputs a report asks for; the hub renders exactly these. `asOf` is a date read
  * as "on or before" (balances); `date` is one business day.
  */
-export type ParamKind = "date" | "asOf" | "month" | "year" | "collector" | "lease" | "facility";
+export type ParamKind =
+  | "date" | "asOf" | "month" | "year" | "collector" | "lease" | "facility"
+  | "account" | "tenant" | "customer";
 
 export interface ReportEntry {
   key: string;
@@ -25,6 +27,8 @@ export interface ReportEntry {
   /** One line on the hub: what it is for. */
   purpose: string;
   params: ParamKind[];
+  /** Parameters the hub offers with an "All …" choice; the rest are required. */
+  optional?: ParamKind[];
   build: (p: ReportParams) => Promise<Report>;
 }
 

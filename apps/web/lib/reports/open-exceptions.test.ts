@@ -6,7 +6,8 @@ const ALICE = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
 const LEASE = "33333333-3333-4333-8333-333333333333";
 
-const params: ReportParams = { date: "2026-09-29", month: "2026-09", year: "2026", collectorId: ALICE, leaseId: LEASE, facilityId: null };
+const params: ReportParams = { date: "2026-09-29", month: "2026-09", year: "2026", collectorId: ALICE, leaseId: LEASE, facilityId: null,
+  accountId: null, tenantId: null, customer: "" };
 
 function ex(collectorId: string, collectedAt: string | null, leaseId: string | null = null): OpenException {
   return { collectorId, collectedAt, leaseId };

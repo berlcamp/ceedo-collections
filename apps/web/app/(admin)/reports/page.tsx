@@ -4,7 +4,7 @@ import { buttonClass } from "@/components/ui/button";
 import { NativeSelect, TextInput } from "@/components/ui/field";
 import { getCollectors } from "@/lib/ledger/queries";
 import { REPORTS } from "@/lib/reports/catalog";
-import { getFacilityOptions, getLeaseOptions } from "@/lib/reports/options";
+import { getAccountOptions, getFacilityOptions, getLeaseOptions, getTenantOptions } from "@/lib/reports/options";
 import { manilaToday } from "@/lib/reports/params";
 import { requireStaff } from "@/lib/supabase/session";
 
@@ -15,10 +15,12 @@ import { requireStaff } from "@/lib/supabase/session";
 export default async function ReportsPage() {
   await requireStaff();
   const needs = new Set(REPORTS.flatMap((r) => r.params));
-  const [collectors, leases, facilities] = await Promise.all([
+  const [collectors, leases, facilities, accounts, tenants] = await Promise.all([
     needs.has("collector") ? getCollectors() : Promise.resolve([]),
     needs.has("lease") ? getLeaseOptions() : Promise.resolve([]),
     needs.has("facility") ? getFacilityOptions() : Promise.resolve([]),
+    needs.has("account") ? getAccountOptions() : Promise.resolve([]),
+    needs.has("tenant") ? getTenantOptions() : Promise.resolve([]),
   ]);
   const today = manilaToday();
 
@@ -83,10 +85,19 @@ export default async function ReportsPage() {
               {report.params.includes("collector") ? (
                 <label className="text-xs text-ink-2">
                   Collector
-                  <NativeSelect name="collector" className="mt-1 w-52" required defaultValue="">
-                    <option value="" disabled>
-                      Choose…
-                    </option>
+                  <NativeSelect
+                    name="collector"
+                    className="mt-1 w-52"
+                    required={!report.optional?.includes("collector")}
+                    defaultValue=""
+                  >
+                    {report.optional?.includes("collector") ? (
+                      <option value="">All collectors</option>
+                    ) : (
+                      <option value="" disabled>
+                        Choose…
+                      </option>
+                    )}
                     {collectors.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.fullName}
@@ -98,16 +109,57 @@ export default async function ReportsPage() {
               {report.params.includes("lease") ? (
                 <label className="text-xs text-ink-2">
                   Lease
-                  <NativeSelect name="lease" className="mt-1 w-64" required defaultValue="">
-                    <option value="" disabled>
-                      Choose…
-                    </option>
+                  <NativeSelect
+                    name="lease"
+                    className="mt-1 w-64"
+                    required={!report.optional?.includes("lease")}
+                    defaultValue=""
+                  >
+                    {report.optional?.includes("lease") ? (
+                      <option value="">All leases</option>
+                    ) : (
+                      <option value="" disabled>
+                        Choose…
+                      </option>
+                    )}
                     {leases.map((l) => (
                       <option key={l.id} value={l.id}>
                         {l.label}
                       </option>
                     ))}
                   </NativeSelect>
+                </label>
+              ) : null}
+              {report.params.includes("account") ? (
+                <label className="text-xs text-ink-2">
+                  Account
+                  <NativeSelect name="account" className="mt-1 w-64" defaultValue="">
+                    <option value="">All accounts</option>
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.label}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </label>
+              ) : null}
+              {report.params.includes("tenant") ? (
+                <label className="text-xs text-ink-2">
+                  Tenant
+                  <NativeSelect name="tenant" className="mt-1 w-52" defaultValue="">
+                    <option value="">All tenants</option>
+                    {tenants.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </label>
+              ) : null}
+              {report.params.includes("customer") ? (
+                <label className="text-xs text-ink-2">
+                  Customer contains
+                  <TextInput type="search" name="q" className="mt-1 w-48" maxLength={100} />
                 </label>
               ) : null}
               <button type="submit" className={buttonClass("primary", "md", "ml-auto")}>

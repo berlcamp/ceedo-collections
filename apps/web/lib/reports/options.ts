@@ -1,4 +1,5 @@
 import { getServerClient } from "@/lib/supabase/server";
+import { allPages } from "./data";
 
 export interface LeaseOption {
   id: string;
@@ -38,4 +39,32 @@ export async function getFacilityOptions(): Promise<FacilityOption[]> {
 export async function facilityLabel(id: string | null): Promise<string | null> {
   if (!id) return null;
   return (await getFacilityOptions()).find((f) => f.id === id)?.label ?? null;
+}
+
+export interface AccountOption {
+  id: string;
+  label: string;
+}
+
+/** Active accounts, plus UNCLASSIFIED, in chart order: the hub's account filter. */
+export async function getAccountOptions(): Promise<AccountOption[]> {
+  const supabase = await getServerClient();
+  const rows = await allPages((a, b) =>
+    supabase.from("collection_accounts").select("id, code, name, active").order("sort_order").order("id").range(a, b),
+  );
+  return rows.filter((r) => r.active || r.code === "UNCLASSIFIED").map((r) => ({ id: r.id, label: r.name }));
+}
+
+export interface TenantOption {
+  id: string;
+  label: string;
+}
+
+/** Every tenant, by name: the hub's tenant filter. */
+export async function getTenantOptions(): Promise<TenantOption[]> {
+  const supabase = await getServerClient();
+  const rows = await allPages((a, b) =>
+    supabase.from("tenants").select("id, full_name").order("full_name").order("id").range(a, b),
+  );
+  return rows.map((r) => ({ id: r.id, label: r.full_name }));
 }
