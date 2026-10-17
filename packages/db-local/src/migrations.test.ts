@@ -60,6 +60,24 @@ describe("device migrations", () => {
     });
   });
 
+  it("0007 adds fee_types.amount_mode and facility_id and forces one full re-pull", () => {
+    // Phase 7: keyed amounts and facility-specific fees. Fee types pulled before these
+    // columns existed had them dropped by applyPull, and the cursor is past those rows.
+    const db = new Database(":memory:");
+    for (const f of files.filter((f) => f < "0007")) run(db, f);
+    db.exec("insert or replace into sync_state (id, cursor, epoch) values (1, 900, 4)");
+
+    run(db, files.find((f) => f.startsWith("0007"))!);
+
+    const columns = db.prepare("select name from pragma_table_info('fee_types')").all();
+    expect(columns).toContainEqual({ name: "amount_mode" });
+    expect(columns).toContainEqual({ name: "facility_id" });
+    expect(db.prepare("select cursor, epoch from sync_state where id = 1").get()).toEqual({
+      cursor: 0,
+      epoch: 4,
+    });
+  });
+
   it("0004 removes the engine probe's fake charges and rewinds the cursor", () => {
     // The probe was reachable on production tablets and wrote into the real mirror.
     const db = new Database(":memory:");

@@ -249,6 +249,12 @@ export const feeTypes = sqliteTable("fee_types", {
   surchargeBps: integer("surcharge_bps"),
   // Where the fee is collected (migration 0045). Null: offered at every facility.
   facilityType: text("facility_type"),
+  // 'rate' or 'keyed' (server migration 065): a keyed fee's amount is typed at the receipt.
+  // Null until the re-pull 0007 forces lands; read as 'rate'.
+  amountMode: text("amount_mode"),
+  // The one facility this fee is collected at (server migration 065). Null: a
+  // facility-less fee, offered by facility_type.
+  facilityId: text("facility_id"),
   active: integer("active", { mode: "boolean" }),
   createdAt: text("created_at"),
   rowVersion: integer("row_version"),

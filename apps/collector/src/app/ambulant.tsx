@@ -11,8 +11,10 @@ import {
   type RateRow,
 } from "@ceedo/shared";
 import {
+  addFeeRefusal,
   collectorSites,
   feeChoices,
+  keyedAmount,
   payerPrompt,
   type CollectorSite,
   type DraftLine,
@@ -84,6 +86,8 @@ export default function Ambulant() {
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [pick, setPick] = useState<FeeChoice | null>(null);
   const [qty, setQty] = useState("1");
+  // A keyed fee's typed amount (electricity, certification, misc...), in place of a quantity.
+  const [amountText, setAmountText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -99,7 +103,7 @@ export default function Ambulant() {
     // the signed-in collector's, since every tablet holds every facility.
     const here = collector ? await collectorSites(driver, collector.id) : [];
     setSites(here);
-    setChoices(await feeChoices(driver, [...new Set(here.map((site) => site.type))]));
+    setChoices(await feeChoices(driver, here));
     setRates(
       (
         await driver.select<{
@@ -136,22 +140,36 @@ export default function Ambulant() {
 
   const gross = sum(lines.map((l) => l.amount));
 
-  // One fee type per receipt (review R12). parent §10's Abstract of Collections totals by
-  // fee type off the collections row, and this screen's own `choices` query is not scoped
-  // to one fee type -- it offers every non-accruing fee active on the tablet -- so nothing
-  // upstream stops a collector tapping a different fee between "Add to receipt" presses.
-  // Locking here, once the first line exists, is what makes that true rather than assumed.
-  // A vehicle class (parent §2, Phase 5's terminal receipt) is a `rate_class` of ONE fee
-  // type, so this still allows several classes of the SAME fee on one receipt -- only a
-  // second fee type is refused.
-  const lockedFeeTypeId = lines.length > 0 ? lines[0]!.feeTypeId : null;
-  const lockedFeeName =
-    lockedFeeTypeId === null
+  // What may share this receipt is addFeeRefusal's rule (packages/sync-engine/src/fees.ts):
+  // a rate fee keeps the receipt to one fee type (review R12; parent §10's Abstract of
+  // Collections totals by the receipt's fee type), keyed fees may share one (an electricity
+  // bill and its surcharge on one OR, as the office's abstracts show), and the two kinds
+  // never mix. It is derived from `lines`, so removing the last line releases the lock.
+  const nameOf = (feeTypeId: string) =>
+    choices.find((c) => c.fee_type_id === feeTypeId)?.fee_name ?? feeTypeId;
+  const feeTypesOnReceipt = [...new Set(lines.map((l) => l.feeTypeId))];
+  const receiptFees =
+    feeTypesOnReceipt.length === 0
       ? null
-      : (choices.find((c) => c.fee_type_id === lockedFeeTypeId)?.fee_name ?? lockedFeeTypeId);
+      : `${nameOf(feeTypesOnReceipt[0]!)}${feeTypesOnReceipt.length > 1 ? ` +${feeTypesOnReceipt.length - 1}` : ""}`;
 
   const addLine = () => {
     if (!pick) return;
+    const refusal = addFeeRefusal(lines, pick, nameOf);
+    if (refusal) return setError(refusal);
+    if (pick.amount_mode === "keyed") {
+      // One line of quantity 1 at the typed amount: what post_collection expects of a keyed
+      // fee, and the amount travels with the line because no rate table holds it.
+      const typed = keyedAmount(amountText);
+      if ("refusal" in typed) return setError(typed.refusal);
+      setLines([
+        ...lines,
+        { feeTypeId: pick.fee_type_id, rateClass: null, quantity: 1, unitRate: typed.amount, amount: typed.amount, keyed: true },
+      ]);
+      setError(null);
+      setAmountText("");
+      return;
+    }
     // Strict digit-string check, not just Number.parseInt: parseInt("3abc", 10) returns 3,
     // which would silently accept a mistyped quantity instead of rejecting it -- and no
     // partial input here may throw either, so this never touches Number() on garbage.
@@ -223,7 +241,7 @@ export default function Ambulant() {
         <RackHead
           title={title}
           subtitle={
-            lockedFeeName ?? (sites.map((site) => site.name).join(" · ") || "No lease, no receivable")
+            receiptFees ?? (sites.map((site) => site.name).join(" · ") || "No lease, no receivable")
           }
           onBack={() => router.back()}
         />
@@ -241,11 +259,10 @@ export default function Ambulant() {
           onPress={() => {
             setDraft({
               kind: "lines",
-              // Enforced by the choice guard below, not assumed: a tap on a different fee
-              // type is refused before `pick` -- and so a line -- can hold it, so every
-              // line here already shares one fee type by construction. That is what makes
-              // lines[0] a safe stand-in for "the receipt's fee type", which is what
-              // parent §10's Abstract of Collections totals by.
+              // The receipt's fee type is its first line's. For a rate receipt every line
+              // shares it (addFeeRefusal), which is what parent §10's Abstract of
+              // Collections totals by; keyed lines (an electricity bill and its surcharge)
+              // are each classified by their own fee type in the collection reports.
               feeTypeId: lines[0]!.feeTypeId,
               label: title,
               lines,
@@ -278,8 +295,8 @@ export default function Ambulant() {
               pick !== null &&
               pick.fee_type_id === choice.fee_type_id &&
               pick.rate_class === choice.rate_class;
-            const isLockedOut =
-              lockedFeeTypeId !== null && choice.fee_type_id !== lockedFeeTypeId;
+            const refusal = addFeeRefusal(lines, choice, nameOf);
+            const isLockedOut = refusal !== null;
             return (
                 <Slot
                   key={`${choice.fee_type_id}|${choice.rate_class ?? ""}`}
@@ -288,12 +305,10 @@ export default function Ambulant() {
                   suppressed={isLockedOut}
                   left={`${choice.fee_name}${choice.rate_class ? ` · ${choice.rate_class}` : ""}`}
                   onPress={() => {
-                    if (isLockedOut) {
+                    if (refusal) {
                       // Named, not a silent no-op -- the stranding pattern this phase keeps
-                      // finding. Says which fee the receipt is already for and what to do.
-                      setError(
-                        `This receipt is already for ${lockedFeeName}. ${choice.fee_name} needs its own receipt -- add it after this one is recorded.`,
-                      );
+                      // finding. Says what the receipt is already for and what to do.
+                      setError(refusal);
                       return;
                     }
                     setError(null);
@@ -307,14 +322,25 @@ export default function Ambulant() {
 
       <Rift h={24} />
 
-      <Field
-        label="Quantity"
-        voice="figure"
-        icon="counter"
-        keyboardType="number-pad"
-        value={qty}
-        onChangeText={setQty}
-      />
+      {pick?.amount_mode === "keyed" ? (
+        <Field
+          label="Amount"
+          voice="figure"
+          icon="cash"
+          keyboardType="decimal-pad"
+          value={amountText}
+          onChangeText={setAmountText}
+        />
+      ) : (
+        <Field
+          label="Quantity"
+          voice="figure"
+          icon="counter"
+          keyboardType="number-pad"
+          value={qty}
+          onChangeText={setQty}
+        />
+      )}
       <Rift h={12} />
       <Action
         label="Add to receipt"
@@ -358,12 +384,16 @@ export default function Ambulant() {
                 key={index}
                 icon="receipt-text-outline"
                 left={
-                  <View style={{ gap: 2 }}>
-                    <Body>{`${line.quantity} × ${format(line.unitRate)}`}</Body>
-                    {line.rateClass ? (
-                      <Body tone={color.muted}>{line.rateClass}</Body>
-                    ) : null}
-                  </View>
+                  line.keyed ? (
+                    <Body>{nameOf(line.feeTypeId)}</Body>
+                  ) : (
+                    <View style={{ gap: 2 }}>
+                      <Body>{`${line.quantity} × ${format(line.unitRate)}`}</Body>
+                      {line.rateClass ? (
+                        <Body tone={color.muted}>{line.rateClass}</Body>
+                      ) : null}
+                    </View>
+                  )
                 }
                 right={
                   <View style={{ alignItems: "flex-end", gap: 4 }}>

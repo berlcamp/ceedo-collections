@@ -191,6 +191,52 @@ describe("sync-push over HTTP", () => {
     expect(res.body[0]).toMatchObject({ index: 0, status: "accepted" });
   });
 
+  /** A keyed fee type, as migration 071 seeds them: the amount is typed at the receipt. */
+  async function keyedFeeType(): Promise<string> {
+    const { rows } = await db.query(
+      `insert into ceedo_collections.fee_types (code, name, accrues, facility_type, amount_mode)
+       values ($1, 'Keyed test fee', false, 'market', 'keyed') returning id`,
+      [`KEY-${randomUUID().slice(0, 6).toUpperCase()}`],
+    );
+    return rows[0].id as string;
+  }
+
+  it("accepts a keyed line and records the typed amount", async () => {
+    const feeTypeId = await keyedFeeType();
+    const id = randomUUID();
+    const res = await callFunction("sync-push", {
+      ...creds(),
+      entries: [
+        collectionEntry({
+          id, or_no: 1340, fee_type_id: feeTypeId, lease_id: null, allocations: [],
+          lines: [{ fee_type_id: feeTypeId, quantity: 1, amount: "1234.50" }],
+        }),
+      ],
+    });
+    expect(res.status).toBe(200);
+    expect(res.body[0]).toMatchObject({ index: 0, status: "accepted" });
+    const { rows } = await db.query(
+      "select gross_amount::text as gross from ceedo_collections.collections where id = $1",
+      [id],
+    );
+    expect(rows[0].gross).toBe("1234.50");
+  });
+
+  it("refuses a keyed line without an amount as amount_mismatch", async () => {
+    const feeTypeId = await keyedFeeType();
+    const res = await callFunction("sync-push", {
+      ...creds(),
+      entries: [
+        collectionEntry({
+          or_no: 1341, fee_type_id: feeTypeId, lease_id: null, allocations: [],
+          lines: [{ fee_type_id: feeTypeId, quantity: 1 }],
+        }),
+      ],
+    });
+    expect(res.status).toBe(200);
+    expect(res.body[0]).toMatchObject({ status: "rejected", reason: "amount_mismatch" });
+  });
+
   it("refuses a payload carrying device_id rather than quietly overriding it", async () => {
     // Invariant 21, over the wire -- and the answer CHANGED in Task 5. sync_push still
     // overrides device_id from the authenticated credential, and tests/db/sync-push.test.ts
